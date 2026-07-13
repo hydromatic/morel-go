@@ -15,12 +15,15 @@
 // language governing permissions and limitations under the
 // License.
 
+// Command morel is an interpreter for Morel, a functional query
+// language.
 package main
 
 import "fmt"
 
 func main() {
-	fmt.Printf("Hi, %d\n", add(3, 4))
+	const a, b = 3, 4
+	fmt.Printf("Hi, %d\n", add(a, b))
 }
 
 func add(a, b int) int {

@@ -38,9 +38,7 @@ jobs:
       run: go version
     - name: Build
       run: go build -v ./...
-    - name: Vet
-      run: go vet ./...
-    - name: Check formatting
-      run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+    - name: Lint
+      uses: golangci/golangci-lint-action@v9
     - name: Run tests
       run: go test -v ./...
