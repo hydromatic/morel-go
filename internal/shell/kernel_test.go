@@ -92,6 +92,57 @@ func TestExecute(t *testing.T) {
 				"val it = true : bool",
 			},
 		}},
+		{"functions", [][2]string{
+			{"val f = fn x => x;", "val f = fn : 'a -> 'a"},
+			{"f 3;", "val it = 3 : int"},
+			{`f "a";`, `val it = "a" : string`},
+			{"(fn x => x) 5;", "val it = 5 : int"},
+			{
+				"val g = fn s => size s;",
+				"val g = fn : string -> int",
+			},
+			{`g "abc";`, "val it = 3 : int"},
+			{"(fn () => 3) ();", "val it = 3 : int"},
+			{"(fn _ => 9) 1;", "val it = 9 : int"},
+		}},
+		{"multiClause", [][2]string{
+			{
+				`val h = fn 0 => "zero" | _ => "other";`,
+				"val h = fn : int -> string",
+			},
+			{"h 0;", `val it = "zero" : string`},
+			{"h 5;", `val it = "other" : string`},
+			{
+				"(fn 1 => true | n => false) 3;",
+				"val it = false : bool",
+			},
+		}},
+		{"closures", [][2]string{
+			{
+				"val k = let val a = 7 in fn x => a end;",
+				"val k = fn : 'a -> int",
+			},
+			{"k 100;", "val it = 7 : int"},
+			{
+				"val add = fn x => fn y => x;",
+				"val add = fn : 'a -> 'b -> 'a",
+			},
+			{"add 1 2;", "val it = 1 : int"},
+			{"val p = add true;", "val p = fn : 'a -> bool"},
+			{"p ();", "val it = true : bool"},
+			// Transitive capture: the innermost function reaches
+			// a variable two scopes up.
+			{
+				"val t = let val a = 4 in" +
+					" fn x => fn y => a end;",
+				"val t = fn : 'a -> 'b -> int",
+			},
+			{"t 1 2;", "val it = 4 : int"},
+			{
+				"case (fn x => x) of f => f 8;",
+				"val it = 8 : int",
+			},
+		}},
 		{"negate", [][2]string{
 			{"~5;", "val it = ~5 : int"},
 			{"~2.5;", "val it = ~2.5 : real"},
@@ -101,9 +152,9 @@ func TestExecute(t *testing.T) {
 		{"itOnlyOnSuccess", [][2]string{
 			{"val y = 7;", "val y = 7 : int"},
 			{"y;", "val it = 7 : int"},
-			// The next statement fails to compile (functions
+			// The next statement fails to compile (lists
 			// arrive later), so 'it' keeps its value.
-			{"fn x => x;", ""},
+			{"[1,2];", ""},
 			{"it;", "val it = 7 : int"},
 		}},
 	} {

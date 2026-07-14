@@ -198,8 +198,9 @@ func (r *resolver) toApply(env *coreEnv, apply *ast.Apply,
 	return &core.Apply{T: t, Fn: fn, Arg: arg}, nil
 }
 
-// toFn converts a function with a single name-binding rule; match
-// lists and structured patterns arrive with case-into-fn merging.
+// toFn converts a function. A single rule that binds one name
+// becomes a Fn directly; otherwise the parameter is a fresh
+// variable and the match list becomes a case over it.
 func (r *resolver) toFn(env *coreEnv, fn *ast.Fn,
 	t types.Type,
 ) (core.Exp, error) {
@@ -210,22 +211,36 @@ func (r *resolver) toFn(env *coreEnv, fn *ast.Fn,
 			Msg:  "function does not have function type",
 		}
 	}
-	if len(fn.Matches) != 1 {
-		return nil, &Error{
-			Span: fn.Span(),
-			Msg:  "cannot convert to core: fn with match list",
+	if len(fn.Matches) == 1 {
+		match := fn.Matches[0]
+		switch match.Pat.(type) {
+		case *ast.IDPat, *ast.WildcardPat:
+			idPat, err := r.toIDPat(match.Pat)
+			if err != nil {
+				return nil, err
+			}
+			exp, err := r.toExp(env.bind(idPat), match.Exp)
+			if err != nil {
+				return nil, err
+			}
+			fnExp := &core.Fn{
+				T: fnType, IDPat: idPat,
+				Exp: exp,
+			}
+			return fnExp, nil
 		}
 	}
-	match := fn.Matches[0]
-	idPat, err := r.toIDPat(match.Pat)
+	param := &core.IDPat{T: fnType.Param, Name: "v"}
+	matches, err := r.toMatches(env, fn.Matches)
 	if err != nil {
 		return nil, err
 	}
-	exp, err := r.toExp(env.bind(idPat), match.Exp)
-	if err != nil {
-		return nil, err
+	body := &core.Case{
+		T:       fnType.Result,
+		Exp:     &core.ID{Pat: param},
+		Matches: matches,
 	}
-	return &core.Fn{T: fnType, IDPat: idPat, Exp: exp}, nil
+	return &core.Fn{T: fnType, IDPat: param, Exp: body}, nil
 }
 
 // toIf translates "if c then a else b" as if the user had written
@@ -334,6 +349,15 @@ func (r *resolver) toPat(pat ast.Pat) (core.Pat, error) {
 			Value: value,
 		}
 		return literalPat, nil
+	case *ast.TuplePat:
+		if len(p.Args) == 0 {
+			return &core.WildcardPat{T: t}, nil
+		}
+		return nil, &Error{
+			Span: pat.Span(),
+			Msg: "cannot convert to core: pattern " +
+				pat.Op().String(),
+		}
 	case *ast.WildcardPat:
 		return &core.WildcardPat{T: t}, nil
 	default:

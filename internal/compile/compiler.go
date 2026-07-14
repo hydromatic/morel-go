@@ -59,11 +59,38 @@ func Statement(decl core.Decl,
 }
 
 // compiler converts Core to Code, assigning each bound variable
-// a frame slot.
+// a frame slot. Each function body gets its own compiler (and
+// frame layout); a reference to an enclosing function's variable
+// becomes a capture.
 type compiler struct {
-	values map[string]eval.Val
-	slots  map[*core.IDPat]int
-	nSlots int
+	values   map[string]eval.Val
+	slots    map[*core.IDPat]int
+	parent   *compiler
+	captures []eval.Capture
+	nSlots   int
+}
+
+// resolveSlot returns the frame slot of a variable. A variable
+// of an enclosing function is captured into a fresh slot of this
+// frame — transitively, so each scope between the use and the
+// declaration captures it in turn.
+func (c *compiler) resolveSlot(pat *core.IDPat) (int, bool) {
+	if slot, ok := c.slots[pat]; ok {
+		return slot, true
+	}
+	if c.parent == nil {
+		return 0, false
+	}
+	outer, ok := c.parent.resolveSlot(pat)
+	if !ok {
+		return 0, false
+	}
+	slot := c.nSlots
+	c.nSlots++
+	c.slots[pat] = slot
+	c.captures = append(c.captures,
+		eval.Capture{From: outer, To: slot})
+	return slot, true
 }
 
 func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
@@ -81,8 +108,10 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 		return eval.Apply(fn, arg), nil
 	case *core.Case:
 		return c.compileCase(e)
+	case *core.Fn:
+		return c.compileFn(e)
 	case *core.ID:
-		if slot, ok := c.slots[e.Pat]; ok {
+		if slot, ok := c.resolveSlot(e.Pat); ok {
 			return eval.GetSlot(slot, e.Pat.Name), nil
 		}
 		if v, ok := c.values[e.Pat.Name]; ok {
@@ -98,6 +127,27 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 			Msg: "cannot compile " + exp.Op().String(),
 		}
 	}
+}
+
+// compileFn compiles a function body in its own scope, then
+// emits code that creates the closure, capturing whatever the
+// body referenced from enclosing scopes.
+func (c *compiler) compileFn(fn *core.Fn) (eval.Code, error) {
+	inner := &compiler{
+		values: c.values,
+		slots:  map[*core.IDPat]int{},
+		parent: c,
+	}
+	param, err := inner.compilePat(fn.IDPat)
+	if err != nil {
+		return nil, err
+	}
+	body, err := inner.compileExp(fn.Exp)
+	if err != nil {
+		return nil, err
+	}
+	return eval.MakeClosure(param, body, inner.captures,
+		inner.nSlots), nil
 }
 
 func (c *compiler) compileCase(caseExp *core.Case) (eval.Code,

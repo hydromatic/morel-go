@@ -75,6 +75,78 @@ func (c *getCode) Describe() string {
 	return "get(name " + c.name + ")"
 }
 
+// Closure is a user function value: the pattern that binds its
+// parameter, its compiled body, the values it captured from its
+// defining scope (and the slots they occupy in its frame), and
+// its frame size.
+type Closure struct {
+	Param         Pat
+	Body          Code
+	Captured      []Val
+	CapturedSlots []int
+	NSlots        int
+}
+
+// Apply calls the closure: a fresh frame gets the captured
+// values and the argument, and the body runs in it.
+func (c *Closure) Apply(arg Val) (Val, error) {
+	f := NewFrame(c.NSlots)
+	for i, slot := range c.CapturedSlots {
+		f.Slots[slot] = c.Captured[i]
+	}
+	if !c.Param.Match(arg, f) {
+		return nil, &MorelError{Exn: "Bind"}
+	}
+	return c.Body.Eval(f)
+}
+
+// Capture says that a closure's frame slot receives the value of
+// a slot of the defining frame.
+type Capture struct {
+	From int
+	To   int
+}
+
+// MakeClosure returns code that creates a closure, capturing the
+// given slots of the current frame.
+func MakeClosure(param Pat, body Code, captures []Capture,
+	nSlots int,
+) Code {
+	return &makeClosureCode{
+		param:    param,
+		body:     body,
+		captures: captures,
+		nSlots:   nSlots,
+	}
+}
+
+type makeClosureCode struct {
+	param    Pat
+	body     Code
+	captures []Capture
+	nSlots   int
+}
+
+func (c *makeClosureCode) Eval(f *Frame) (Val, error) {
+	captured := make([]Val, len(c.captures))
+	capturedSlots := make([]int, len(c.captures))
+	for i, capture := range c.captures {
+		captured[i] = f.Slots[capture.From]
+		capturedSlots[i] = capture.To
+	}
+	return &Closure{
+		Param:         c.param,
+		Body:          c.body,
+		Captured:      captured,
+		CapturedSlots: capturedSlots,
+		NSlots:        c.nSlots,
+	}, nil
+}
+
+func (c *makeClosureCode) Describe() string {
+	return "closure(" + c.body.Describe() + ")"
+}
+
 // Apply returns code that evaluates a function and an argument
 // and applies one to the other.
 func Apply(fn, arg Code) Code {
@@ -95,11 +167,14 @@ func (c *applyCode) Eval(f *Frame) (Val, error) {
 	if err != nil {
 		return nil, err
 	}
-	fn, ok := fnVal.(Fn)
-	if !ok {
+	switch fn := fnVal.(type) {
+	case Fn:
+		return fn(argVal)
+	case *Closure:
+		return fn.Apply(argVal)
+	default:
 		return nil, fmt.Errorf("cannot apply %T", fnVal)
 	}
-	return fn(argVal)
 }
 
 func (c *applyCode) Describe() string {
