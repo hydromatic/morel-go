@@ -121,6 +121,7 @@ const (
 	Bar
 	Dot
 	Comma
+	Underscore
 	RArrow
 	RThinArrow
 	Ellipsis
@@ -227,6 +228,7 @@ var kindNames = map[Kind]string{
 	Bar:           "|",
 	Dot:           ".",
 	Comma:         ",",
+	Underscore:    "_",
 	RArrow:        "=>",
 	RThinArrow:    "->",
 	Ellipsis:      "...",

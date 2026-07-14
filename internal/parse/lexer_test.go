@@ -113,6 +113,8 @@ func TestLexStrings(t *testing.T) {
 		`string literal:"a\nb \\ \" \097 \^A"`)
 	// A close-comment inside a string is just text.
 	check(t, `"*)"`, `string literal:"*)"`)
+	// A string may contain a raw newline.
+	check(t, "\"ab\ncd\"", "string literal:\"ab\ncd\"")
 	check(t, `#"a" #"\n"`, `char literal:#"a" char literal:#"\n"`)
 }
 
@@ -156,6 +158,16 @@ func TestLexScientificNumbers(t *testing.T) {
 	check(t, "1.5E", "real literal:1.5 identifier:E")
 	check(t, "1e+5",
 		"integer literal:1 identifier:e +:+ integer literal:5")
+}
+
+func TestLexUnderscore(t *testing.T) {
+	check(t, "fun fst (x, _) = x",
+		"fun:fun identifier:fst (:( identifier:x ,:, _:_ ):) "+
+			"=:= identifier:x")
+	// "_" alone is the wildcard; inside an identifier it is an
+	// identifier character.
+	check(t, "x_y _ _x",
+		"identifier:x_y _:_ _:_ identifier:x")
 }
 
 func TestLexLabels(t *testing.T) {
@@ -213,7 +225,7 @@ func TestLexSpans(t *testing.T) {
 func TestLexErrors(t *testing.T) {
 	for _, tc := range []struct{ src, want string }{
 		{`"abc`, "stdIn:1.1-1.5: unclosed string"},
-		{"\"abc\ndef\"", "stdIn:1.1-1.5: unclosed string"},
+		{"\"abc\ndef", "stdIn:1.1-2.4: unclosed string"},
 		{"(* abc", "stdIn:1.1-1.7: unclosed comment"},
 		{"(* a (* b *)", "stdIn:1.1-1.13: unclosed comment"},
 		{`"bad \q escape"`, "stdIn:1.6-1.7: illegal escape"},

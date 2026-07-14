@@ -57,9 +57,23 @@ linters:
     - funlen
     - gocyclo
   settings:
+    exhaustive:
+      # An enum switch with a default case is exhaustive; op-tag
+      # switches routinely handle a few kinds and default the rest.
+      default-signifies-exhaustive: true
+    wrapcheck:
+      # Span-carrying errors from this module's own packages are
+      # user-facing output; they flow through unwrapped by design.
+      ignore-package-globs:
+        - github.com/hydromatic/morel-go/*
     govet:
-      # vet at full strength.
+      # vet at full strength, except fieldalignment: its
+      # pointers-first ordering conflicts with embedded-base-first
+      # struct style (embeddedstructfieldcheck), and the saving is
+      # negligible for small AST nodes.
       enable-all: true
+      disable:
+        - fieldalignment
   exclusions:
     presets:
       - common-false-positives

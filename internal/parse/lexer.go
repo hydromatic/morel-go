@@ -27,10 +27,14 @@ import (
 )
 
 // Error is a lexical or syntax error at a source position.
+// Unclosed reports that the input ended inside a construct (a
+// string, comment, or quoted identifier); more input could
+// complete it.
 type Error struct {
-	Name string
-	Msg  string
-	Span token.Span
+	Name     string
+	Msg      string
+	Span     token.Span
+	Unclosed bool
 }
 
 func (e *Error) Error() string {
@@ -89,8 +93,20 @@ func (l *Lexer) Next() (token.Token, error) {
 	}
 }
 
+// Offset returns the current scan position as a rune index into
+// the source.
+func (l *Lexer) Offset() int {
+	return l.i
+}
+
 func (l *Lexer) errorAt(span token.Span, msg string) error {
 	return &Error{Name: l.name, Span: span, Msg: msg}
+}
+
+func (l *Lexer) errorUnclosed(span token.Span, msg string) error {
+	return &Error{
+		Name: l.name, Span: span, Msg: msg, Unclosed: true,
+	}
 }
 
 func (l *Lexer) errorHere(msg string) error {
@@ -190,7 +206,7 @@ func (l *Lexer) skipBlockComment() error {
 		switch {
 		case l.peek(0) < 0:
 			span := token.Span{Start: start, End: l.pos}
-			return l.errorAt(span, "unclosed comment")
+			return l.errorUnclosed(span, "unclosed comment")
 		case l.has("(*)"):
 			l.skipLineComment()
 		case l.has("(*"):
@@ -231,8 +247,9 @@ func (l *Lexer) scanQuotedIdent() (token.Token, error) {
 	for {
 		switch {
 		case l.peek(0) < 0:
-			return token.Token{},
-				l.errorHere("unclosed quoted identifier")
+			span := token.Span{Start: l.start, End: l.pos}
+			return token.Token{}, l.errorUnclosed(span,
+				"unclosed quoted identifier")
 		case l.peek(0) == '`' && l.peek(1) == '`':
 			l.skipN(len("``"))
 		case l.peek(0) == '`':
@@ -286,13 +303,16 @@ func (l *Lexer) hasExponent() bool {
 
 // scanString consumes a quoted string, validating escapes:
 // \a \b \t \n \v \f \r \" \\, a control escape \^C for C in
-// "@"–"_", or a three-digit decimal escape \ddd.
+// "@"–"_", or a three-digit decimal escape \ddd. A string may
+// contain a raw newline.
 func (l *Lexer) scanString(kind token.Kind) (token.Token, error) {
 	l.advance()
 	for {
 		switch r := l.peek(0); {
-		case r < 0 || r == '\n':
-			return token.Token{}, l.errorHere("unclosed string")
+		case r < 0:
+			span := token.Span{Start: l.start, End: l.pos}
+			return token.Token{},
+				l.errorUnclosed(span, "unclosed string")
 		case r == '"':
 			l.advance()
 			return l.token(kind), nil
@@ -370,6 +390,7 @@ var symbols = []struct {
 	{"|", token.Bar},
 	{".", token.Dot},
 	{",", token.Comma},
+	{"_", token.Underscore},
 	{"=", token.Eq},
 	{">", token.Gt},
 	{"<", token.Lt},
