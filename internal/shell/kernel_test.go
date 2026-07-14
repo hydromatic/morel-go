@@ -143,6 +143,33 @@ func TestExecute(t *testing.T) {
 				"val it = 8 : int",
 			},
 		}},
+		{"recursion", [][2]string{
+			{
+				`fun f 0 = "done" | f n = f 0;`,
+				"val f = fn : int -> string",
+			},
+			{"f 5;", `val it = "done" : string`},
+			{"fun id2 x = x;", "val id2 = fn : 'a -> 'a"},
+			{"id2 8;", "val it = 8 : int"},
+			{
+				"val rec r = fn 0 => 1 | _ => r 0;",
+				"val r = fn : int -> int",
+			},
+			{"r 9;", "val it = 1 : int"},
+			{"let val rec g = fn 0 => 2 | _ => g 0" +
+				" in g 7 end;", "val it = 2 : int"},
+			// Mutual recursion: f calls its sibling g.
+			{"let val rec fm = fn () => gm 0" +
+				" and gm = fn 0 => 6 | _ => fm ()" +
+				" in fm () end;", "val it = 6 : int"},
+			// A recursive function stored and called from a
+			// later statement keeps working.
+			{
+				"val keep = f;",
+				"val keep = fn : int -> string",
+			},
+			{"keep 2;", `val it = "done" : string`},
+		}},
 		{"negate", [][2]string{
 			{"~5;", "val it = ~5 : int"},
 			{"~2.5;", "val it = ~2.5 : real"},

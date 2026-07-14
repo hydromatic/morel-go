@@ -167,19 +167,75 @@ func (c *applyCode) Eval(f *Frame) (Val, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch fn := fnVal.(type) {
-	case Fn:
-		return fn(argVal)
+	return ApplyVal(fnVal, argVal)
+}
+
+// ApplyVal applies a function value — a built-in or a closure —
+// to an argument.
+func ApplyVal(fn, arg Val) (Val, error) {
+	// lint: sort until '^	}' where '^	case '
+	switch fn := fn.(type) {
 	case *Closure:
-		return fn.Apply(argVal)
+		return fn.Apply(arg)
+	case *recCell:
+		return ApplyVal(fn.v, arg)
+	case Fn:
+		return fn(arg)
 	default:
-		return nil, fmt.Errorf("cannot apply %T", fnVal)
+		return nil, fmt.Errorf("cannot apply %T", fn)
 	}
 }
 
 func (c *applyCode) Describe() string {
 	return "apply(fnValue " + c.fn.Describe() + ", argCode " +
 		c.arg.Describe() + ")"
+}
+
+// recCell is the placeholder that a recursive binding's slot
+// holds while its expression evaluates. Anything that captures
+// the slot captures the cell; when the binding completes, the
+// cell is filled, so every captured reference — however deeply
+// the capturing closure was created — sees the final value. (A
+// self-referential closure is a cycle; Go's collector handles
+// it.) Application dereferences cells; a recursive value is a
+// function in any program that terminates.
+type recCell struct {
+	v Val
+}
+
+// LetRec returns code that binds mutually recursive values: each
+// slot holds a cell while the inits evaluate, each init's value
+// fills its cell and replaces it in the slot, and then the body
+// runs.
+func LetRec(slots []int, inits []Code, body Code) Code {
+	return &letRecCode{slots: slots, inits: inits, body: body}
+}
+
+type letRecCode struct {
+	slots []int
+	inits []Code
+	body  Code
+}
+
+func (c *letRecCode) Eval(f *Frame) (Val, error) {
+	cells := make([]*recCell, len(c.slots))
+	for i, slot := range c.slots {
+		cells[i] = &recCell{}
+		f.Slots[slot] = cells[i]
+	}
+	for i, init := range c.inits {
+		v, err := init.Eval(f)
+		if err != nil {
+			return nil, err
+		}
+		cells[i].v = v
+		f.Slots[c.slots[i]] = v
+	}
+	return c.body.Eval(f)
+}
+
+func (c *letRecCode) Describe() string {
+	return "letRec(" + c.body.Describe() + ")"
 }
 
 // Let returns code that evaluates an expression, stores it in a
