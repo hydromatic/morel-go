@@ -143,6 +143,76 @@ func TestExecute(t *testing.T) {
 				"val it = 8 : int",
 			},
 		}},
+		{"tuplesAndRecords", [][2]string{
+			{"(1, true);", "val it = (1,true) : int * bool"},
+			{
+				"{a=1, b=true};",
+				"val it = {a=1,b=true} : {a:int, b:bool}",
+			},
+			{
+				"{b=2, a=1};",
+				"val it = {a=1,b=2} : {a:int, b:int}",
+			},
+			{
+				"(1, (2, 3));",
+				"val it = (1,(2,3)) : int * (int * int)",
+			},
+		}},
+		{"valPatterns", [][2]string{
+			{
+				"val (x, y) = (1, true);",
+				"val x = 1 : int\nval y = true : bool",
+			},
+			{"x;", "val it = 1 : int"},
+			{
+				"val (a, (b, c)) = (1, (2, 3));",
+				"val a = 1 : int\nval b = 2 : int\n" +
+					"val c = 3 : int",
+			},
+			{
+				"val {a=p, b=q} = {a=4, b=5};",
+				"val p = 4 : int\nval q = 5 : int",
+			},
+			{"val _ = 9;", ""},
+			{
+				"let val (i, j) = (2, 3) in (j, i) end;",
+				"val it = (3,2) : int * int",
+			},
+		}},
+		{"arithmetic", [][2]string{
+			{"1 + 2;", "val it = 3 : int"},
+			{"1.5 + 2.25;", "val it = 3.75 : real"},
+			{"10 - 3;", "val it = 7 : int"},
+			{"5 * 6;", "val it = 30 : int"},
+			{"7 div 2;", "val it = 3 : int"},
+			{"~7 div 2;", "val it = ~4 : int"},
+			{"7 mod ~2;", "val it = ~1 : int"},
+			{"1.0 / 4.0;", "val it = 0.25 : real"},
+			{"true andalso false;", "val it = false : bool"},
+			{"false orelse true;", "val it = true : bool"},
+			{"1 + 2 * 3;", "val it = 7 : int"},
+			{"7 div 0;", "uncaught exception Div"},
+		}},
+		{"currying", [][2]string{
+			{
+				"fun add x y = x + y;",
+				"val add = fn : int -> int -> int",
+			},
+			{"add 3 4;", "val it = 7 : int"},
+			{"val inc = add 1;", "val inc = fn : int -> int"},
+			{"inc 10;", "val it = 11 : int"},
+			{
+				"fun fact 0 = 1 | fact n = n * fact (n - 1);",
+				"val fact = fn : int -> int",
+			},
+			{"fact 5;", "val it = 120 : int"},
+			{
+				"fun fib 0 = 0 | fib 1 = 1" +
+					" | fib n = fib (n - 1) + fib (n - 2);",
+				"val fib = fn : int -> int",
+			},
+			{"fib 10;", "val it = 55 : int"},
+		}},
 		{"recursion", [][2]string{
 			{
 				`fun f 0 = "done" | f n = f 0;`,

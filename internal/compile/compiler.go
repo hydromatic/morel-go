@@ -22,16 +22,24 @@ import (
 	"github.com/hydromatic/morel-go/internal/eval"
 )
 
-// Compiled is a statement ready to run: the pattern it binds,
-// the code of its expression, and the number of variable slots
-// its frame needs.
+// Bind is one name that a compiled statement binds, and the
+// frame slot that holds its value after the statement runs.
+type Bind struct {
+	Pat  *core.IDPat
+	Slot int
+}
+
+// Compiled is a statement ready to run: code that evaluates the
+// statement's expressions and stores each bound name's value in
+// its slot, the bindings to read back out (in pattern order),
+// and the frame size.
 type Compiled struct {
-	Pat   *core.IDPat
+	Binds []Bind
 	Code  eval.Code
 	Slots int
 }
 
-// Statement compiles a declaration "val name = exp".
+// Statement compiles a declaration such as "val pat = exp".
 // Values gives the runtime values of free names: built-ins and
 // the results of earlier statements.
 func Statement(decl core.Decl,
@@ -41,41 +49,43 @@ func Statement(decl core.Decl,
 		values: values,
 		slots:  map[*core.IDPat]int{},
 	}
+	var code eval.Code
+	var ids []*core.IDPat
 	switch d := decl.(type) {
 	case *core.NonRecValDecl:
-		code, err := c.compileExp(d.Exp)
+		exp, err := c.compileExp(d.Exp)
 		if err != nil {
 			return nil, err
 		}
-		return &Compiled{
-			Pat:   d.Pat,
-			Code:  code,
-			Slots: c.nSlots,
-		}, nil
+		pat, err := c.compilePat(d.Pat)
+		if err != nil {
+			return nil, err
+		}
+		code = eval.Let(pat, exp, eval.Unit())
+		ids = core.PatIDs(d.Pat)
 	case *core.RecValDecl:
-		if len(d.Binds) != 1 {
-			return nil, &Error{
-				Msg: "cannot compile multi-binding val rec",
-			}
-		}
-		bind := d.Binds[0]
-		// A recursive statement is its own let: bind the name,
-		// patch the self-reference, and yield the value.
-		code, err := c.compileRec(d,
-			eval.GetSlot(c.allocSlot(bind.Pat), bind.Pat.Name))
+		var err error
+		code, err = c.compileRec(d, eval.Unit())
 		if err != nil {
 			return nil, err
 		}
-		return &Compiled{
-			Pat:   bind.Pat,
-			Code:  code,
-			Slots: c.nSlots,
-		}, nil
+		for _, bind := range d.Binds {
+			ids = append(ids, core.PatIDs(bind.Pat)...)
+		}
 	default:
 		return nil, &Error{
 			Msg: "cannot compile " + decl.Op().String(),
 		}
 	}
+	binds := make([]Bind, len(ids))
+	for i, id := range ids {
+		binds[i] = Bind{Pat: id, Slot: c.slots[id]}
+	}
+	return &Compiled{
+		Binds: binds,
+		Code:  code,
+		Slots: c.nSlots,
+	}, nil
 }
 
 // compiler converts Core to Code, assigning each bound variable
@@ -142,6 +152,16 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 		return c.compileLet(e)
 	case *core.Literal:
 		return eval.Constant(e.Value), nil
+	case *core.Tuple:
+		args := make([]eval.Code, len(e.Args))
+		for i, arg := range e.Args {
+			a, err := c.compileExp(arg)
+			if err != nil {
+				return nil, err
+			}
+			args[i] = a
+		}
+		return eval.Tuple(args), nil
 	default:
 		return nil, &Error{
 			Msg: "cannot compile " + exp.Op().String(),
@@ -196,8 +216,7 @@ func (c *compiler) compileCase(caseExp *core.Case) (eval.Code,
 // it binds.
 func (c *compiler) compilePat(pat core.Pat) (eval.Pat, error) {
 	for _, id := range core.PatIDs(pat) {
-		c.slots[id] = c.nSlots
-		c.nSlots++
+		c.allocSlot(id)
 	}
 	return c.patCode(pat)
 }
@@ -209,6 +228,16 @@ func (c *compiler) patCode(pat core.Pat) (eval.Pat, error) {
 		return eval.SlotPat{Slot: c.slots[p]}, nil
 	case *core.LiteralPat:
 		return eval.LiteralPat{V: p.Value}, nil
+	case *core.TuplePat:
+		pats := make([]eval.Pat, len(p.Args))
+		for i, arg := range p.Args {
+			argPat, err := c.patCode(arg)
+			if err != nil {
+				return nil, err
+			}
+			pats[i] = argPat
+		}
+		return eval.TuplePat{Pats: pats}, nil
 	case *core.WildcardPat:
 		return eval.WildcardPat{}, nil
 	default:
@@ -225,15 +254,20 @@ func (c *compiler) compileLet(let *core.Let) (eval.Code, error) {
 		if err != nil {
 			return nil, err
 		}
-		slot := c.allocSlot(d.Pat)
+		pat, err := c.compilePat(d.Pat)
+		if err != nil {
+			return nil, err
+		}
 		body, err := c.compileExp(let.Exp)
 		if err != nil {
 			return nil, err
 		}
-		return eval.Let(slot, init, body), nil
+		return eval.Let(pat, init, body), nil
 	case *core.RecValDecl:
 		for _, bind := range d.Binds {
-			c.allocSlot(bind.Pat)
+			if idPat, ok := bind.Pat.(*core.IDPat); ok {
+				c.allocSlot(idPat)
+			}
 		}
 		body, err := c.compileExp(let.Exp)
 		if err != nil {
@@ -247,16 +281,27 @@ func (c *compiler) compileLet(let *core.Let) (eval.Code, error) {
 	}
 }
 
-// compileRec compiles a recursive declaration whose names have
-// already been given slots, wrapping the body in a LetRec that
-// patches the closures' self-references.
+// compileRec compiles a recursive declaration, giving every
+// binding's name its slot before compiling any expression, then
+// wrapping the body in a LetRec that patches the closures'
+// self-references. Recursive bindings are names (the type
+// checker required that), so each pattern is one IDPat.
 func (c *compiler) compileRec(d *core.RecValDecl,
 	body eval.Code,
 ) (eval.Code, error) {
 	slots := make([]int, len(d.Binds))
+	for i, bind := range d.Binds {
+		idPat, ok := bind.Pat.(*core.IDPat)
+		if !ok {
+			return nil, &Error{
+				Msg: "cannot compile recursive pattern " +
+					bind.Pat.Op().String(),
+			}
+		}
+		slots[i] = c.allocSlot(idPat)
+	}
 	inits := make([]eval.Code, len(d.Binds))
 	for i, bind := range d.Binds {
-		slots[i] = c.allocSlot(bind.Pat)
 		init, err := c.compileExp(bind.Exp)
 		if err != nil {
 			return nil, err

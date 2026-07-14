@@ -18,6 +18,7 @@
 package compile
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 
@@ -83,7 +84,7 @@ func (r *resolver) toDecl(env *coreEnv, decl ast.Decl) (core.Decl,
 		}
 	}
 	bind := d.Binds[0]
-	idPat, err := r.toIDPat(bind.Pat)
+	pat, err := r.toPat(bind.Pat)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -91,8 +92,12 @@ func (r *resolver) toDecl(env *coreEnv, decl ast.Decl) (core.Decl,
 	if err != nil {
 		return nil, nil, err
 	}
-	valDecl := &core.NonRecValDecl{Pat: idPat, Exp: exp}
-	return valDecl, env.bind(idPat), nil
+	env2 := env
+	for _, id := range core.PatIDs(pat) {
+		env2 = env2.bind(id)
+	}
+	valDecl := &core.NonRecValDecl{Pat: pat, Exp: exp}
+	return valDecl, env2, nil
 }
 
 // toRecDecl converts a recursive declaration; its names are in
@@ -158,6 +163,8 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 	}
 	// lint: sort until '^\t}' where '^\tcase '
 	switch e := exp.(type) {
+	case *ast.AnnotatedExp:
+		return r.toExp(env, e.Exp)
 	case *ast.Apply:
 		return r.toApply(env, e, t)
 	case *ast.Case:
@@ -175,6 +182,8 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 		return &core.ID{Pat: pat}, nil
 	case *ast.If:
 		return r.toIf(env, e, t)
+	case *ast.InfixCall:
+		return r.toInfix(env, e, t)
 	case *ast.Let:
 		return r.flattenLet(env, e.Decls, e.Exp)
 	case *ast.Literal:
@@ -200,6 +209,18 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 			Fn:  &core.ID{Pat: fnPat},
 			Arg: arg,
 		}, nil
+	case *ast.Record:
+		return r.toRecord(env, e, t)
+	case *ast.Tuple:
+		args := make([]core.Exp, len(e.Args))
+		for i, arg := range e.Args {
+			a, err := r.toExp(env, arg)
+			if err != nil {
+				return nil, err
+			}
+			args[i] = a
+		}
+		return &core.Tuple{T: t, Args: args}, nil
 	default:
 		return nil, &Error{
 			Span: exp.Span(),
@@ -321,6 +342,136 @@ func (r *resolver) toIf(env *coreEnv, ifExp *ast.If,
 	return caseExp, nil
 }
 
+// toInfix converts an infix operator application. The logical
+// connectives become cases ("a andalso b" runs b only if a is
+// true); any other operator becomes the application of its
+// top-level binding to the operand pair.
+func (r *resolver) toInfix(env *coreEnv, call *ast.InfixCall,
+	t types.Type,
+) (core.Exp, error) {
+	a0, err := r.toExp(env, call.A0)
+	if err != nil {
+		return nil, err
+	}
+	a1, err := r.toExp(env, call.A1)
+	if err != nil {
+		return nil, err
+	}
+	sys := r.typeMap.sys
+	// lint: sort until '^\t}' where '^\tcase '
+	switch call.Kind {
+	case ast.AndalsoOp:
+		return boolCase(sys, a0, a1,
+			&core.Literal{
+				T: sys.Bool, Kind: ast.BoolLiteralOp,
+				Value: false,
+			}), nil
+	case ast.ImpliesOp:
+		return boolCase(sys, a0, a1,
+			&core.Literal{
+				T: sys.Bool, Kind: ast.BoolLiteralOp,
+				Value: true,
+			}), nil
+	case ast.OrelseOp:
+		return boolCase(sys, a0,
+			&core.Literal{
+				T: sys.Bool, Kind: ast.BoolLiteralOp,
+				Value: true,
+			}, a1), nil
+	default:
+	}
+	name, ok := infixOpNames[call.Kind]
+	if !ok {
+		return nil, &Error{
+			Span: call.Span(),
+			Msg: "cannot convert to core: " +
+				call.Kind.String(),
+		}
+	}
+	argType := sys.Tuple(a0.Type(), a1.Type())
+	fnPat := &core.IDPat{
+		T:    sys.Fn(argType, t),
+		Name: name,
+	}
+	arg := &core.Tuple{
+		T:    argType,
+		Args: []core.Exp{a0, a1},
+	}
+	return &core.Apply{
+		T:   t,
+		Fn:  &core.ID{Pat: fnPat},
+		Arg: arg,
+	}, nil
+}
+
+// boolCase builds "case cond of true => ifTrue | _ => ifFalse".
+func boolCase(sys *types.System, cond, ifTrue,
+	ifFalse core.Exp,
+) core.Exp {
+	return &core.Case{
+		T:   ifTrue.Type(),
+		Exp: cond,
+		Matches: []core.Match{
+			{
+				Pat: &core.LiteralPat{
+					T:     sys.Bool,
+					Kind:  ast.BoolLiteralOp,
+					Value: true,
+				},
+				Exp: ifTrue,
+			},
+			{
+				Pat: &core.WildcardPat{T: sys.Bool},
+				Exp: ifFalse,
+			},
+		},
+	}
+}
+
+// toRecord converts a record expression to a tuple whose
+// elements are the fields in canonical order.
+func (r *resolver) toRecord(env *coreEnv, record *ast.Record,
+	t types.Type,
+) (core.Exp, error) {
+	if record.With != nil {
+		return nil, &Error{
+			Span: record.Span(),
+			Msg:  "cannot convert to core: record update",
+		}
+	}
+	type fieldExp struct {
+		label string
+		exp   ast.Expr
+	}
+	fields := make([]fieldExp, len(record.Fields))
+	for i, f := range record.Fields {
+		label := f.Label
+		if label == "" {
+			id, ok := f.Exp.(*ast.ID)
+			if !ok {
+				return nil, &Error{
+					Span: record.Span(),
+					Msg:  "cannot derive label for expression",
+				}
+			}
+			label = id.Name
+		}
+		fields[i] = fieldExp{label: label, exp: f.Exp}
+	}
+	sort.Slice(fields, func(i, j int) bool {
+		return types.LabelLess(fields[i].label, fields[j].label)
+	})
+	args := make([]core.Exp, len(fields))
+	for i, f := range fields {
+		arg, err := r.toExp(env, f.exp)
+		if err != nil {
+			return nil, err
+		}
+		args[i] = arg
+	}
+	return &core.Tuple{T: t, Args: args}, nil
+}
+
 // toCase converts "case e of pat => exp | ...". Each rule's
 // pattern variables are in scope in its body.
 func (r *resolver) toCase(env *coreEnv, caseExp *ast.Case,
@@ -388,15 +539,42 @@ func (r *resolver) toPat(pat ast.Pat) (core.Pat, error) {
 			Value: value,
 		}
 		return literalPat, nil
+	case *ast.RecordPat:
+		if p.Ellipsis {
+			return nil, &Error{
+				Span: pat.Span(),
+				Msg: "cannot convert to core: pattern " +
+					"with ellipsis",
+			}
+		}
+		sorted := make([]ast.PatField, len(p.Fields))
+		copy(sorted, p.Fields)
+		sort.Slice(sorted, func(i, j int) bool {
+			return types.LabelLess(sorted[i].Label,
+				sorted[j].Label)
+		})
+		args := make([]core.Pat, len(sorted))
+		for i, f := range sorted {
+			arg, err := r.toPat(f.Pat)
+			if err != nil {
+				return nil, err
+			}
+			args[i] = arg
+		}
+		return &core.TuplePat{T: t, Args: args}, nil
 	case *ast.TuplePat:
 		if len(p.Args) == 0 {
 			return &core.WildcardPat{T: t}, nil
 		}
-		return nil, &Error{
-			Span: pat.Span(),
-			Msg: "cannot convert to core: pattern " +
-				pat.Op().String(),
+		args := make([]core.Pat, len(p.Args))
+		for i, argPat := range p.Args {
+			arg, err := r.toPat(argPat)
+			if err != nil {
+				return nil, err
+			}
+			args[i] = arg
 		}
+		return &core.TuplePat{T: t, Args: args}, nil
 	case *ast.WildcardPat:
 		return &core.WildcardPat{T: t}, nil
 	default:

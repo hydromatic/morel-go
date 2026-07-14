@@ -74,6 +74,12 @@ var Builtins = map[string]Fn{
 	"abs":           absFn,
 	"chr":           chrFn,
 	"not":           notFn,
+	"op *":          arith(mulInt, mulReal),
+	"op +":          arith(addInt, addReal),
+	"op -":          arith(subInt, subReal),
+	"op /":          arith(nil, divReal),
+	"op div":        arith(divInt, nil),
+	"op mod":        arith(modInt, nil),
 	"op ~":          negFn,
 	"ord":           ordFn,
 	"size":          sizeFn,
@@ -141,6 +147,100 @@ func chrFn(arg Val) (Val, error) {
 	// rune and int32 are one type; the result is a char only
 	// statically.
 	return i, nil
+}
+
+// arith adapts a pair of binary implementations, one per numeric
+// type, to a built-in that dispatches on its operands' runtime
+// type.
+func arith(intFn func(a, b int32) (Val, error),
+	realFn func(a, b float32) (Val, error),
+) Fn {
+	return func(arg Val) (Val, error) {
+		vals, ok := arg.([]Val)
+		if !ok || len(vals) != 2 {
+			panic(fmt.Sprintf("expected pair, got %T", arg))
+		}
+		switch a := vals[0].(type) {
+		case int32:
+			return intFn(a, asInt(vals[1]))
+		case float32:
+			f, isReal := vals[1].(float32)
+			if !isReal {
+				panic(fmt.Sprintf("expected real, got %T",
+					vals[1]))
+			}
+			return realFn(a, f)
+		default:
+			panic(fmt.Sprintf("expected int or real, got %T",
+				vals[0]))
+		}
+	}
+}
+
+// checkIntRange rejects a result outside int32, raising
+// Overflow as SML integer arithmetic does.
+func checkIntRange(i int64) (Val, error) {
+	if i < math.MinInt32 || i > math.MaxInt32 {
+		return nil, &MorelError{Exn: "Overflow"}
+	}
+	return int32(i), nil
+}
+
+func addInt(a, b int32) (Val, error) {
+	return checkIntRange(int64(a) + int64(b))
+}
+
+func subInt(a, b int32) (Val, error) {
+	return checkIntRange(int64(a) - int64(b))
+}
+
+func mulInt(a, b int32) (Val, error) {
+	return checkIntRange(int64(a) * int64(b))
+}
+
+// divInt is SML's "div": floor division, rounding toward
+// negative infinity (unlike Go's, which rounds toward zero).
+func divInt(a, b int32) (Val, error) {
+	if b == 0 {
+		return nil, &MorelError{Exn: "Div"}
+	}
+	q := int64(a) / int64(b)
+	if (a%b != 0) && ((a < 0) != (b < 0)) {
+		q--
+	}
+	return checkIntRange(q)
+}
+
+// modInt is SML's "mod": the remainder of floor division, with
+// the divisor's sign.
+func modInt(a, b int32) (Val, error) {
+	if b == 0 {
+		return nil, &MorelError{Exn: "Div"}
+	}
+	r := a % b
+	if r != 0 && (r < 0) != (b < 0) {
+		r += b
+	}
+	return r, nil
+}
+
+// The real operations compute in float64 and round once to
+// float32.
+
+func addReal(a, b float32) (Val, error) {
+	return float32(float64(a) + float64(b)), nil
+}
+
+func subReal(a, b float32) (Val, error) {
+	return float32(float64(a) - float64(b)), nil
+}
+
+func mulReal(a, b float32) (Val, error) {
+	return float32(float64(a) * float64(b)), nil
+}
+
+func divReal(a, b float32) (Val, error) {
+	return float32(float64(a) / float64(b)), nil
 }
 
 // negFn is "~ x". It is overloaded on int and real, so it

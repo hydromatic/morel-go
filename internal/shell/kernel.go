@@ -164,14 +164,19 @@ func (k *Kernel) executeStatement(n ast.Node) string {
 		return ""
 	}
 	frame := eval.NewFrame(compiled.Slots)
-	v, err := compiled.Code.Eval(frame)
+	_, err = compiled.Code.Eval(frame)
 	if err != nil {
 		return err.Error()
 	}
-	pat := compiled.Pat
-	k.bind(pat.Name, pat.T)
-	k.values[pat.Name] = v
-	return k.config.prettyBinding(pat.Name, v, pat.T)
+	var lines []string
+	for _, b := range compiled.Binds {
+		v := frame.Slots[b.Slot]
+		k.bind(b.Pat.Name, b.Pat.T)
+		k.values[b.Pat.Name] = v
+		lines = append(lines,
+			k.config.prettyBinding(b.Pat.Name, v, b.Pat.T))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // setProp handles `Sys.set ("name", value)` for the integer

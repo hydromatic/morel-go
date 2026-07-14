@@ -29,6 +29,10 @@ type Con struct {
 	Ordinal  int
 }
 
+// ExnBind is the exception raised when pattern matching fails in
+// a binding.
+const ExnBind = "Bind"
+
 // MorelError is a Morel runtime error: the name of the exception
 // (e.g. "Div") and the source position it was raised at.
 type MorelError struct {

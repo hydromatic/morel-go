@@ -112,6 +112,22 @@ func (f *Fn) Type() types.Type { return f.T }
 
 func (*Fn) exp() {}
 
+// Tuple is a tuple or record value; a record's fields are in
+// canonical (label-sorted) order, so both print and match
+// positionally.
+type Tuple struct {
+	T    types.Type
+	Args []Exp
+}
+
+// Op implements Exp.
+func (*Tuple) Op() ast.Op { return ast.TupleOp }
+
+// Type implements Exp.
+func (t *Tuple) Type() types.Type { return t.T }
+
+func (*Tuple) exp() {}
+
 // Case matches an expression against a list of patterns; "if c
 // then a else b" becomes "case c of true => a | _ => b".
 type Case struct {
@@ -202,17 +218,36 @@ func PatIDs(p Pat) []*IDPat {
 }
 
 func walkPat(p Pat, ids *[]*IDPat) {
+	// lint: sort until '^	}' where '^	case '
 	switch p := p.(type) {
 	case *IDPat:
 		*ids = append(*ids, p)
 	case *LiteralPat, *WildcardPat:
+	case *TuplePat:
+		for _, arg := range p.Args {
+			walkPat(arg, ids)
+		}
 	}
 }
 
-// NonRecValDecl is a non-recursive value declaration binding one
-// name.
+// TuplePat is a tuple or record pattern, with fields in
+// canonical order.
+type TuplePat struct {
+	T    types.Type
+	Args []Pat
+}
+
+// Op implements Pat.
+func (*TuplePat) Op() ast.Op { return ast.TuplePatOp }
+
+// Type implements Pat.
+func (p *TuplePat) Type() types.Type { return p.T }
+
+func (*TuplePat) pat() {}
+
+// NonRecValDecl is a non-recursive value declaration.
 type NonRecValDecl struct {
-	Pat *IDPat
+	Pat Pat
 	Exp Exp
 }
 
