@@ -18,110 +18,149 @@
 package shell
 
 import (
+	"math"
 	"strconv"
 	"strings"
 
 	"github.com/hydromatic/morel-go/internal/eval"
+	"github.com/hydromatic/morel-go/internal/pp"
 	"github.com/hydromatic/morel-go/internal/types"
 )
 
-// formatValue renders a value as the shell prints it, directed
-// by the value's static type. (Line wrapping and exact real
-// formatting arrive with the pretty-printing engine.)
-func formatValue(v eval.Val, t types.Type) string {
-	var b strings.Builder
-	writeValue(&b, v, t)
-	return b.String()
+// prettyBinding renders "val name = value : type", choosing line
+// breaks with the layout engine. The value stays on the "val
+// ... =" line only if it fits there entirely flat; otherwise the
+// whole value moves to its own line, indented by 2, where it is
+// free to wrap. Likewise the type stays on the value's last line
+// if it fits flat there. This matches how SML/NJ lays out a
+// binding.
+func (c *Config) prettyBinding(name string, v eval.Val,
+	t types.Type,
+) string {
+	valueDoc := c.valueDoc(t, v, 1)
+	typeDoc := pp.Text(t.String())
+	const indent = 2
+	valuePart := pp.Union(
+		pp.Beside(pp.Text(" "), pp.Flatten(valueDoc)),
+		pp.Nest(indent, pp.Beside(pp.HardLine(), valueDoc)))
+	typePart := pp.Union(
+		pp.Beside(pp.Text(" : "), typeDoc),
+		pp.Nest(indent, pp.Concat(pp.HardLine(), pp.Text(": "),
+			typeDoc)))
+	doc := pp.Concat(pp.Text("val "+name+" ="), valuePart,
+		typePart)
+	return pp.Render(c.width(), doc)
 }
 
-func writeValue(b *strings.Builder, v eval.Val, t types.Type) {
+// width is the page width passed to the renderer. Rendering at
+// lineWidth - 1 matches SML/NJ's right margin: its printer
+// allows one more column than ours before breaking.
+func (c *Config) width() int {
+	if c.LineWidth < 0 {
+		return math.MaxInt32
+	}
+	return c.LineWidth - 1
+}
+
+// valueDoc builds the layout of a value, directed by the value's
+// static type. Beyond printDepth, a nested value prints as "#".
+func (c *Config) valueDoc(t types.Type, v eval.Val,
+	depth int,
+) pp.Doc {
+	if c.PrintDepth >= 0 && depth > c.PrintDepth {
+		return pp.Text("#")
+	}
 	// lint: sort until '^\t}' where '^\tcase '
 	switch t := t.(type) {
 	case *types.Fn:
-		b.WriteString("fn")
+		return pp.Text("fn")
 	case *types.List:
-		b.WriteString("[")
-		for i, elem := range asVals(v) {
-			if i > 0 {
-				b.WriteString(",")
-			}
-			writeValue(b, elem, t.Elem)
-		}
-		b.WriteString("]")
+		return c.seqDoc("[", "]", c.elementDocs(t.Elem, v, depth))
 	case *types.Named:
-		writeCon(b, v, t)
+		return c.conDoc(t, v, depth)
 	case *types.Primitive:
-		writePrimitive(b, v, t)
+		return pp.Text(c.primitiveString(t, v))
 	case *types.Record:
-		b.WriteString("{")
+		vals := asVals(v)
+		docs := make([]pp.Doc, len(t.Fields))
 		for i, field := range t.Fields {
-			if i > 0 {
-				b.WriteString(",")
-			}
-			b.WriteString(field.Label + "=")
-			writeValue(b, asVals(v)[i], field.Type)
+			docs[i] = pp.Beside(pp.Text(field.Label+"="),
+				c.valueDoc(field.Type, vals[i], depth+1))
 		}
-		b.WriteString("}")
+		return c.seqDoc("{", "}", docs)
 	case *types.Tuple:
-		b.WriteString("(")
+		vals := asVals(v)
+		docs := make([]pp.Doc, len(t.Args))
 		for i, arg := range t.Args {
-			if i > 0 {
-				b.WriteString(",")
-			}
-			writeValue(b, asVals(v)[i], arg)
+			docs[i] = c.valueDoc(arg, vals[i], depth+1)
 		}
-		b.WriteString(")")
+		return c.seqDoc("(", ")", docs)
 	case *types.Var:
-		b.WriteString("fn")
+		return pp.Text("fn")
+	default:
+		return pp.Text("fn")
 	}
 }
 
-func writePrimitive(b *strings.Builder, v eval.Val,
-	t *types.Primitive,
-) {
-	// lint: sort until '^\t}' where '^\tcase '
-	switch t.String() {
-	case "bool":
-		v2, _ := v.(bool)
-		b.WriteString(strconv.FormatBool(v2))
-	case "char":
-		v2, _ := v.(rune)
-		b.WriteString(`#"` + escapeString(string(v2)) + `"`)
-	case "int":
-		v2, _ := v.(int32)
-		b.WriteString(formatInt(v2))
-	case "real":
-		v2, _ := v.(float32)
-		b.WriteString(formatReal(v2))
-	case "string":
-		v2, _ := v.(string)
-		b.WriteString(`"` + escapeString(v2) + `"`)
-	case "unit":
-		b.WriteString("()")
+// elementDocs builds the layouts of a list's elements; beyond
+// printLength, the remaining elements print as one "...".
+func (c *Config) elementDocs(elemType types.Type, v eval.Val,
+	depth int,
+) []pp.Doc {
+	var docs []pp.Doc
+	for i, elem := range asVals(v) {
+		if c.PrintLength >= 0 && i >= c.PrintLength {
+			docs = append(docs, pp.Text("..."))
+			break
+		}
+		docs = append(docs, c.valueDoc(elemType, elem, depth+1))
 	}
+	return docs
 }
 
-// writeCon renders a datatype value such as "SOME 4"; a
-// constructor argument that is itself a constructor application
-// is parenthesized, "SOME (SOME 4)".
-func writeCon(b *strings.Builder, v eval.Val, t *types.Named) {
+// seqDoc lays out a bracketed sequence (a list, record, or
+// tuple). Elements fill across lines: as many as fit share a
+// line, and each element is treated as a unit (a record in a
+// list of records stays together, and the list wraps between
+// records). There is no space after the comma, the way SML/NJ
+// prints values. Continuation lines align under the first
+// element.
+func (c *Config) seqDoc(open, closing string,
+	docs []pp.Doc,
+) pp.Doc {
+	if len(docs) == 0 {
+		return pp.Text(open + closing)
+	}
+	items := make([]pp.Doc, len(docs))
+	for i, d := range docs {
+		if i < len(docs)-1 {
+			items[i] = pp.Beside(d, pp.Text(","))
+		} else {
+			items[i] = d
+		}
+	}
+	return pp.Concat(pp.Text(open),
+		pp.Align(pp.Fill(pp.Empty(), items)), pp.Text(closing))
+}
+
+// conDoc lays out a datatype value such as "SOME 4"; an argument
+// that is not atomic is parenthesized, "SOME (SOME 4)".
+func (c *Config) conDoc(t *types.Named, v eval.Val,
+	depth int,
+) pp.Doc {
 	con, ok := v.(eval.Con)
 	if !ok {
-		b.WriteString("fn")
-		return
+		return pp.Text("fn")
 	}
-	b.WriteString(con.Name)
 	if con.Arg == nil {
-		return
+		return pp.Text(con.Name)
 	}
-	b.WriteString(" ")
 	argType := conArgType(t)
-	arg := formatValue(con.Arg, argType)
-	if _, isCon := con.Arg.(eval.Con); isCon &&
-		strings.Contains(arg, " ") {
-		arg = "(" + arg + ")"
+	argDoc := c.valueDoc(argType, con.Arg, depth+1)
+	if _, isPrim := argType.(*types.Primitive); !isPrim {
+		argDoc = pp.Concat(pp.Text("("), argDoc, pp.Text(")"))
 	}
-	b.WriteString(arg)
+	return pp.Concat(pp.Text(con.Name), pp.Text(" "), argDoc)
 }
 
 // conArgType is a placeholder until datatype values arrive: the
@@ -134,20 +173,120 @@ func conArgType(t *types.Named) types.Type {
 	return t
 }
 
+func (c *Config) primitiveString(t *types.Primitive,
+	v eval.Val,
+) string {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch t.String() {
+	case "bool":
+		v2, _ := v.(bool)
+		return strconv.FormatBool(v2)
+	case "char":
+		v2, _ := v.(rune)
+		return `#"` + escapeString(string(v2)) + `"`
+	case "int":
+		v2, _ := v.(int32)
+		return formatInt(v2)
+	case "real":
+		v2, _ := v.(float32)
+		return formatReal(v2)
+	case "string":
+		v2, _ := v.(string)
+		if c.StringDepth >= 0 && len(v2) > c.StringDepth {
+			return `"` + escapeString(v2[:c.StringDepth]) +
+				`#"`
+		}
+		return `"` + escapeString(v2) + `"`
+	default:
+		return "()"
+	}
+}
+
 // formatInt renders an int with Morel's negation sign: ~3.
 func formatInt(i int32) string {
 	return strings.ReplaceAll(strconv.FormatInt(int64(i), 10),
 		"-", "~")
 }
 
-// formatReal renders a real provisionally; exact java formatting
-// arrives with the pretty-printing engine.
+// formatReal renders a real the way java's Codes.floatToString
+// does, matching Standard ML's Real.toString: the shortest
+// decimal digits that round-trip the float32; plain decimal
+// notation for magnitudes in [1e-3, 1e7) and scientific notation
+// otherwise; a trailing ".0" dropped (1.0 prints as "1", 1.0e10
+// as "1E10"); and "~" for minus, in exponents too.
 func formatReal(f float32) string {
-	s := strconv.FormatFloat(float64(f), 'g', -1, 32)
-	if !strings.ContainsAny(s, ".eE") {
-		s += ".0"
+	f64 := float64(f)
+	switch {
+	case math.IsNaN(f64):
+		return "nan"
+	case math.IsInf(f64, 1):
+		return "inf"
+	case math.IsInf(f64, -1):
+		return "~inf"
 	}
-	return strings.ReplaceAll(s, "-", "~")
+	s := strconv.FormatFloat(f64, 'E', -1, 32)
+	mantissa, expText, _ := strings.Cut(s, "E")
+	exp, err := strconv.Atoi(expText)
+	if err != nil {
+		return s
+	}
+	neg := strings.HasPrefix(mantissa, "-")
+	digits := strings.ReplaceAll(
+		strings.TrimPrefix(mantissa, "-"), ".", "")
+	var b strings.Builder
+	if neg {
+		b.WriteString("~")
+	}
+	const loExp, hiExp = -3, 7
+	if exp >= loExp && exp < hiExp {
+		writeDecimal(&b, digits, exp)
+	} else {
+		writeScientific(&b, digits, exp)
+	}
+	// Real.minPos: SML reports 1.4E~45, though "1E~45" denotes
+	// the same float.
+	result := b.String()
+	if strings.HasSuffix(result, "1E~45") {
+		result = strings.Replace(result, "1E~45", "1.4E~45", 1)
+	}
+	return result
+}
+
+// writeDecimal renders digits with the decimal point after the
+// digit at position exp: digits "15" with exp 0 is "1.5", digits
+// "1" with exp -3 is "0.001", digits "1" with exp 2 is "100".
+func writeDecimal(b *strings.Builder, digits string, exp int) {
+	if exp < 0 {
+		b.WriteString("0.")
+		b.WriteString(strings.Repeat("0", -exp-1))
+		b.WriteString(digits)
+		return
+	}
+	if len(digits) <= exp+1 {
+		b.WriteString(digits)
+		b.WriteString(strings.Repeat("0", exp+1-len(digits)))
+		return
+	}
+	b.WriteString(digits[:exp+1])
+	b.WriteString(".")
+	b.WriteString(digits[exp+1:])
+}
+
+// writeScientific renders "d.dddEx", dropping a ".0" mantissa
+// ("1E10" rather than "1.0E10") and using "~" for a negative
+// exponent.
+func writeScientific(b *strings.Builder, digits string, exp int) {
+	b.WriteString(digits[:1])
+	if len(digits) > 1 {
+		b.WriteString(".")
+		b.WriteString(digits[1:])
+	}
+	b.WriteString("E")
+	if exp < 0 {
+		b.WriteString("~")
+		exp = -exp
+	}
+	b.WriteString(strconv.Itoa(exp))
 }
 
 func asVals(v eval.Val) []eval.Val {
