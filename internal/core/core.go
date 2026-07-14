@@ -132,6 +132,25 @@ func (t *Tuple) Type() types.Type { return t.T }
 
 func (*Tuple) exp() {}
 
+// Con is a reference to a datatype constructor: a value (for a
+// constant constructor such as NONE) or a function that wraps
+// its argument (SOME).
+type Con struct {
+	T        types.Type
+	Datatype string
+	Name     string
+	Ordinal  int
+	HasArg   bool
+}
+
+// Op implements Exp.
+func (*Con) Op() ast.Op { return ast.IDOp }
+
+// Type implements Exp.
+func (c *Con) Type() types.Type { return c.T }
+
+func (*Con) exp() {}
+
 // List is a list value, "[e1, e2, ...]".
 type List struct {
 	T    types.Type
@@ -241,6 +260,9 @@ func PatIDs(p Pat) []*IDPat {
 func walkPat(p Pat, ids *[]*IDPat) {
 	// lint: sort until '^	}' where '^	case '
 	switch p := p.(type) {
+	case *Con0Pat:
+	case *ConPat:
+		walkPat(p.Arg, ids)
 	case *ConsPat:
 		walkPat(p.Head, ids)
 		walkPat(p.Tail, ids)
@@ -302,6 +324,39 @@ func (*ConsPat) Op() ast.Op { return ast.ConsPatOp }
 func (p *ConsPat) Type() types.Type { return p.T }
 
 func (*ConsPat) pat() {}
+
+// Con0Pat matches a constant constructor, e.g. "NONE".
+type Con0Pat struct {
+	T        types.Type
+	Datatype string
+	Name     string
+	Ordinal  int
+}
+
+// Op implements Pat.
+func (*Con0Pat) Op() ast.Op { return ast.ConPatOp }
+
+// Type implements Pat.
+func (p *Con0Pat) Type() types.Type { return p.T }
+
+func (*Con0Pat) pat() {}
+
+// ConPat matches a constructor application, e.g. "SOME x".
+type ConPat struct {
+	T        types.Type
+	Datatype string
+	Name     string
+	Ordinal  int
+	Arg      Pat
+}
+
+// Op implements Pat.
+func (*ConPat) Op() ast.Op { return ast.ConPatOp }
+
+// Type implements Pat.
+func (p *ConPat) Type() types.Type { return p.T }
+
+func (*ConPat) pat() {}
 
 // NonRecValDecl is a non-recursive value declaration. Span
 // covers the pattern through the expression, where a Bind

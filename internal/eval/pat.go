@@ -47,6 +47,34 @@ func (p SlotPat) Match(v Val, f *Frame) bool {
 	return true
 }
 
+// Con0Pat matches a constant constructor value.
+type Con0Pat struct {
+	Datatype string
+	Ordinal  int
+}
+
+// Match implements Pat.
+func (p Con0Pat) Match(v Val, _ *Frame) bool {
+	con, ok := v.(Con)
+	return ok && con.Datatype == p.Datatype &&
+		con.Ordinal == p.Ordinal
+}
+
+// ConAppPat matches a constructor application, binding its
+// argument.
+type ConAppPat struct {
+	Arg      Pat
+	Datatype string
+	Ordinal  int
+}
+
+// Match implements Pat.
+func (p ConAppPat) Match(v Val, f *Frame) bool {
+	con, ok := v.(Con)
+	return ok && con.Datatype == p.Datatype &&
+		con.Ordinal == p.Ordinal && p.Arg.Match(con.Arg, f)
+}
+
 // ConsPat matches a non-empty list, binding its head and tail.
 type ConsPat struct {
 	Head Pat

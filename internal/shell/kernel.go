@@ -59,6 +59,10 @@ type Config struct {
 	PrintLength int
 	PrintDepth  int
 	StringDepth int
+
+	// sys resolves datatype constructors when printing their
+	// values.
+	sys *types.System
 }
 
 // Kernel executes statements and holds the state that persists
@@ -88,12 +92,11 @@ func NewKernel(name string) *Kernel {
 	for name, fn := range eval.Builtins {
 		values[name] = fn
 	}
-	values["true"] = true
-	values["false"] = false
-	values["nil"] = []eval.Val{}
+	config := DefaultConfig()
+	config.sys = sys
 	return &Kernel{
 		name:     name,
-		config:   DefaultConfig(),
+		config:   config,
 		sys:      sys,
 		bindings: bindings,
 		values:   values,
@@ -167,6 +170,12 @@ func (k *Kernel) executeStatement(n ast.Node) string {
 	resolved, err := compile.Deduce(k.sys, k.bindings, decl)
 	if err != nil {
 		return formatCompileError(err)
+	}
+	datatypeDecl, isDatatype := resolved.Decl.(*ast.DatatypeDecl)
+	if isDatatype {
+		// The declaration registered its datatype and
+		// constructors in the type system; the shell echoes it.
+		return ast.UnparseDatatypeDecl(datatypeDecl)
 	}
 	coreDecl, err := compile.Resolve(resolved)
 	if err != nil {

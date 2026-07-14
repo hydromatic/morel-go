@@ -697,16 +697,7 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 		r.reg(exp, v)
 		return nil
 	case *ast.ID:
-		term, ok := env.get(r, e.Name)
-		if !ok {
-			return &Error{
-				Span: e.Span(),
-				Msg: "unbound variable or constructor: " +
-					e.Name,
-			}
-		}
-		r.regEquiv(exp, v, term)
-		return nil
+		return r.deduceID(env, e, v)
 	case *ast.If:
 		return r.deduceIf(env, e, v)
 	case *ast.InfixCall:
@@ -772,6 +763,32 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 	}
 }
 
+// deduceID types a variable reference. A datatype constructor is
+// usable as a value even if nothing bound it (e.g. it was
+// declared by an earlier statement's datatype declaration).
+func (r *typeResolver) deduceID(env typeEnv, id *ast.ID,
+	v *unify.Var,
+) error {
+	term, ok := env.get(r, id.Name)
+	if !ok {
+		tc, isCon := r.sys.LookupTyCon(id.Name)
+		if !isCon {
+			return &Error{
+				Span: id.Span(),
+				Msg: "unbound variable or constructor: " +
+					id.Name,
+			}
+		}
+		conType := tc.Result
+		if tc.Arg != nil {
+			conType = r.sys.Fn(tc.Arg, tc.Result)
+		}
+		term = r.typeTerm(conType, map[int]*unify.Var{})
+	}
+	r.regEquiv(id, v, term)
+	return nil
+}
+
 // deduceLiteral handles literal expressions and literal patterns,
 // whose types depend only on the literal kind.
 func (r *typeResolver) deduceLiteral(node ast.Node, kind ast.Op,
@@ -781,7 +798,7 @@ func (r *typeResolver) deduceLiteral(node ast.Node, kind ast.Op,
 	// lint: sort until '^\t}' where '^\tcase '
 	switch kind {
 	case ast.BoolLiteralOp:
-		name = "bool"
+		name = boolName
 	case ast.CharLiteralOp, ast.CharLiteralPatOp:
 		name = "char"
 	case ast.IntLiteralOp, ast.IntLiteralPatOp:
@@ -1055,7 +1072,7 @@ func (r *typeResolver) deduceInfix(env typeEnv, call *ast.InfixCall,
 		if err != nil {
 			return err
 		}
-		r.regEquiv(call, v, r.primTerm("bool"))
+		r.regEquiv(call, v, r.primTerm(boolName))
 		return nil
 	default:
 		name, ok := infixOpNames[call.Kind]
@@ -1100,7 +1117,7 @@ func (r *typeResolver) deduceIf(env typeEnv, ifExp *ast.If,
 	if err != nil {
 		return err
 	}
-	r.equiv(vCond, r.primTerm("bool"))
+	r.equiv(vCond, r.primTerm(boolName))
 	err = r.deduceExp(env, ifExp.IfTrue, v)
 	if err != nil {
 		return err

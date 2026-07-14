@@ -43,6 +43,7 @@ const (
 	opNegate   = "op ~"
 	comparison = "'a * 'a -> bool"
 	realToInt  = "real -> int"
+	boolName   = "bool"
 	intName    = "int"
 	realName   = "real"
 )

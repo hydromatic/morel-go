@@ -132,6 +132,48 @@ func (s *System) Named(name string, args ...Type) Type {
 	})
 }
 
+// Substitute replaces each type variable with the argument at
+// its ordinal, e.g. substituting ['b] into "'a option" gives
+// "'b option".
+func (s *System) Substitute(t Type, args []Type) Type {
+	// lint: sort until '^	}' where '^	case '
+	switch t := t.(type) {
+	case *Fn:
+		return s.Fn(s.Substitute(t.Param, args),
+			s.Substitute(t.Result, args))
+	case *List:
+		return s.List(s.Substitute(t.Elem, args))
+	case *Named:
+		args2 := make([]Type, len(t.Args))
+		for i, arg := range t.Args {
+			args2[i] = s.Substitute(arg, args)
+		}
+		return s.Named(t.Name, args2...)
+	case *Record:
+		fields := make([]Field, len(t.Fields))
+		for i, f := range t.Fields {
+			fields[i] = Field{
+				Label: f.Label,
+				Type:  s.Substitute(f.Type, args),
+			}
+		}
+		return s.Record(fields)
+	case *Tuple:
+		args2 := make([]Type, len(t.Args))
+		for i, arg := range t.Args {
+			args2[i] = s.Substitute(arg, args)
+		}
+		return s.Tuple(args2...)
+	case *Var:
+		if t.Ordinal < len(args) {
+			return args[t.Ordinal]
+		}
+		return t
+	default:
+		return t
+	}
+}
+
 // Var returns the type variable with the given ordinal.
 func (s *System) Var(ordinal int) Type {
 	name := varName(ordinal)
