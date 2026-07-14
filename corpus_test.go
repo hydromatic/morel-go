@@ -23,18 +23,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hydromatic/morel-go/internal/parse"
 	"github.com/hydromatic/morel-go/internal/shell"
-	"github.com/hydromatic/morel-go/internal/token"
 )
-
-// blank reports whether src contains only whitespace and
-// comments.
-func blank(src string) bool {
-	l := parse.NewLexer("rest", src)
-	tok, err := l.Next()
-	return err == nil && tok.Kind == token.EOF
-}
 
 // TestSplitCorpus splits every morel-java script, with expected
 // output lines stripped as the script harness will strip them;
@@ -79,7 +69,7 @@ func splitFile(t *testing.T, f, name string) int {
 		t.Errorf("%s: %v", name, err)
 		return 0
 	}
-	if !blank(rest) {
+	if !shell.Blank(name, rest) {
 		t.Errorf("%s: %d stmts, incomplete rest: %.60q",
 			name, len(stmts), rest)
 	}

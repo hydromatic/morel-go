@@ -16,16 +16,24 @@
 // License.
 
 // Command morel is an interpreter for Morel, a functional query
-// language.
+// language. It reads statements from standard input and writes
+// their output to standard output.
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+
+	"github.com/hydromatic/morel-go/internal/shell"
+)
 
 func main() {
-	const a, b = 3, 4
-	fmt.Printf("Hi, %d\n", add(a, b))
-}
-
-func add(a, b int) int {
-	return a + b
+	kernel := shell.NewKernel("stdIn")
+	runner := shell.NewRunner(kernel, os.Stdin, os.Stdout,
+		"stdIn")
+	err := runner.Run()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
