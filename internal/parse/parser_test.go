@@ -216,6 +216,70 @@ func TestParsePatterns(t *testing.T) {
 		"(fn (match (cons_pat (a :: b) :: c) (int_literal 1)))")
 }
 
+func checkDecl(t *testing.T, src, want string) {
+	t.Helper()
+	n, err := parse.DeclOrExpr("stdIn", src)
+	if err != nil {
+		t.Fatalf("DeclOrExpr(%q): %v", src, err)
+	}
+	if got := ast.Dump(n); got != want {
+		t.Errorf("DeclOrExpr(%q):\n got %s\nwant %s",
+			src, got, want)
+	}
+}
+
+func TestParseValDecl(t *testing.T) {
+	checkDecl(t, "val x = 1",
+		"(val (valBind (idPat x) (int_literal 1)))")
+	checkDecl(t, "val rec f = fn x => x",
+		"(val rec (valBind (idPat f) "+
+			"(fn (match (idPat x) (id x)))))")
+	checkDecl(t, "val x = 1 and y = 2",
+		"(val (valBind (idPat x) (int_literal 1)) "+
+			"(valBind (idPat y) (int_literal 2)))")
+	checkDecl(t, "val (a, b) = p",
+		"(val (valBind (tuplePat (idPat a) (idPat b)) (id p)))")
+	// The first "=" binds; later ones are operators.
+	checkDecl(t, "val b = 1 = 2",
+		"(val (valBind (idPat b) "+
+			"(eq (int_literal 1) (int_literal 2))))")
+}
+
+func TestParseFunDecl(t *testing.T) {
+	checkDecl(t, "fun f x = x",
+		"(fun (funBind (funMatch f (idPat x) (id x))))")
+	checkDecl(t, "fun f 0 = 1 | f x = x + 1",
+		"(fun (funBind "+
+			"(funMatch f (int_literal_pat 0) (int_literal 1)) "+
+			"(funMatch f (idPat x) "+
+			"(plus (id x) (int_literal 1)))))")
+	checkDecl(t, "fun f x y = x",
+		"(fun (funBind (funMatch f (idPat x) (idPat y) (id x))))")
+	checkDecl(t, "fun add (a, b) = a + b",
+		"(fun (funBind (funMatch add "+
+			"(tuplePat (idPat a) (idPat b)) "+
+			"(plus (id a) (id b)))))")
+	checkDecl(t, "fun f x = x and g y = y",
+		"(fun (funBind (funMatch f (idPat x) (id x))) "+
+			"(funBind (funMatch g (idPat y) (id y))))")
+}
+
+func TestParseLet(t *testing.T) {
+	checkExpr(t, "let val x = 1 in x end",
+		"(let (val (valBind (idPat x) (int_literal 1))) (id x))")
+	// Declarations may be separated by ";" or nothing.
+	checkExpr(t, "let val x = 1; val y = 2 in x + y end",
+		"(let (val (valBind (idPat x) (int_literal 1))) "+
+			"(val (valBind (idPat y) (int_literal 2))) "+
+			"(plus (id x) (id y)))")
+	checkExpr(t, "let val x = 1 val y = 2 in x end",
+		"(let (val (valBind (idPat x) (int_literal 1))) "+
+			"(val (valBind (idPat y) (int_literal 2))) (id x))")
+	checkExpr(t, "let fun f x = x in f 1 end",
+		"(let (fun (funBind (funMatch f (idPat x) (id x)))) "+
+			"(apply (id f) (int_literal 1)))")
+}
+
 func TestStmt(t *testing.T) {
 	e, err := parse.Stmt("stdIn", "f 1;")
 	if err != nil {
@@ -250,4 +314,69 @@ func TestUnquote(t *testing.T) {
 				text, got, want)
 		}
 	}
+}
+
+func TestParseTypeAnnotations(t *testing.T) {
+	checkExpr(t, "1 : int",
+		"(annotatedExp (int_literal 1) (named int))")
+	// ":" binds loosest.
+	checkExpr(t, "1 + 2 : int",
+		"(annotatedExp (plus (int_literal 1) (int_literal 2)) "+
+			"(named int))")
+	checkExpr(t, "x : int list",
+		"(annotatedExp (id x) (named list (named int)))")
+	//nolint:dupword // "list list" is a Morel type
+	checkExpr(t, "x : int list list",
+		"(annotatedExp (id x) "+
+			"(named list (named list (named int))))")
+	checkExpr(t, "f : int -> int -> int",
+		"(annotatedExp (id f) (fnType (named int) "+
+			"(fnType (named int) (named int))))")
+	checkExpr(t, "x : int * bool * int",
+		"(annotatedExp (id x) (tupleType (named int) "+
+			"(named bool) (named int)))")
+	checkExpr(t, "x : {a: int, b: string}",
+		"(annotatedExp (id x) (record_type {a: int, b: string}))")
+	checkExpr(t, "x : 'a",
+		"(annotatedExp (id x) (tyVar 'a))")
+	checkExpr(t, "x : ('a, 'b) pair",
+		"(annotatedExp (id x) (named pair (tyVar 'a) "+
+			"(tyVar 'b)))")
+	checkExpr(t, "x : (int -> int) list",
+		"(annotatedExp (id x) (named list "+
+			"(fnType (named int) (named int))))")
+	checkExpr(t, "x : unit",
+		"(annotatedExp (id x) (named unit))")
+}
+
+func TestParseAnnotatedPatterns(t *testing.T) {
+	checkExpr(t, "fn (x : int) => x",
+		"(fn (match (annotatedPat (idPat x) (named int)) "+
+			"(id x)))")
+	checkDecl(t, "val x : int = 1",
+		"(val (valBind (annotatedPat (idPat x) (named int)) "+
+			"(int_literal 1)))")
+	checkDecl(t, "fun f (x : int) : int = x",
+		"(fun (funBind (funMatch f "+
+			"(annotatedPat (idPat x) (named int)) (named int) "+
+			"(id x))))")
+}
+
+func TestParseDatatypeDecl(t *testing.T) {
+	checkDecl(t, "datatype color = RED | GREEN",
+		"(datatype_decl datatype color = RED | GREEN)")
+	checkDecl(t, "datatype tree = LEAF of int | NODE of tree * tree",
+		"(datatype_decl datatype tree = LEAF of int "+
+			"| NODE of tree * tree)")
+	checkDecl(t, "datatype 'a opt = N | S of 'a",
+		"(datatype_decl datatype 'a opt = N | S of 'a)")
+	checkDecl(t, "datatype ('a, 'b) pair = P of 'a * 'b",
+		"(datatype_decl datatype ('a, 'b) pair = P of 'a * 'b)")
+	checkDecl(t, "datatype d = A | B and e = C",
+		"(datatype_decl datatype d = A | B and e = C)")
+}
+
+func TestParseTypeDecl(t *testing.T) {
+	checkDecl(t, "type point = int * int",
+		"(type_decl type point = int * int)")
 }

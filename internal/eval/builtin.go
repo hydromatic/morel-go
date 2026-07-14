@@ -39,16 +39,16 @@ var Builtins = map[string]Fn{
 	"Sys.parseTree": parseTree,
 }
 
-// parseTree parses its argument as an expression and returns the
-// S-expression form of the parse tree.
+// parseTree parses its argument as a declaration or expression
+// and returns the S-expression form of the parse tree.
 func parseTree(arg Val) (Val, error) {
 	s, ok := arg.(string)
 	if !ok {
 		panic("parseTree: argument is not a string")
 	}
-	e, err := parse.Expr("parseTree", s)
+	n, err := parse.DeclOrExpr("parseTree", s)
 	if err != nil {
 		return nil, err
 	}
-	return ast.Dump(e), nil
+	return ast.Dump(n), nil
 }
