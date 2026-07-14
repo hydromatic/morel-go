@@ -64,6 +64,40 @@ func TestExecute(t *testing.T) {
 				"val it = 5 : int",
 			},
 		}},
+		{"ifAndCase", [][2]string{
+			{"if true then 1 else 2;", "val it = 1 : int"},
+			{"if false then 1 else 2;", "val it = 2 : int"},
+			{"if not true then 1 else 2;", "val it = 2 : int"},
+			{
+				"if true then (if false then 1 else 2) else 3;",
+				"val it = 2 : int",
+			},
+			{
+				`case 3 of 0 => "zero" | _ => "nonzero";`,
+				`val it = "nonzero" : string`,
+			},
+			{
+				`case 0 of 0 => "zero" | _ => "nonzero";`,
+				`val it = "zero" : string`,
+			},
+			{"case 42 of n => n;", "val it = 42 : int"},
+			{"case 7 of 0 => 0 | n => n;", "val it = 7 : int"},
+			{
+				`case "a" of "a" => 1 | _ => 2;`,
+				"val it = 1 : int",
+			},
+			{"val n = 5;", "val n = 5 : int"},
+			{
+				"case n of 5 => true | _ => false;",
+				"val it = true : bool",
+			},
+		}},
+		{"negate", [][2]string{
+			{"~5;", "val it = ~5 : int"},
+			{"~2.5;", "val it = ~2.5 : real"},
+			{"abs (~5);", "val it = 5 : int"},
+			{"if true then ~1 else 1;", "val it = ~1 : int"},
+		}},
 		{"itOnlyOnSuccess", [][2]string{
 			{"val y = 7;", "val y = 7 : int"},
 			{"y;", "val it = 7 : int"},

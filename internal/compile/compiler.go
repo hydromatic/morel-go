@@ -79,6 +79,8 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 			return nil, err
 		}
 		return eval.Apply(fn, arg), nil
+	case *core.Case:
+		return c.compileCase(e)
 	case *core.ID:
 		if slot, ok := c.slots[e.Pat]; ok {
 			return eval.GetSlot(slot, e.Pat.Name), nil
@@ -94,6 +96,54 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 	default:
 		return nil, &Error{
 			Msg: "cannot compile " + exp.Op().String(),
+		}
+	}
+}
+
+func (c *compiler) compileCase(caseExp *core.Case) (eval.Code,
+	error,
+) {
+	scrutinee, err := c.compileExp(caseExp.Exp)
+	if err != nil {
+		return nil, err
+	}
+	clauses := make([]eval.MatchClause, len(caseExp.Matches))
+	for i, m := range caseExp.Matches {
+		pat, err := c.compilePat(m.Pat)
+		if err != nil {
+			return nil, err
+		}
+		body, err := c.compileExp(m.Exp)
+		if err != nil {
+			return nil, err
+		}
+		clauses[i] = eval.MatchClause{Pat: pat, Body: body}
+	}
+	return eval.Case(scrutinee, clauses), nil
+}
+
+// compilePat compiles a pattern, allocating a slot for each name
+// it binds.
+func (c *compiler) compilePat(pat core.Pat) (eval.Pat, error) {
+	for _, id := range core.PatIDs(pat) {
+		c.slots[id] = c.nSlots
+		c.nSlots++
+	}
+	return c.patCode(pat)
+}
+
+func (c *compiler) patCode(pat core.Pat) (eval.Pat, error) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch p := pat.(type) {
+	case *core.IDPat:
+		return eval.SlotPat{Slot: c.slots[p]}, nil
+	case *core.LiteralPat:
+		return eval.LiteralPat{V: p.Value}, nil
+	case *core.WildcardPat:
+		return eval.WildcardPat{}, nil
+	default:
+		return nil, &Error{
+			Msg: "cannot compile pattern " + pat.Op().String(),
 		}
 	}
 }

@@ -191,6 +191,24 @@ func (p *LiteralPat) Type() types.Type { return p.T }
 
 func (*LiteralPat) pat() {}
 
+// PatIDs returns the IDPats that a pattern binds, in
+// left-to-right order. It is the single utility for collecting a
+// pattern's names — everywhere that binds, captures, or allocates
+// pattern variables walks the pattern through here.
+func PatIDs(p Pat) []*IDPat {
+	var ids []*IDPat
+	walkPat(p, &ids)
+	return ids
+}
+
+func walkPat(p Pat, ids *[]*IDPat) {
+	switch p := p.(type) {
+	case *IDPat:
+		*ids = append(*ids, p)
+	case *LiteralPat, *WildcardPat:
+	}
+}
+
 // NonRecValDecl is a non-recursive value declaration binding one
 // name.
 type NonRecValDecl struct {

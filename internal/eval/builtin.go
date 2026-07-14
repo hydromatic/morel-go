@@ -74,6 +74,7 @@ var Builtins = map[string]Fn{
 	"abs":           absFn,
 	"chr":           chrFn,
 	"not":           notFn,
+	"op ~":          negFn,
 	"ord":           ordFn,
 	"size":          sizeFn,
 	"str":           strFn,
@@ -140,6 +141,22 @@ func chrFn(arg Val) (Val, error) {
 	// rune and int32 are one type; the result is a char only
 	// statically.
 	return i, nil
+}
+
+// negFn is "~ x". It is overloaded on int and real, so it
+// switches on the runtime type.
+func negFn(arg Val) (Val, error) {
+	switch v := arg.(type) {
+	case int32:
+		if v == math.MinInt32 {
+			return nil, &MorelError{Exn: "Overflow"}
+		}
+		return -v, nil
+	case float32:
+		return -v, nil
+	default:
+		panic(fmt.Sprintf("expected int or real, got %T", arg))
+	}
 }
 
 // notFn is "not b".
