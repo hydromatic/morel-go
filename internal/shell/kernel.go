@@ -18,6 +18,7 @@
 package shell
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/hydromatic/morel-go/internal/ast"
@@ -30,8 +31,34 @@ import (
 	"github.com/hydromatic/morel-go/lib"
 )
 
-// Config holds the session properties.
-type Config struct{}
+// Default values of the printing properties.
+const (
+	defaultLineWidth   = 79
+	defaultPrintLength = 12
+	defaultPrintDepth  = 5
+	defaultStringDepth = 70
+)
+
+// DefaultConfig returns the default session properties.
+func DefaultConfig() Config {
+	return Config{
+		LineWidth:   defaultLineWidth,
+		PrintLength: defaultPrintLength,
+		PrintDepth:  defaultPrintDepth,
+		StringDepth: defaultStringDepth,
+	}
+}
+
+// Config holds the session properties that control printing:
+// the width at which lines wrap, the list length and value depth
+// at which ellipsis begins, and the string length at which
+// truncation begins. A negative value means no limit.
+type Config struct {
+	LineWidth   int
+	PrintLength int
+	PrintDepth  int
+	StringDepth int
+}
 
 // Kernel executes statements and holds the state that persists
 // between them: the configuration, the type system, and the
@@ -64,6 +91,7 @@ func NewKernel(name string) *Kernel {
 	values["false"] = false
 	return &Kernel{
 		name:     name,
+		config:   DefaultConfig(),
 		sys:      sys,
 		bindings: bindings,
 		values:   values,
@@ -98,8 +126,7 @@ func (k *Kernel) Execute(stmt string) string {
 		return k.executeStatement(n)
 	}
 	if fn == "Sys.set" {
-		// Session properties do not yet affect anything, so
-		// setting one is a no-op.
+		k.setProp(arg)
 		return "val it = () : unit"
 	}
 	lit, isString := arg.(*ast.Literal)
@@ -144,8 +171,57 @@ func (k *Kernel) executeStatement(n ast.Node) string {
 	pat := compiled.Pat
 	k.bind(pat.Name, pat.T)
 	k.values[pat.Name] = v
-	return "val " + pat.Name + " = " + formatValue(v, pat.T) +
-		" : " + pat.T.String()
+	return k.config.prettyBinding(pat.Name, v, pat.T)
+}
+
+// setProp handles `Sys.set ("name", value)` for the integer
+// printing properties; anything else is ignored for now.
+func (k *Kernel) setProp(arg ast.Expr) {
+	tuple, ok := arg.(*ast.Tuple)
+	if !ok || len(tuple.Args) != 2 {
+		return
+	}
+	nameLit, ok := tuple.Args[0].(*ast.Literal)
+	if !ok || nameLit.Kind != ast.StringLiteralOp {
+		return
+	}
+	value, ok := intValue(tuple.Args[1])
+	if !ok {
+		return
+	}
+	// lint: sort until '^	}' where '^	case '
+	switch nameLit.Value {
+	case "lineWidth":
+		k.config.LineWidth = value
+	case "printDepth":
+		k.config.PrintDepth = value
+	case "printLength":
+		k.config.PrintLength = value
+	case "stringDepth":
+		k.config.StringDepth = value
+	}
+}
+
+// intValue evaluates an integer literal, possibly negated.
+func intValue(e ast.Expr) (int, bool) {
+	neg := false
+	if prefix, ok := e.(*ast.PrefixCall); ok &&
+		prefix.Kind == ast.NegateOp {
+		neg = true
+		e = prefix.A
+	}
+	lit, ok := e.(*ast.Literal)
+	if !ok || lit.Kind != ast.IntLiteralOp {
+		return 0, false
+	}
+	i, err := strconv.Atoi(lit.Value)
+	if err != nil {
+		return 0, false
+	}
+	if neg {
+		i = -i
+	}
+	return i, true
 }
 
 // executeTypeOnly type-checks a statement, prints each binding as
