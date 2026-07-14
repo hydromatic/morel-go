@@ -234,3 +234,76 @@ func NewPrefixCall(span token.Span, kind Op, a Expr) *PrefixCall {
 
 // Op implements Node.
 func (c *PrefixCall) Op() Op { return c.Kind }
+
+// If is a conditional expression.
+type If struct {
+	exprBase
+
+	Cond    Expr
+	IfTrue  Expr
+	IfFalse Expr
+}
+
+// NewIf returns a conditional expression.
+func NewIf(span token.Span, cond, ifTrue, ifFalse Expr) *If {
+	return &If{
+		exprBase: exprBase{base{span}},
+		Cond:     cond,
+		IfTrue:   ifTrue,
+		IfFalse:  ifFalse,
+	}
+}
+
+// Op implements Node.
+func (*If) Op() Op { return IfOp }
+
+// Match is one rule of a fn or case: a pattern and its result.
+type Match struct {
+	base
+
+	Pat Pat
+	Exp Expr
+}
+
+// NewMatch returns a match rule.
+func NewMatch(span token.Span, pat Pat, exp Expr) *Match {
+	return &Match{base: base{span}, Pat: pat, Exp: exp}
+}
+
+// Op implements Node.
+func (*Match) Op() Op { return MatchOp }
+
+// Fn is a function expression, "fn match | match ...".
+type Fn struct {
+	exprBase
+
+	Matches []*Match
+}
+
+// NewFn returns a function expression.
+func NewFn(span token.Span, matches []*Match) *Fn {
+	return &Fn{exprBase: exprBase{base{span}}, Matches: matches}
+}
+
+// Op implements Node.
+func (*Fn) Op() Op { return FnOp }
+
+// Case is a case expression, "case e of match | match ...".
+type Case struct {
+	exprBase
+
+	Exp     Expr
+	Matches []*Match
+}
+
+// NewCase returns a case expression.
+func NewCase(span token.Span, exp Expr, matches []*Match) *Case {
+	return &Case{
+		exprBase: exprBase{base{span}},
+		Exp:      exp,
+		Matches:  matches,
+	}
+}
+
+// Op implements Node.
+func (*Case) Op() Op { return CaseOp }

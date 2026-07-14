@@ -164,6 +164,58 @@ func TestParseNegate(t *testing.T) {
 	checkExpr(t, "~ 1", "(negate (int_literal 1))")
 }
 
+func TestParseIf(t *testing.T) {
+	checkExpr(t, "if a then b else c",
+		"(if (id a) (id b) (id c))")
+	// A conditional can be an operand.
+	checkExpr(t, "2 * if a then b else c",
+		"(times (int_literal 2) (if (id a) (id b) (id c)))")
+	checkExpr(t, "1 + case x of _ => 2",
+		"(plus (int_literal 1) "+
+			"(case (id x) (match wildcard (int_literal 2))))")
+}
+
+func TestParseFn(t *testing.T) {
+	checkExpr(t, "fn x => x", "(fn (match (idPat x) (id x)))")
+	checkExpr(t, "fn _ => 1",
+		"(fn (match wildcard (int_literal 1)))")
+	checkExpr(t, "fn 0 => 1 | x => x",
+		"(fn (match (int_literal_pat 0) (int_literal 1)) "+
+			"(match (idPat x) (id x)))")
+	// The body extends as far right as possible.
+	checkExpr(t, "fn x => x + 1",
+		"(fn (match (idPat x) (plus (id x) (int_literal 1))))")
+}
+
+func TestParseCase(t *testing.T) {
+	checkExpr(t, "case x of 0 => 1 | _ => 2",
+		"(case (id x) "+
+			"(match (int_literal_pat 0) (int_literal 1)) "+
+			"(match wildcard (int_literal 2)))")
+}
+
+func TestParsePatterns(t *testing.T) {
+	checkExpr(t, "fn (a, b) => a",
+		"(fn (match (tuplePat (idPat a) (idPat b)) (id a)))")
+	// The unit pattern is an empty tuple pattern.
+	checkExpr(t, "fn () => 1",
+		"(fn (match (tuplePat) (int_literal 1)))")
+	checkExpr(t, "fn x :: xs => x",
+		"(fn (match (cons_pat x :: xs) (id x)))")
+	checkExpr(t, "fn [a, b] => a",
+		"(fn (match (list_pat [a, b]) (id a)))")
+	checkExpr(t, "fn {a, b} => a",
+		"(fn (match (record_pat {a = a, b = b}) (id a)))")
+	checkExpr(t, "fn {a = p} => p",
+		"(fn (match (record_pat {a = p}) (id p)))")
+	checkExpr(t, "fn {a, ...} => a",
+		"(fn (match (record_pat {a = a, ...}) (id a)))")
+	checkExpr(t, "fn all as (a, b) => a",
+		"(fn (match (as_pat all as (a, b)) (id a)))")
+	checkExpr(t, "fn (a :: b) :: c => 1",
+		"(fn (match (cons_pat (a :: b) :: c) (int_literal 1)))")
+}
+
 func TestStmt(t *testing.T) {
 	e, err := parse.Stmt("stdIn", "f 1;")
 	if err != nil {
