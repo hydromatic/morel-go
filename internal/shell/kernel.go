@@ -45,12 +45,21 @@ type Kernel struct {
 // is used in error messages.
 func NewKernel(name string) *Kernel {
 	sys := types.NewSystem()
+	// Until built-in signatures are loaded from lib/*.sig, seed
+	// the environment with the bool and option constructors.
+	sys.DeclareDatatype("option", 1)
+	a := sys.Var(0)
+	option := sys.Named("option", a)
+	sys.DeclareTyCon("NONE", nil, option)
+	sys.DeclareTyCon("SOME", a, option)
 	return &Kernel{
 		name: name,
 		sys:  sys,
 		bindings: []compile.Binding{
 			{Name: "true", Type: sys.Bool},
 			{Name: "false", Type: sys.Bool},
+			{Name: "NONE", Type: option},
+			{Name: "SOME", Type: sys.Fn(a, option)},
 		},
 	}
 }

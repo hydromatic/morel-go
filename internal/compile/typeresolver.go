@@ -79,10 +79,10 @@ func Deduce(sys *types.System, bindings []Binding,
 	return &Resolved{Decl: decl2, TypeMap: typeMap}, nil
 }
 
-// patTerm records that a pattern binds a name to a term; the
+// patTerm records that a declaration binds a name to a term; the
 // caller adds the name to the environment.
 type patTerm struct {
-	pat  *ast.IDPat
+	name string
 	term unify.Term
 }
 
@@ -141,6 +141,12 @@ func (r *typeResolver) typeTerm(t types.Type,
 			r.typeTerm(t.Result, subst))
 	case *types.List:
 		return unify.Apply(listTyCon, r.typeTerm(t.Elem, subst))
+	case *types.Named:
+		terms := make([]unify.Term, len(t.Args))
+		for i, arg := range t.Args {
+			terms[i] = r.typeTerm(arg, subst)
+		}
+		return unify.Apply(t.Name, terms...)
 	case *types.Primitive:
 		return r.u.Atom(t.String())
 	case *types.Record:
@@ -172,7 +178,10 @@ func (r *typeResolver) typeTerm(t types.Type,
 func (r *typeResolver) deduceDecl(env typeEnv, decl ast.Decl,
 	termMap *[]patTerm,
 ) (ast.Decl, error) {
+	// lint: sort until '^	}' where '^	case '
 	switch d := decl.(type) {
+	case *ast.DatatypeDecl:
+		return r.deduceDatatypeDecl(d, termMap)
 	case *ast.FunDecl:
 		return r.deduceValDecl(env, funToVal(d), termMap)
 	case *ast.ValDecl:
@@ -226,13 +235,95 @@ func (r *typeResolver) deduceValBind(env typeEnv,
 	return nil
 }
 
+// deduceConPat handles the application of a constructor to a
+// pattern, e.g. "SOME x". The constructor's argument and result
+// types share one instantiation, so "SOME x" has type
+// "'a option" where "x" has type "'a".
+func (r *typeResolver) deduceConPat(pat *ast.ConPat,
+	termMap *[]patTerm, v *unify.Var,
+) error {
+	tc, ok := r.sys.LookupTyCon(pat.Name)
+	if !ok || tc.Arg == nil {
+		return &Error{
+			Span: pat.Span(),
+			Msg: "unbound constructor: " +
+				pat.Name,
+		}
+	}
+	vArg := r.u.Variable()
+	err := r.deducePat(pat.Arg, termMap, nil, vArg)
+	if err != nil {
+		return err
+	}
+	subst := map[int]*unify.Var{}
+	r.equiv(vArg, r.typeTerm(tc.Arg, subst))
+	r.regEquiv(pat, v, r.typeTerm(tc.Result, subst))
+	return nil
+}
+
+// deduceDatatypeDecl registers the declared datatypes and their
+// constructors, and binds each constructor as a value. The
+// datatypes are registered before any constructor argument type
+// is converted, so constructors may refer to their own datatype
+// (or a sibling's) recursively.
+func (r *typeResolver) deduceDatatypeDecl(decl *ast.DatatypeDecl,
+	termMap *[]patTerm,
+) (ast.Decl, error) {
+	for _, b := range decl.Binds {
+		r.sys.DeclareDatatype(b.Name, len(b.TyVars))
+	}
+	for _, b := range decl.Binds {
+		args := make([]types.Type, len(b.TyVars))
+		tyVars := map[string]int{}
+		for i, tv := range b.TyVars {
+			args[i] = r.sys.Var(i)
+			tyVars[tv] = i
+		}
+		result := r.sys.Named(b.Name, args...)
+		for _, c := range b.Cons {
+			var argType types.Type
+			if c.Of != nil {
+				t, err := r.sys.FromAST(c.Of, tyVars)
+				if err != nil {
+					return nil, &Error{
+						Span: decl.Span(),
+						Msg:  err.Error(),
+					}
+				}
+				argType = t
+			}
+			r.sys.DeclareTyCon(c.Name, argType, result)
+			conType := result
+			if argType != nil {
+				conType = r.sys.Fn(argType, result)
+			}
+			*termMap = append(*termMap, patTerm{
+				name: c.Name,
+				term: r.typeTerm(conType, map[int]*unify.Var{}),
+			})
+		}
+	}
+	r.nodeTerm[decl] = r.primTerm("unit")
+	return decl, nil
+}
+
 func (r *typeResolver) deducePat(pat ast.Pat,
 	termMap *[]patTerm, labelNames []string, v *unify.Var,
 ) error {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch p := pat.(type) {
+	case *ast.ConPat:
+		return r.deduceConPat(p, termMap, v)
 	case *ast.IDPat:
-		*termMap = append(*termMap, patTerm{pat: p, term: v})
+		if tc, ok := r.sys.LookupTyCon(p.Name); ok {
+			// A constant constructor, e.g. NONE; it binds
+			// nothing.
+			r.regEquiv(pat, v,
+				r.typeTerm(tc.Result, map[int]*unify.Var{}))
+			return nil
+		}
+		*termMap = append(*termMap,
+			patTerm{name: p.Name, term: v})
 		r.reg(pat, v)
 		return nil
 	case *ast.LiteralPat:
@@ -265,7 +356,7 @@ func (r *typeResolver) deducePat(pat ast.Pat,
 
 func bindAll(env typeEnv, termMap []patTerm) typeEnv {
 	for _, pt := range termMap {
-		env = bind(env, pt.pat.Name, pt.term)
+		env = bind(env, pt.name, pt.term)
 	}
 	return env
 }

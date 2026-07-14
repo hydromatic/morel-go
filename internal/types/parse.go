@@ -32,7 +32,16 @@ func (s *System) Parse(src string) (Type, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &converter{sys: s, vars: map[string]int{}}
+	return s.FromAST(t, map[string]int{})
+}
+
+// FromAST converts a type AST to a type. tyVars gives the
+// ordinals of the type variables already in scope; a variable
+// not in the map is numbered by first occurrence.
+func (s *System) FromAST(t ast.Type, tyVars map[string]int) (
+	Type, error,
+) {
+	c := &converter{sys: s, vars: tyVars}
 	return c.convert(t)
 }
 
@@ -103,6 +112,18 @@ func (c *converter) convertNamed(n *ast.NamedType) (Type, error) {
 			return nil, err
 		}
 		return c.sys.List(elem), nil
+	}
+	if arity, ok := c.sys.DatatypeArity(n.Name); ok &&
+		arity == len(n.Args) {
+		args := make([]Type, len(n.Args))
+		for i, arg := range n.Args {
+			t, err := c.convert(arg)
+			if err != nil {
+				return nil, err
+			}
+			args[i] = t
+		}
+		return c.sys.Named(n.Name, args...), nil
 	}
 	if len(n.Args) == 0 {
 		if t := c.sys.Lookup(n.Name); t != nil {
