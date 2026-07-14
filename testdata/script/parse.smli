@@ -230,4 +230,60 @@ Sys.parseTree "datatype d = A | B and e = C";
 Sys.parseTree "type point = int * int";
 > val it = "(type_decl type point = int * int)" : string
 
+(*) Queries: scans, where, yield, join
+Sys.parseTree "from x in [1, 2]";
+> val it = "(from from x in [1, 2])" : string
+Sys.parseTree "from x in [1, 2] yield x + 1";
+> val it = "(from from x in [1, 2] yield x + 1)" : string
+Sys.parseTree "from x in xs where x > 1 yield x * 2";
+> val it = "(from from x in xs where x > 1 yield x * 2)" : string
+Sys.parseTree "from x in xs, y in ys";
+> val it = "(from from x in xs, y in ys)" : string
+Sys.parseTree "from x = 1";
+> val it = "(from from x = 1)" : string
+Sys.parseTree "from x";
+> val it = "(from from x)" : string
+Sys.parseTree "from (a, b) in ps";
+> val it = "(from from (a, b) in ps)" : string
+Sys.parseTree "from x in xs join y in ys on x = y";
+> val it = "(from from x in xs, y in ys on x = y)" : string
+Sys.parseTree "from x in xs yield {x, y = x + 1}";
+> val it = "(from from x in xs yield {x, y = x + 1})" : string
+Sys.parseTree "from e in emps yield e.name";
+> val it = "(from from e in emps yield #name e)" : string
+
+(*) Queries: group, compute, order
+Sys.parseTree "from x in xs group x mod 2";
+> val it = "(from from x in xs group x mod 2)" : string
+Sys.parseTree "from x in xs group {a = x} compute {c = count over ()}";
+> val it = "(from from x in xs group {a = x} compute {c = count over ()})" : string
+Sys.parseTree "from x in xs group g = {a = x} compute {c = count over ()}";
+> val it = "(from from x in xs group g = {a = x} compute {c = count over ()})" : string
+Sys.parseTree "from k in ks order DESC k";
+> val it = "(from from k in ks order DESC k)" : string
+
+(*) Queries: distinct, unorder, set operations, skip, take
+Sys.parseTree "from i in xs distinct";
+> val it = "(from from i in xs distinct)" : string
+Sys.parseTree "from x in xs unorder";
+> val it = "(from from x in xs unorder)" : string
+Sys.parseTree "from i in xs intersect ys except zs";
+> val it = "(from from i in xs intersect ys except zs)" : string
+Sys.parseTree "from i in xs union distinct ys";
+> val it = "(from from i in xs union distinct ys)" : string
+Sys.parseTree "from i in xs skip 2 take 3";
+> val it = "(from from i in xs skip 2 take 3)" : string
+Sys.parseTree "from i in xs into f";
+> val it = "(from from i in xs into f)" : string
+Sys.parseTree "from i in xs through p in f";
+> val it = "(from from i in xs through p in f)" : string
+
+(*) Quantifier queries
+Sys.parseTree "exists e in emps where e > 1";
+> val it = "(exists exists e in emps where e > 1)" : string
+Sys.parseTree "forall e in emps require e > 1";
+> val it = "(forall forall e in emps require e > 1)" : string
+Sys.parseTree "from x in xs yield current + 1";
+> val it = "(from from x in xs yield current + 1)" : string
+
 (*) End parse.smli

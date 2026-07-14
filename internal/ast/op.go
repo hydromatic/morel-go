@@ -103,6 +103,29 @@ const (
 	RecordTypeOp
 	AnnotatedExpOp
 	AnnotatedPatOp
+
+	// Queries.
+
+	FromOp
+	ExistsOp
+	ForallOp
+	ScanOp
+	WhereOp
+	YieldOp
+	GroupOp
+	ComputeOp
+	OrderOp
+	SkipOp
+	TakeOp
+	IntoOp
+	ThroughOp
+	RequireOp
+	DistinctOp
+	UnorderOp
+	UnionOp
+	IntersectOp
+	ExceptOp
+	OverOp
 )
 
 var opNames = map[Op]string{
@@ -174,6 +197,27 @@ var opNames = map[Op]string{
 	RecordTypeOp:   "record_type",
 	AnnotatedExpOp: "annotated_exp",
 	AnnotatedPatOp: "annotated_pat",
+
+	FromOp:      "from",
+	ExistsOp:    "exists",
+	ForallOp:    "forall",
+	ScanOp:      "scan",
+	WhereOp:     "where",
+	YieldOp:     "yield",
+	GroupOp:     "group",
+	ComputeOp:   "compute",
+	OrderOp:     "order",
+	SkipOp:      "skip",
+	TakeOp:      "take",
+	IntoOp:      "into",
+	ThroughOp:   "through",
+	RequireOp:   "require",
+	DistinctOp:  "distinct",
+	UnorderOp:   "unorder",
+	UnionOp:     "union",
+	IntersectOp: "intersect",
+	ExceptOp:    "except",
+	OverOp:      "over",
 }
 
 func (o Op) String() string {

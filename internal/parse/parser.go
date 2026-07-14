@@ -187,6 +187,9 @@ var (
 		token.Div:   ast.DivOp,
 		token.Mod:   ast.ModOp,
 	}
+	overOps = map[token.Kind]ast.Op{
+		token.Over: ast.OverOp,
+	}
 )
 
 func (p *Parser) expr() (ast.Expr, error) {
@@ -274,7 +277,14 @@ func (p *Parser) negate7() (ast.Expr, error) {
 }
 
 func (p *Parser) expr7() (ast.Expr, error) {
-	return p.leftChain(level7Ops, p.applyChain)
+	return p.leftChain(level7Ops, p.overChain)
+}
+
+// overChain parses the "over" level (between the multiplicative
+// level and application), used by aggregate expressions such as
+// "count over e".
+func (p *Parser) overChain() (ast.Expr, error) {
+	return p.leftChain(overOps, p.applyChain)
 }
 
 // leftChain parses "next {op next}" for a left-associative
@@ -384,8 +394,20 @@ func (p *Parser) atom() (ast.Expr, error) {
 	switch tok.Kind {
 	case token.Case:
 		return p.caseExpr()
+	case token.Current, token.Ordinal:
+		err := p.next()
+		if err != nil {
+			return nil, err
+		}
+		return ast.NewID(tok.Span, tok.Text), nil
+	case token.Exists:
+		return p.fromExpr(ast.ExistsOp)
 	case token.Fn:
 		return p.fnExpr()
+	case token.Forall:
+		return p.fromExpr(ast.ForallOp)
+	case token.From:
+		return p.fromExpr(ast.FromOp)
 	case token.Ident:
 		err := p.next()
 		if err != nil {

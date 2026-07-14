@@ -380,3 +380,75 @@ func TestParseTypeDecl(t *testing.T) {
 	checkDecl(t, "type point = int * int",
 		"(type_decl type point = int * int)")
 }
+
+func TestParseFrom(t *testing.T) {
+	checkExpr(t, "from x in [1, 2]",
+		"(from from x in [1, 2])")
+	checkExpr(t, "from x in [1, 2] yield x + 1",
+		"(from from x in [1, 2] yield x + 1)")
+	checkExpr(t, "from x in xs where x > 1",
+		"(from from x in xs where x > 1)")
+	checkExpr(t, "from x in xs, y in ys",
+		"(from from x in xs, y in ys)")
+	checkExpr(t, "from x = 1", "(from from x = 1)")
+	checkExpr(t, "from x", "(from from x)")
+	checkExpr(t, "from (a, b) in ps",
+		"(from from (a, b) in ps)")
+	// A join unparses as a comma scan.
+	checkExpr(t, "from x in xs join y in ys on x = y",
+		"(from from x in xs, y in ys on x = y)")
+	checkExpr(t, "from x in xs where x > 1 yield x * 2",
+		"(from from x in xs where x > 1 yield x * 2)")
+	// An implicit record field unparses bare.
+	checkExpr(t, "from x in xs yield {x, y = x + 1}",
+		"(from from x in xs yield {x, y = x + 1})")
+	// A field selection unparses in selector form.
+	checkExpr(t, "from e in emps yield e.name",
+		"(from from e in emps yield #name e)")
+}
+
+func TestParseQuerySteps(t *testing.T) {
+	checkExpr(t, "from x in xs group x mod 2",
+		"(from from x in xs group x mod 2)")
+	checkExpr(t, "from x in xs group {}",
+		"(from from x in xs group {})")
+	checkExpr(t,
+		"from x in xs group {a = x} compute {c = count over ()}",
+		"(from from x in xs group {a = x} "+
+			"compute {c = count over ()})")
+	checkExpr(t,
+		"from x in xs group g = {a = x} compute {c = count over ()}",
+		"(from from x in xs group g = {a = x} "+
+			"compute {c = count over ()})")
+	checkExpr(t, "from k in ks order DESC k",
+		"(from from k in ks order DESC k)")
+	checkExpr(t, "from k in ks order k",
+		"(from from k in ks order k)")
+	checkExpr(t, "from i in xs distinct",
+		"(from from i in xs distinct)")
+	checkExpr(t, "from x in xs unorder",
+		"(from from x in xs unorder)")
+	checkExpr(t, "from i in xs union ys",
+		"(from from i in xs union ys)")
+	checkExpr(t, "from i in xs intersect ys except zs",
+		"(from from i in xs intersect ys except zs)")
+	checkExpr(t, "from i in xs union distinct ys",
+		"(from from i in xs union distinct ys)")
+	checkExpr(t, "from i in xs skip 2 take 3",
+		"(from from i in xs skip 2 take 3)")
+	checkExpr(t, "from i in xs into f",
+		"(from from i in xs into f)")
+	checkExpr(t, "from i in xs through p in f",
+		"(from from i in xs through p in f)")
+	checkExpr(t, "from x in xs yield ordinal",
+		"(from from x in xs yield ordinal)")
+	checkExpr(t, "from x in xs yield current + 1",
+		"(from from x in xs yield current + 1)")
+}
+
+func TestParseQuantifiers(t *testing.T) {
+	checkExpr(t, "exists e in emps where e > 1",
+		"(exists exists e in emps where e > 1)")
+	checkExpr(t, "forall e in emps require e > 1",
+		"(forall forall e in emps require e > 1)")
+}
