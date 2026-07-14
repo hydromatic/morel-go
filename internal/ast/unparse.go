@@ -223,3 +223,221 @@ func unparseRecordPat(b *strings.Builder, n *RecordPat) {
 	}
 	b.WriteString("}")
 }
+
+// Operator rendering for the unparser: text with padding, and
+// precedence. Cons and at are
+// right-associative.
+type opInfo struct {
+	text  string
+	prec  int
+	right bool
+}
+
+var unparseOps = map[Op]opInfo{
+	// lint: sort until '^}'
+	AndalsoOp: {" andalso ", 2, false},
+	AtOp:      {" @ ", 5, true},
+	CaretOp:   {" ^ ", 6, false},
+	ComposeOp: {" o ", 3, false},
+	ConsOp:    {" :: ", 5, true},
+	DivOp:     {" div ", 7, false},
+	DivideOp:  {" / ", 7, false},
+	ElemOp:    {" elem ", 4, false},
+	EqOp:      {" = ", 4, false},
+	GeOp:      {" >= ", 4, false},
+	GtOp:      {" > ", 4, false},
+	ImpliesOp: {" implies ", 0, false},
+	LeOp:      {" <= ", 4, false},
+	LtOp:      {" < ", 4, false},
+	MinusOp:   {" - ", 6, false},
+	ModOp:     {" mod ", 7, false},
+	NeOp:      {" <> ", 4, false},
+	NotElemOp: {" notelem ", 4, false},
+	OrelseOp:  {" orelse ", 1, false},
+	OverOp:    {" over ", 8, false},
+	PlusOp:    {" + ", 6, false},
+	TimesOp:   {" * ", 7, false},
+}
+
+// applyPrec is the precedence of function application; "over"
+// sits between the multiplicative level and application.
+const applyPrec = 9
+
+// UnparseExpr renders an expression as source text,
+// parenthesizing by operator precedence.
+func UnparseExpr(e Expr) string {
+	var b strings.Builder
+	unparseExpr(&b, e, 0)
+	return b.String()
+}
+
+func unparseExpr(b *strings.Builder, e Expr, prec int) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch n := e.(type) {
+	case *Apply:
+		unparseParen(b, prec, applyPrec, func() {
+			unparseExpr(b, n.Fn, applyPrec)
+			b.WriteString(" ")
+			unparseExpr(b, n.Arg, applyPrec+1)
+		})
+	case *From:
+		unparseParen(b, prec, 1, func() { unparseFrom(b, n) })
+	case *ID:
+		b.WriteString(n.Name)
+	case *InfixCall:
+		op := unparseOps[n.Kind]
+		left, r := op.prec, op.prec+1
+		if op.right {
+			left, r = op.prec+1, op.prec
+		}
+		unparseParen(b, prec, op.prec, func() {
+			unparseExpr(b, n.A0, left)
+			b.WriteString(op.text)
+			unparseExpr(b, n.A1, r)
+		})
+	case *ListExp:
+		unparseExprList(b, "[", n.Args, "]")
+	case *Literal:
+		b.WriteString(n.Value)
+	case *PrefixCall:
+		unparseParen(b, prec, applyPrec, func() {
+			b.WriteString("~ ")
+			unparseExpr(b, n.A, applyPrec)
+		})
+	case *Record:
+		b.WriteString("{")
+		for i, f := range n.Fields {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			if f.Label != "" {
+				b.WriteString(f.Label + " = ")
+			}
+			unparseExpr(b, f.Exp, 0)
+		}
+		b.WriteString("}")
+	case *RecordSelector:
+		b.WriteString("#" + n.Name)
+	case *Tuple:
+		unparseExprList(b, "(", n.Args, ")")
+	default:
+		panic("unparse: unknown expression")
+	}
+}
+
+// unparseParen renders body, parenthesized when the operator
+// binds less tightly than the context requires.
+func unparseParen(b *strings.Builder, prec, opPrec int,
+	body func(),
+) {
+	if prec > opPrec {
+		b.WriteString("(")
+		body()
+		b.WriteString(")")
+		return
+	}
+	body()
+}
+
+func unparseExprList(b *strings.Builder, open string,
+	args []Expr, closer string,
+) {
+	b.WriteString(open)
+	for i, a := range args {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		unparseExpr(b, a, 0)
+	}
+	b.WriteString(closer)
+}
+
+// unparseFrom renders a query expression, including its keyword
+// (from, exists, or forall). Every scan after the first renders
+// with a comma, so a join unparses as ", pat in exp on cond".
+func unparseFrom(b *strings.Builder, f *From) {
+	b.WriteString(f.Kind.String())
+	first := true
+	for _, step := range f.Steps {
+		// lint: sort until '^\t\t}' where '^\t\tcase '
+		switch n := step.(type) {
+		case *ComputeStep:
+			b.WriteString(" compute ")
+			unparseBinder(b, n.Binder)
+			unparseExpr(b, n.Exp, 0)
+		case *DistinctStep:
+			b.WriteString(" distinct")
+		case *GroupStep:
+			b.WriteString(" group ")
+			unparseBinder(b, n.Binder)
+			unparseExpr(b, n.Exp, 0)
+		case *IntoStep:
+			b.WriteString(" into ")
+			unparseExpr(b, n.Exp, 0)
+		case *OrderStep:
+			b.WriteString(" order ")
+			unparseExpr(b, n.Exp, 0)
+		case *RequireStep:
+			b.WriteString(" require ")
+			unparseExpr(b, n.Exp, 0)
+		case *Scan:
+			if first {
+				b.WriteString(" ")
+				first = false
+			} else {
+				b.WriteString(", ")
+			}
+			unparseScan(b, n)
+		case *SetOpStep:
+			b.WriteString(" " + n.Kind.String() + " ")
+			if n.Distinct {
+				b.WriteString("distinct ")
+			}
+			unparseExpr(b, n.Exp, 0)
+		case *SkipStep:
+			b.WriteString(" skip ")
+			unparseExpr(b, n.Exp, 0)
+		case *TakeStep:
+			b.WriteString(" take ")
+			unparseExpr(b, n.Exp, 0)
+		case *ThroughStep:
+			b.WriteString(" through ")
+			unparsePat(b, n.Pat)
+			b.WriteString(" in ")
+			unparseExpr(b, n.Exp, 0)
+		case *UnorderStep:
+			b.WriteString(" unorder")
+		case *WhereStep:
+			b.WriteString(" where ")
+			unparseExpr(b, n.Exp, 0)
+		case *YieldStep:
+			b.WriteString(" yield ")
+			unparseExpr(b, n.Exp, 0)
+		}
+	}
+}
+
+func unparseBinder(b *strings.Builder, binder string) {
+	if binder != "" {
+		b.WriteString(binder + " = ")
+	}
+}
+
+func unparseScan(b *strings.Builder, n *Scan) {
+	unparsePat(b, n.Pat)
+	// lint: sort until '^\t}' where '^\tcase '
+	switch n.Kind {
+	case ScanEq:
+		b.WriteString(" = ")
+		unparseExpr(b, n.Exp, 0)
+	case ScanIn:
+		b.WriteString(" in ")
+		unparseExpr(b, n.Exp, 0)
+	case ScanUnbounded:
+	default:
+	}
+	if n.On != nil {
+		b.WriteString(" on ")
+		unparseExpr(b, n.On, 0)
+	}
+}
