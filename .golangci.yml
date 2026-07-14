@@ -57,6 +57,10 @@ linters:
     - funlen
     - gocyclo
   settings:
+    dupword:
+      # "list list" appears in Morel types such as "int list list".
+      ignore:
+        - list
     exhaustive:
       # An enum switch with a default case is exhaustive; op-tag
       # switches routinely handle a few kinds and default the rest.
