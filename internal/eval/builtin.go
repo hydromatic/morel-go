@@ -19,6 +19,9 @@
 package eval
 
 import (
+	"fmt"
+	"math"
+
 	"github.com/hydromatic/morel-go/internal/ast"
 	"github.com/hydromatic/morel-go/internal/parse"
 )
@@ -62,10 +65,102 @@ func Curry3(f func(a, b, c Val) (Val, error)) Fn {
 	}
 }
 
-// Builtins maps a built-in function's fully-qualified name to its
-// implementation.
+// Builtins maps a built-in function's name to its
+// implementation. (The full registry, validated against
+// lib/*.sig, arrives with the standard library.)
 var Builtins = map[string]Fn{
+	// lint: sort until '^}' where '^\t"'
 	"Sys.parseTree": parseTree,
+	"abs":           absFn,
+	"chr":           chrFn,
+	"not":           notFn,
+	"ord":           ordFn,
+	"size":          sizeFn,
+	"str":           strFn,
+}
+
+// The scalar accessors panic on the wrong type: built-in
+// arguments are guaranteed by type inference.
+
+func asBool(v Val) bool {
+	b, ok := v.(bool)
+	if !ok {
+		panic(fmt.Sprintf("expected bool, got %T", v))
+	}
+	return b
+}
+
+func asChar(v Val) rune {
+	c, ok := v.(rune)
+	if !ok {
+		panic(fmt.Sprintf("expected char, got %T", v))
+	}
+	return c
+}
+
+func asInt(v Val) int32 {
+	i, ok := v.(int32)
+	if !ok {
+		panic(fmt.Sprintf("expected int, got %T", v))
+	}
+	return i
+}
+
+func asString(v Val) string {
+	s, ok := v.(string)
+	if !ok {
+		panic(fmt.Sprintf("expected string, got %T", v))
+	}
+	return s
+}
+
+// absFn is "abs x". It is overloaded on int and real, so it
+// switches on the runtime type.
+func absFn(arg Val) (Val, error) {
+	switch v := arg.(type) {
+	case int32:
+		if v < 0 {
+			return -v, nil
+		}
+		return v, nil
+	case float32:
+		return float32(math.Abs(float64(v))), nil
+	default:
+		panic(fmt.Sprintf("expected int or real, got %T", arg))
+	}
+}
+
+// chrFn is "chr i", the character with code i.
+func chrFn(arg Val) (Val, error) {
+	i := asInt(arg)
+	const maxChar = 255
+	if i < 0 || i > maxChar {
+		return nil, &MorelError{Exn: "Chr"}
+	}
+	// rune and int32 are one type; the result is a char only
+	// statically.
+	return i, nil
+}
+
+// notFn is "not b".
+func notFn(arg Val) (Val, error) {
+	return !asBool(arg), nil
+}
+
+// ordFn is "ord c", the character code of c.
+func ordFn(arg Val) (Val, error) {
+	return asChar(arg), nil
+}
+
+// sizeFn is "size s", the number of characters in s.
+func sizeFn(arg Val) (Val, error) {
+	//nolint:gosec // a string's length fits in an int.
+	return int32(len(asString(arg))), nil
+}
+
+// strFn is "str c", the single-character string containing c.
+func strFn(arg Val) (Val, error) {
+	return string(asChar(arg)), nil
 }
 
 // parseTree parses its argument as a declaration or expression
