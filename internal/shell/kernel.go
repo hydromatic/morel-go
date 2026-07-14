@@ -158,8 +158,23 @@ func (k *Kernel) Execute(stmt string) string {
 // executeStatement compiles and evaluates a statement, prints
 // the binding it makes as "val name = value : type", and adds
 // the binding to the environment. A statement that needs a
-// not-yet-implemented feature produces no output.
+// not-yet-implemented feature produces no output — including one
+// that panics the evaluator; the session must survive any
+// single statement.
 func (k *Kernel) executeStatement(n ast.Node) string {
+	out := ""
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				out = ""
+			}
+		}()
+		out = k.runStatement(n)
+	}()
+	return out
+}
+
+func (k *Kernel) runStatement(n ast.Node) string {
 	var decl ast.Decl
 	switch node := n.(type) {
 	case ast.Decl:
