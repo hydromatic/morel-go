@@ -177,6 +177,7 @@ type typeResolver struct {
 	constraints  []unify.Constraint
 	preferred    []preferredType
 	numericCalls []numericCall
+	tyVarScopes  []map[string]*unify.Var
 }
 
 // preferredType records that, if unification leaves v
@@ -264,6 +265,97 @@ func (r *typeResolver) typeTerm(t types.Type,
 	}
 }
 
+// astTypeTerm converts a type annotation to a term. A type
+// variable resolves in the innermost annotation scope, created
+// if absent, so annotations within one declaration share their
+// type variables.
+func (r *typeResolver) astTypeTerm(t ast.Type) (unify.Term,
+	error,
+) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch t := t.(type) {
+	case *ast.FnType:
+		param, err := r.astTypeTerm(t.Param)
+		if err != nil {
+			return nil, err
+		}
+		result, err := r.astTypeTerm(t.Result)
+		if err != nil {
+			return nil, err
+		}
+		return r.fnTerm(param, result), nil
+	case *ast.NamedType:
+		return r.astNamedTerm(t)
+	case *ast.RecordType:
+		fields := make([]labelTerm, len(t.Fields))
+		for i, f := range t.Fields {
+			term, err := r.astTypeTerm(f.Type)
+			if err != nil {
+				return nil, err
+			}
+			fields[i] = labelTerm{label: f.Label, term: term}
+		}
+		sortFields(fields)
+		return r.recordTerm(fields), nil
+	case *ast.TupleType:
+		terms := make([]unify.Term, len(t.Args))
+		for i, arg := range t.Args {
+			term, err := r.astTypeTerm(arg)
+			if err != nil {
+				return nil, err
+			}
+			terms[i] = term
+		}
+		return r.tupleTerm(terms), nil
+	case *ast.TyVar:
+		if len(r.tyVarScopes) == 0 {
+			return r.u.Variable(), nil
+		}
+		scope := r.tyVarScopes[len(r.tyVarScopes)-1]
+		tv, ok := scope[t.Name]
+		if !ok {
+			tv = r.u.Variable()
+			scope[t.Name] = tv
+		}
+		return tv, nil
+	default:
+		return nil, &Error{
+			Span: t.Span(),
+			Msg: "cannot deduce type for annotation " +
+				t.Op().String(),
+		}
+	}
+}
+
+// astNamedTerm converts a named type annotation: a primitive, a
+// list, or an instance of a datatype.
+func (r *typeResolver) astNamedTerm(t *ast.NamedType) (unify.Term,
+	error,
+) {
+	terms := make([]unify.Term, len(t.Args))
+	for i, arg := range t.Args {
+		term, err := r.astTypeTerm(arg)
+		if err != nil {
+			return nil, err
+		}
+		terms[i] = term
+	}
+	if t.Name == listTyCon && len(terms) == 1 {
+		return unify.Apply(listTyCon, terms[0]), nil
+	}
+	if arity, ok := r.sys.DatatypeArity(t.Name); ok &&
+		arity == len(terms) {
+		return unify.Apply(t.Name, terms...), nil
+	}
+	if len(terms) == 0 && r.sys.Lookup(t.Name) != nil {
+		return r.u.Atom(t.Name), nil
+	}
+	return nil, &Error{
+		Span: t.Span(),
+		Msg:  "unbound type constructor: " + t.Name,
+	}
+}
+
 func (r *typeResolver) deduceDecl(env typeEnv, decl ast.Decl,
 	termMap *[]patTerm,
 ) (ast.Decl, error) {
@@ -312,6 +404,14 @@ func (r *typeResolver) deduceValDecl(env typeEnv,
 func (r *typeResolver) deduceValBind(env typeEnv,
 	bind *ast.ValBind, termMap *[]patTerm, vPat *unify.Var,
 ) error {
+	// Type variables in this binding's annotations share one
+	// scope, so in "fun f (x: 'a) (y: 'a) = ..." both 'a are the
+	// same type.
+	r.tyVarScopes = append(r.tyVarScopes,
+		map[string]*unify.Var{})
+	defer func() {
+		r.tyVarScopes = r.tyVarScopes[:len(r.tyVarScopes)-1]
+	}()
 	err := r.deducePat(bind.Pat, termMap, nil, vPat)
 	if err != nil {
 		return err
@@ -401,6 +501,18 @@ func (r *typeResolver) deducePat(pat ast.Pat,
 ) error {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch p := pat.(type) {
+	case *ast.AnnotatedPat:
+		term, err := r.astTypeTerm(p.Type)
+		if err != nil {
+			return err
+		}
+		r.equiv(v, term)
+		err = r.deducePat(p.Pat, termMap, nil, v)
+		if err != nil {
+			return err
+		}
+		r.reg(pat, v)
+		return nil
 	case *ast.ConPat:
 		return r.deduceConPat(p, termMap, v)
 	case *ast.ConsPat:
@@ -470,6 +582,18 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 ) error {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch e := exp.(type) {
+	case *ast.AnnotatedExp:
+		term, err := r.astTypeTerm(e.Type)
+		if err != nil {
+			return err
+		}
+		r.equiv(v, term)
+		err = r.deduceExp(env, e.Exp, v)
+		if err != nil {
+			return err
+		}
+		r.reg(exp, v)
+		return nil
 	case *ast.Apply:
 		return r.deduceApply(env, e, v)
 	case *ast.Case:
