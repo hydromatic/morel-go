@@ -273,6 +273,8 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 		}, nil
 	case *ast.Record:
 		return r.toRecord(env, e, t)
+	case *ast.RecordSelector:
+		return r.toSelector(e, t)
 	case *ast.Tuple:
 		args := make([]core.Exp, len(e.Args))
 		for i, arg := range e.Args {
@@ -586,6 +588,48 @@ func datatypeOf(tc types.TyCon) string {
 	default:
 		return result.String()
 	}
+}
+
+// toSelector converts a field selector to a function that
+// extracts the field's element, using the record or tuple type
+// that inference gave the selector.
+func (r *resolver) toSelector(sel *ast.RecordSelector,
+	t types.Type,
+) (core.Exp, error) {
+	fnType, ok := t.(*types.Fn)
+	if !ok {
+		return nil, &Error{
+			Span: sel.Span(),
+			Msg: "unresolved flex record (can't tell what " +
+				"fields there are besides #" + sel.Name + ")",
+		}
+	}
+	index := -1
+	switch param := fnType.Param.(type) {
+	case *types.Record:
+		for i, f := range param.Fields {
+			if f.Label == sel.Name {
+				index = i
+			}
+		}
+	case *types.Tuple:
+		i, err := strconv.Atoi(sel.Name)
+		if err == nil && i >= 1 && i <= len(param.Args) {
+			index = i - 1
+		}
+	}
+	if index < 0 {
+		return nil, &Error{
+			Span: sel.Span(),
+			Msg:  "no field " + sel.Name,
+		}
+	}
+	selector := &core.Selector{
+		T:     t,
+		Name:  sel.Name,
+		Index: index,
+	}
+	return selector, nil
 }
 
 // toCase converts "case e of pat => exp | ...". Each rule's

@@ -95,6 +95,29 @@ fun greater_real (x, y) = if x < y then y + 0.0 else x;
 greater_real (2.0, 3.0);
 > val it = 3 : real
 
+(*) Tuple type with a polymorphic member
+let
+  val r = (fn x => x, 2)
+in
+  (#1 r) 1
+end;
+> val it = 1 : int
+
+(*) Record type with a polymorphic member
+let
+  val r = {a = fn x => x, b = 2}
+in
+  r.a 1
+end;
+> val it = 1 : int
+
+let
+  val r = {a = fn x => x, b = 2}
+in
+  (r.a "x", r.b)
+end;
+> val it = ("x",2) : string * int
+
 (*) A datatype whose constructor overwrites another datatype's constructor
 datatype foo = W | X | Y of int;
 > datatype foo = W | X | Y of int

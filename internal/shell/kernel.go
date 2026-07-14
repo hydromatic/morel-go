@@ -92,6 +92,26 @@ func NewKernel(name string) *Kernel {
 	for name, fn := range eval.Builtins {
 		values[name] = fn
 	}
+	// A structure is a record value whose fields are its
+	// members' implementations. A member without one gets a
+	// placeholder that fails if it is ever applied, so unpulled
+	// corpus statements stay silent rather than wrong.
+	for _, b := range result.Bindings {
+		record, isRecord := b.Type.(*types.Record)
+		if !isRecord {
+			continue
+		}
+		fields := make([]eval.Val, len(record.Fields))
+		for i, field := range record.Fields {
+			qualified := b.Name + "." + field.Label
+			if fn, ok := eval.Builtins[qualified]; ok {
+				fields[i] = fn
+			} else {
+				fields[i] = notImplemented(qualified)
+			}
+		}
+		values[b.Name] = fields
+	}
 	config := DefaultConfig()
 	config.sys = sys
 	return &Kernel{
@@ -141,18 +161,17 @@ func (k *Kernel) Execute(stmt string) string {
 	if !ok {
 		return k.executeStatement(n)
 	}
-	if fn == "Sys.set" {
+	switch fn {
+	case "Sys.parseTree":
+		lit, isString := arg.(*ast.Literal)
+		if isString && lit.Kind == ast.StringLiteralOp {
+			return callString(eval.Builtins[fn], lit.Value)
+		}
+	case "Sys.set":
 		k.setProp(arg)
 		return "val it = () : unit"
 	}
-	lit, isString := arg.(*ast.Literal)
-	if !isString || lit.Kind != ast.StringLiteralOp {
-		return k.executeStatement(n)
-	}
-	if fn == "Sys.parseTree" {
-		return callString(eval.Builtins[fn], lit.Value)
-	}
-	return ""
+	return k.executeStatement(n)
 }
 
 // executeStatement compiles and evaluates a statement, prints
@@ -220,7 +239,15 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	return strings.Join(lines, "\n")
 }
 
-// formatCompileError renders a compilation error as java does:
+// notImplemented is the placeholder value of a built-in that has
+// no implementation yet.
+func notImplemented(name string) eval.Fn {
+	return func(eval.Val) (eval.Val, error) {
+		panic("not implemented: " + name)
+	}
+}
+
+// formatCompileError renders a compilation error:
 //
 //	stdIn:1.1-1.11 Error: literal '9999999999' is too large ...
 //	  raised at: stdIn:1.1-1.11

@@ -360,6 +360,35 @@ func TestExecuteRecursion(t *testing.T) {
 	})
 }
 
+// TestExecuteStructures checks structure member access — a
+// structure is a record value, so "String.size" is field
+// selection — and bare selectors on records and tuples.
+func TestExecuteStructures(t *testing.T) {
+	runSession(t, [][2]string{
+		{`String.size "abc";`, "val it = 3 : int"},
+		{
+			`String.concat ["a", "bc"];`,
+			`val it = "abc" : string`,
+		},
+		{"Int.abs (~7);", "val it = 7 : int"},
+		{"List.length [1, 2, 3];", "val it = 3 : int"},
+		{
+			"List.map (fn x => x * 2) [3, 4];",
+			"val it = [6,8] : int list",
+		},
+		{"List.rev [1, 2, 3];", "val it = [3,2,1] : int list"},
+		{"Bool.not false;", "val it = true : bool"},
+		{`Char.ord #"A";`, "val it = 65 : int"},
+		{"#1 (8, 9);", "val it = 8 : int"},
+		{"#2 (8, 9);", "val it = 9 : int"},
+		{"#b {a=1, b=true};", "val it = true : bool"},
+		{
+			"map #1 [(1, true), (2, false)];",
+			"val it = [1,2] : int list",
+		},
+	})
+}
+
 // TestExecuteCrossStatement stress-tests values that flow across
 // statement boundaries — the class of bugs that plagued
 // morel-rust. Every expected output was probed against the java
@@ -544,9 +573,9 @@ func TestExecuteItOnlyOnSuccess(t *testing.T) {
 	runSession(t, [][2]string{
 		{"val y = 7;", "val y = 7 : int"},
 		{"y;", "val it = 7 : int"},
-		// The next statement fails to compile (selectors
+		// The next statement fails to compile (queries
 		// arrive later), so 'it' keeps its value.
-		{"#1 (8, 9);", ""},
+		{"from i in [1] yield i;", ""},
 		{"it;", "val it = 7 : int"},
 	})
 }

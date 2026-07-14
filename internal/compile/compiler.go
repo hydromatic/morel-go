@@ -177,6 +177,8 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 		return eval.Tuple(args), nil
 	case *core.Literal:
 		return eval.Constant(e.Value), nil
+	case *core.Selector:
+		return eval.Constant(eval.Nth(e.Index)), nil
 	case *core.Tuple:
 		args := make([]eval.Code, len(e.Args))
 		for i, arg := range e.Args {

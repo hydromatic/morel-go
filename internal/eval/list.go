@@ -150,6 +150,14 @@ func concatFn(arg Val) (Val, error) {
 	return b.String(), nil
 }
 
+// Nth returns the built-in form of a field selector: a function
+// that extracts element i of a record or tuple value.
+func Nth(i int) Fn {
+	return func(arg Val) (Val, error) {
+		return asList(arg)[i], nil
+	}
+}
+
 // equalFn is "op =" (or its negation, "op <>"): structural
 // equality. Scalars compare directly; lists, tuples, and records
 // compare element-wise; constructor values compare by datatype,

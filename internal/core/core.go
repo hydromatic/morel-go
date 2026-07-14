@@ -151,6 +151,23 @@ func (c *Con) Type() types.Type { return c.T }
 
 func (*Con) exp() {}
 
+// Selector is a record or tuple field selector used as a
+// function, e.g. "#b" applied to "{a:int, b:bool}"; Index is the
+// field's position in canonical order.
+type Selector struct {
+	T     types.Type
+	Name  string
+	Index int
+}
+
+// Op implements Exp.
+func (*Selector) Op() ast.Op { return ast.RecordSelectorOp }
+
+// Type implements Exp.
+func (s *Selector) Type() types.Type { return s.T }
+
+func (*Selector) exp() {}
+
 // List is a list value, "[e1, e2, ...]".
 type List struct {
 	T    types.Type
