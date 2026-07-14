@@ -75,3 +75,19 @@ func Split(name, src string) ([]string, string, error) {
 	}
 	return stmts, string(runes[begin:]), nil
 }
+
+// Unclosed reports whether src ends inside an unclosed string,
+// comment, or quoted identifier.
+func Unclosed(name, src string) bool {
+	l := parse.NewLexer(name, src)
+	for {
+		tok, err := l.Next()
+		if err != nil {
+			var perr *parse.Error
+			return errors.As(err, &perr) && perr.Unclosed
+		}
+		if tok.Kind == token.EOF {
+			return false
+		}
+	}
+}
