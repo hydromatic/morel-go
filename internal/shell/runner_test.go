@@ -114,6 +114,49 @@ func TestKernelExecute(t *testing.T) {
 	}
 }
 
+func TestKernelParseTree(t *testing.T) {
+	k := shell.NewKernel("stdIn")
+	got := k.Execute(`Sys.parseTree "f 1";`)
+	want := `val it = "(apply (id f) (int_literal 1))" : string`
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	// A result containing quotes is escaped.
+	got = k.Execute(`Sys.parseTree "\"x\"";`)
+	want = `val it = "(string_literal \"x\")" : string`
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	// A parse error in the argument is output.
+	got = k.Execute(`Sys.parseTree "1 +";`)
+	want = "parseTree:1.3-1.4: expected EOF, found +"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	// An unknown builtin falls back to validation.
+	if got := k.Execute(`Sys.nope "x";`); got != "" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestScriptParseTree(t *testing.T) {
+	k := shell.NewKernel("t.smli")
+	src := "Sys.parseTree \"f 1\";\n> stale\n"
+	want := "Sys.parseTree \"f 1\";\n" +
+		"> val it = \"(apply (id f) (int_literal 1))\" : string\n"
+	got, err := shell.RunScript(k, "t.smli", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	again, err := shell.RunScript(k, "t.smli", got)
+	if err != nil || again != got {
+		t.Errorf("not idempotent: %q -> %q (%v)", got, again, err)
+	}
+}
+
 func TestBlank(t *testing.T) {
 	for src, want := range map[string]bool{
 		"":                true,
