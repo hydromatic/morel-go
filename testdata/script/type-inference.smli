@@ -33,15 +33,32 @@ Sys.set ("lineWidth", 78);
 :t
 1;
 > val it : int
+:t 1 div 0;
+> val it : int
+:t 1.0 / 0.0;
+> val it : real
 
 (*) Type tests
 :t #"h";
 > val it : char
 :t "hello";
 > val it : string
+:t "hello"
+ ^ ", world!";
+> val it : string
+:t
+"hello"
+ ^ ", world!";
+> val it : string
 :t 1;
 > val it : int
+:t ~1.0;
+> val it : real
 :t 6.02e~23;
+> val it : real
+:t ~6.02e~23;
+> val it : real
+:t ~6e~23;
 > val it : real
 :t 6e~23;
 > val it : real
@@ -94,24 +111,83 @@ Sys.set ("lineWidth", 78);
 > val it : {f:'a, g:'b} -> bool
 :t fn x => fn f => f x;
 > val it : 'a -> ('a -> 'b) -> 'b
+:t fn (x, y) => x andalso y;
+> val it : bool * bool -> bool
+:t fn (x, y) => x orelse y;
+> val it : bool * bool -> bool
+:t fn (x, y) => x implies y;
+> val it : bool * bool -> bool
+:t fn (x, y) => x < y;
+> val it : 'a * 'a -> bool
+:t fn (x, y) => x <= y;
+> val it : 'a * 'a -> bool
+:t fn (x, y) => x > y;
+> val it : 'a * 'a -> bool
+:t fn (x, y) => x >= y;
+> val it : 'a * 'a -> bool
+:t fn (x, y) => x = y;
+> val it : 'a * 'a -> bool
+:t fn (x, y) => x <> y;
+> val it : 'a * 'a -> bool
+:t fn (x, y) => x + y + 0;
+> val it : int * int -> int
+:t fn (x, y) => x - y + 0;
+> val it : int * int -> int
+:t fn (x, y) => x mod y;
+> val it : int * int -> int
+:t fn (x, y) => x div y;
+> val it : int * int -> int
+:t fn (x, y) => x / y;
+> val it : real * real -> real
+:t fn (x, y) => x * y * 1;
+> val it : int * int -> int
 
 (* Basic type tests (migrated from MainTest.testType) *)
 :t 1;
 > val it : int
 :t 0e0;
 > val it : real
+:t 1 + 2;
+> val it : int
+:t 1 - 2;
+> val it : int
+:t 1 * 2;
+> val it : int
+:t 1 div 2;
+> val it : int
+:t 1 div ~2;
+> val it : int
+:t 1.0 + ~2.0;
+> val it : real
+:t 1.0 / ~2.0;
+> val it : real
 :t "";
 > val it : string
+:t true andalso false;
+> val it : bool
 :t if true then 1.0 else 2.0;
 > val it : real
 :t (1, true);
 > val it : int * bool
+:t (1, true, false andalso false);
+> val it : int * bool * bool
 :t (1);
 > val it : int
 :t ();
 > val it : unit
 :t {a = 1, b = true};
 > val it : {a:int, b:bool}
+:t (fn x => x + 1, fn y => y + 1);
+> val it : (int -> int) * (int -> int)
+:t let val x = 1.0 in x + 2.0 end;
+> val it : real
+:t
+let val x = 1 in
+  let val y = 2 in
+    x + y
+  end
+end;
+> val it : int
 :t NONE;
 > val it : 'a option
 :t SOME 4;
@@ -126,10 +202,26 @@ Sys.set ("lineWidth", 78);
 > val it : {a:int, b:bool}
 :t {{a=1,b=true} with b=false};
 > val it : {a:int, b:bool}
+
+(*) Function types
+:t fn x => x + 1;
+> val it : int -> int
+:t fn x => fn y => x + y;
+> val it : int -> int -> int
 :t fn x => case x of 0 => 1 | _ => 2;
 > val it : int -> int
 :t fn x => case x of 0 => "zero" | _ => "nonzero";
 > val it : int -> string
+
+(*) Function tuple types
+:t fn (x, y) => (x + 1, y + 1);
+> val it : int * int -> int * int
+:t fn x => fn (y, z) => x + y + z;
+> val it : int -> int * int -> int
+:t fn (x, y) => (x + 1, fn z => (x + z, y + z), y);
+> val it : int * int -> int * (int -> int * int) * int
+:t fn {a = x, b = y, c} => x + y;
+> val it : {a:int, b:int, c:'a} -> int
 
 (*) Polymorphic type variables
 :t fn _ => 42;
@@ -156,6 +248,8 @@ Sys.set ("lineWidth", 78);
 > val choose : bool -> 'a * 'a -> 'a
 
 (*) Record types, including duplicate fields
+:t map #empno [{empno = 10, name = "Shaggy"}];
+> val it : int list
 :t {a=1, b=true};
 > val it : {a:int, b:bool}
 :t {c=1, b=true};
@@ -184,3 +278,54 @@ Sys.set ("lineWidth", 78);
 > val it : int list list
 :t [(1, true), (2, false)];
 > val it : (int * bool) list
+:t 1 :: [2];
+> val it : int list
+:t 1 :: [2, 3];
+> val it : int list
+:t [1] :: [[2], [3]];
+> val it : int list list
+:t 1 :: [];
+> val it : int list
+:t 1 :: 2 :: [];
+> val it : int list
+
+(*) Recursive function types
+:t
+let
+  val rec f = fn n => if n = 0 then 1 else n * (f (n - 1))
+in
+  f 5
+end;
+> val it : int
+
+(*) The following should give error but currently does not.
+:t let val rec x = 1 and y = 2 in x + y end;
+> val it : int
+(* sml-nj gives:
+stdIn:1.14-1.19 Error: fn expression required on rhs of val rec
+stdIn:1.24-1.29 Error: fn expression required on rhs of val rec
+stdIn:1.33-1.38 Error: operator and operand do not agree [overload - bad instantiation]
+  operator domain: 'Z[OL(+)] * 'Z[OL(+)]
+  operand:         ('Y -> 'X) * ('W -> 'V)
+  in expression:
+    x + y
+*)
+
+(*) The following should give error but currently does not.
+:t let val rec s = "s" and t = "t" in s ^ t end;
+> val it : string
+(* sml-nj gives:
+stdIn:1.14-1.21 Error: fn expression required on rhs of val rec
+stdIn:1.26-1.33 Error: fn expression required on rhs of val rec
+stdIn:1.37-1.42 Error: operator and operand do not agree [tycon mismatch]
+  operator domain: string * string
+  operand:         ('Z -> 'Y) * ('X -> 'W)
+  in expression:
+    s ^ t
+*)
+
+(* Apply tests (migrated from MainTest.testApply and testApply2) *)
+:t hd ["abc"];
+> val it : string
+:t map (fn x => String.size x) ["abc", "de"];
+> val it : int list

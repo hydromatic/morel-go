@@ -64,19 +64,98 @@ func Deduce(sys *types.System, bindings []Binding,
 	if err != nil {
 		return nil, err
 	}
-	subst, err := r.u.Unify(r.pairs, r.actions, r.constraints)
-	if err != nil {
-		return nil, &Error{
-			Span: decl.Span(),
-			Msg:  "Cannot deduce type: " + err.Error(),
+	// Unify; if an operator's type is undetermined and it has a
+	// preferred type (e.g. int for "+"), apply the preference and
+	// unify again.
+	for {
+		subst, err := r.u.Unify(r.pairs, r.actions,
+			r.constraints)
+		if err != nil {
+			return nil, &Error{
+				Span: decl.Span(),
+				Msg:  "Cannot deduce type: " + err.Error(),
+			}
+		}
+		again := false
+		for len(r.preferred) > 0 {
+			pt := r.preferred[0]
+			r.preferred = r.preferred[1:]
+			if _, isVar := subst.Resolve(pt.v).(*unify.Var); isVar {
+				r.equiv(pt.v, r.primTerm(pt.prim))
+				again = true
+				break
+			}
+		}
+		if again {
+			continue
+		}
+		typeMap := &TypeMap{
+			sys:      sys,
+			nodeTerm: r.nodeTerm,
+			subst:    subst,
+		}
+		err = r.checkNumericOperators(typeMap)
+		if err != nil {
+			return nil, err
+		}
+		return &Resolved{Decl: decl2, TypeMap: typeMap}, nil
+	}
+}
+
+// numericCall is an application of an overloaded numeric
+// operator, to be checked against the operator's overload class
+// once unification has resolved its type.
+type numericCall struct {
+	name  string
+	apply *ast.Apply
+}
+
+// numericOpDomain gives the types for which each overloaded
+// numeric operator is defined (its SML overload class). 'div'
+// and 'mod' are int-only until 'Word' arrives (morel#396); '/'
+// is absent because it is real-only, so a bad operand is a
+// unification conflict, not an excluded class member.
+var numericOpDomain = map[string]map[string]bool{
+	"abs":    {intName: true, realName: true},
+	opTimes:  {intName: true, realName: true},
+	opPlus:   {intName: true, realName: true},
+	opMinus:  {intName: true, realName: true},
+	opDiv:    {intName: true},
+	opMod:    {intName: true},
+	opNegate: {intName: true, realName: true},
+}
+
+// checkNumericOperators checks that every application of an
+// overloaded numeric operator has a type in the operator's
+// overload class, after resolving: the check is by name (a
+// rebinding is still checked), the
+// outermost bad application reports first, '~' reports its
+// operand's span, and a type that is still a variable passes.
+func (r *typeResolver) checkNumericOperators(m *TypeMap) error {
+	for _, call := range r.numericCalls {
+		t, err := m.TypeOf(call.apply)
+		if err != nil {
+			return err
+		}
+		if _, isVar := t.(*types.Var); isVar {
+			continue
+		}
+		if numericOpDomain[call.name][t.String()] {
+			continue
+		}
+		span := call.apply.Span()
+		if call.name == opNegate {
+			span = call.apply.Arg.Span()
+		}
+		return &Error{
+			Span: span,
+			Msg: "operator '" +
+				strings.TrimPrefix(call.name, "op ") +
+				"' is not defined for type '" +
+				t.String() + "'",
 		}
 	}
-	typeMap := &TypeMap{
-		sys:      sys,
-		nodeTerm: r.nodeTerm,
-		subst:    subst,
-	}
-	return &Resolved{Decl: decl2, TypeMap: typeMap}, nil
+	return nil
 }
 
 // patTerm records that a declaration binds a name to a term; the
@@ -90,12 +169,22 @@ type patTerm struct {
 // generates term equivalences from the structure of the tree,
 // and hands them to the unifier.
 type typeResolver struct {
-	sys         *types.System
-	u           *unify.Unifier
-	pairs       []unify.TermPair
-	nodeTerm    map[ast.Node]unify.Term
-	actions     []unify.VarAction
-	constraints []unify.Constraint
+	sys          *types.System
+	u            *unify.Unifier
+	pairs        []unify.TermPair
+	nodeTerm     map[ast.Node]unify.Term
+	actions      []unify.VarAction
+	constraints  []unify.Constraint
+	preferred    []preferredType
+	numericCalls []numericCall
+}
+
+// preferredType records that, if unification leaves v
+// undetermined, it should be unified with a primitive type and
+// unification retried; this resolves "1 + 2" to int.
+type preferredType struct {
+	v    *unify.Var
+	prim string
 }
 
 // equiv declares that a term is equivalent to a variable.
@@ -314,6 +403,21 @@ func (r *typeResolver) deducePat(pat ast.Pat,
 	switch p := pat.(type) {
 	case *ast.ConPat:
 		return r.deduceConPat(p, termMap, v)
+	case *ast.ConsPat:
+		vElem := r.u.Variable()
+		vList := r.u.Variable()
+		err := r.deducePat(p.A0, termMap, nil, vElem)
+		if err != nil {
+			return err
+		}
+		err = r.deducePat(p.A1, termMap, nil, vList)
+		if err != nil {
+			return err
+		}
+		listTerm := unify.Apply(listTyCon, vElem)
+		r.equiv(vList, listTerm)
+		r.regEquiv(pat, v, listTerm)
+		return nil
 	case *ast.IDPat:
 		if tc, ok := r.sys.LookupTyCon(p.Name); ok {
 			// A constant constructor, e.g. NONE; it binds
@@ -393,6 +497,8 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 		return nil
 	case *ast.If:
 		return r.deduceIf(env, e, v)
+	case *ast.InfixCall:
+		return r.deduceInfix(env, e, v)
 	case *ast.Let:
 		env2 := env
 		for i, d := range e.Decls {
@@ -422,6 +528,9 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 		return nil
 	case *ast.Literal:
 		return r.deduceLiteral(exp, e.Kind, e.Value, v)
+	case *ast.PrefixCall:
+		return r.deduceOpCall(env, opNegate, e,
+			[]ast.Expr{e.A}, v)
 	case *ast.Record:
 		return r.deduceRecord(env, e, v)
 	case *ast.RecordSelector:
@@ -468,9 +577,9 @@ func (r *typeResolver) deduceLiteral(node ast.Node, kind ast.Op,
 		if err != nil {
 			return err
 		}
-		name = "int"
+		name = intName
 	case ast.RealLiteralOp, ast.RealLiteralPatOp:
-		name = "real"
+		name = realName
 	case ast.StringLiteralOp, ast.StringLiteralPatOp:
 		name = "string"
 	case ast.UnitLiteralOp:
@@ -495,7 +604,7 @@ func checkIntRange(node ast.Node, value string) error {
 		return &Error{
 			Span: node.Span(),
 			Msg: "literal '" + value +
-				"' is too large for type int",
+				"' is too large for type " + intName,
 		}
 	}
 	return nil
@@ -504,6 +613,12 @@ func checkIntRange(node ast.Node, value string) error {
 func (r *typeResolver) deduceApply(env typeEnv, apply *ast.Apply,
 	v *unify.Var,
 ) error {
+	if id, ok := apply.Fn.(*ast.ID); ok {
+		if _, isNumeric := numericOpDomain[id.Name]; isNumeric {
+			r.numericCalls = append(r.numericCalls,
+				numericCall{name: id.Name, apply: apply})
+		}
+	}
 	vFn := r.u.Variable()
 	vArg := r.u.Variable()
 	r.equiv(vFn, r.fnTerm(vArg, v))
@@ -529,6 +644,13 @@ func (r *typeResolver) deduceApply(env typeEnv, apply *ast.Apply,
 		err := r.deduceExp(env, apply.Fn, vFn)
 		if err != nil {
 			return err
+		}
+	}
+	if id, ok := apply.Fn.(*ast.ID); ok {
+		if b, isBuiltin := topBuiltins[id.Name]; isBuiltin &&
+			b.preferred != "" {
+			r.preferred = append(r.preferred,
+				preferredType{v: v, prim: b.preferred})
 		}
 	}
 	r.reg(apply, v)
@@ -695,6 +817,60 @@ func (r *typeResolver) deduceRecordPat(pat *ast.RecordPat,
 		},
 	})
 	r.reg(pat, v)
+	return nil
+}
+
+// deduceInfix handles an infix operator application. The logical
+// connectives type as bool directly; any other operator desugars
+// to the application of its top-level binding, "a + b" becoming
+// "(op +) (a, b)".
+func (r *typeResolver) deduceInfix(env typeEnv, call *ast.InfixCall,
+	v *unify.Var,
+) error {
+	switch call.Kind {
+	case ast.AndalsoOp, ast.ImpliesOp, ast.OrelseOp:
+		err := r.deduceExp(env, call.A0, v)
+		if err != nil {
+			return err
+		}
+		err = r.deduceExp(env, call.A1, v)
+		if err != nil {
+			return err
+		}
+		r.regEquiv(call, v, r.primTerm("bool"))
+		return nil
+	default:
+		name, ok := infixOpNames[call.Kind]
+		if !ok {
+			return &Error{
+				Span: call.Span(),
+				Msg: "cannot deduce type for " +
+					call.Kind.String(),
+			}
+		}
+		return r.deduceOpCall(env, name, call,
+			[]ast.Expr{call.A0, call.A1}, v)
+	}
+}
+
+// deduceOpCall types an operator call as the application of the
+// operator's top-level binding to its operands.
+func (r *typeResolver) deduceOpCall(env typeEnv, name string,
+	call ast.Expr, args []ast.Expr, v *unify.Var,
+) error {
+	span := call.Span()
+	var arg ast.Expr
+	if len(args) == 1 {
+		arg = args[0]
+	} else {
+		arg = ast.NewTuple(span, args)
+	}
+	apply := ast.NewApply(span, ast.NewID(span, name), arg)
+	err := r.deduceApply(env, apply, v)
+	if err != nil {
+		return err
+	}
+	r.reg(call, v)
 	return nil
 }
 

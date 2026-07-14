@@ -24,8 +24,10 @@ import (
 	"github.com/hydromatic/morel-go/internal/compile"
 	"github.com/hydromatic/morel-go/internal/eval"
 	"github.com/hydromatic/morel-go/internal/parse"
+	"github.com/hydromatic/morel-go/internal/sig"
 	"github.com/hydromatic/morel-go/internal/token"
 	"github.com/hydromatic/morel-go/internal/types"
+	"github.com/hydromatic/morel-go/lib"
 )
 
 // Config holds the session properties.
@@ -45,22 +47,18 @@ type Kernel struct {
 // is used in error messages.
 func NewKernel(name string) *Kernel {
 	sys := types.NewSystem()
-	// Until built-in signatures are loaded from lib/*.sig, seed
-	// the environment with the bool and option constructors.
-	sys.DeclareDatatype("option", 1)
-	a := sys.Var(0)
-	option := sys.Named("option", a)
-	sys.DeclareTyCon("NONE", nil, option)
-	sys.DeclareTyCon("SOME", a, option)
+	result, err := sig.Load(sys, lib.FS)
+	if err != nil {
+		// The signature files are embedded and tested, so they
+		// always load.
+		panic(err)
+	}
+	bindings := compile.TopBindings(sys)
+	bindings = append(bindings, result.Bindings...)
 	return &Kernel{
-		name: name,
-		sys:  sys,
-		bindings: []compile.Binding{
-			{Name: "true", Type: sys.Bool},
-			{Name: "false", Type: sys.Bool},
-			{Name: "NONE", Type: option},
-			{Name: "SOME", Type: sys.Fn(a, option)},
-		},
+		name:     name,
+		sys:      sys,
+		bindings: bindings,
 	}
 }
 
