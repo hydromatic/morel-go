@@ -112,6 +112,18 @@ func (c *termToTypeConverter) sequenceType(s *unify.Sequence) (
 				return t, nil
 			}
 		}
+		if arity, ok := c.m.sys.DatatypeArity(s.Op); ok &&
+			arity == len(s.Terms) {
+			args := make([]types.Type, len(s.Terms))
+			for i, term := range s.Terms {
+				arg, err := c.termType(term)
+				if err != nil {
+					return nil, err
+				}
+				args[i] = arg
+			}
+			return c.m.sys.Named(s.Op, args...), nil
+		}
 		return nil, fmt.Errorf("cannot convert term %s", s)
 	}
 }

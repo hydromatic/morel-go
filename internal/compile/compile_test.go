@@ -49,10 +49,17 @@ func deduce(t *testing.T, src string) (*compile.Resolved, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sys.DeclareDatatype("option", 1)
+	a := sys.Var(0)
+	option := sys.Named("option", a)
+	sys.DeclareTyCon("NONE", nil, option)
+	sys.DeclareTyCon("SOME", a, option)
 	bindings := []compile.Binding{
 		{Name: "true", Type: sys.Bool},
 		{Name: "false", Type: sys.Bool},
 		{Name: "id", Type: idType},
+		{Name: "NONE", Type: option},
+		{Name: "SOME", Type: sys.Fn(a, option)},
 	}
 	return compile.Deduce(sys, bindings, decl)
 }
@@ -145,6 +152,31 @@ func TestDeduce(t *testing.T) {
 			"fn r => case r of {a=1, ...} => 1 | {b=2, ...} => 2",
 			"'a -> int",
 		},
+		{"NONE", "'a option"},
+		{"SOME 4", "int option"},
+		{"SOME (SOME true)", "bool option option"},
+		{"SOME (SOME [1, 2])", "int list option option"},
+		{
+			"fn x => case x of NONE => 0 | SOME y => y",
+			"int option -> int",
+		},
+		{"fun f NONE = 0 | f (SOME x) = x", "int option -> int"},
+		{"case SOME 4 of NONE => 0 | SOME y => y", "int"},
+		{
+			"let datatype color = RED | GREEN | BLUE in RED end",
+			"color",
+		},
+		{"let datatype shape = CIRCLE of real | SQUARE of real" +
+			" in CIRCLE 1.5 end", "shape"},
+		{"let datatype tree = LEAF | NODE of tree * tree" +
+			" in NODE (LEAF, NODE (LEAF, LEAF)) end", "tree"},
+		{"let datatype 'a opt = NIL | JUST of 'a" +
+			" in JUST 5 end", "int opt"},
+		{
+			"let datatype color = RED | GREEN" +
+				" in fn c => case c of RED => 1 | GREEN => 2 end",
+			"color -> int",
+		},
 	} {
 		t.Run(tc.src, func(t *testing.T) {
 			resolved, err := deduce(t, tc.src)
@@ -191,6 +223,13 @@ func TestDeduceError(t *testing.T) {
 			// value has one type, so 'id' cannot be used at both
 			// int and string.
 			"let val id = fn x => x in (id 1, id \"a\") end",
+			"Cannot deduce type: conflict",
+		},
+		{
+			// Constructors declared in a 'let' are also
+			// monomorphic within it.
+			"let datatype 'a opt = NIL | JUST of 'a" +
+				" in JUST (JUST 5) end",
 			"Cannot deduce type: conflict",
 		},
 		{"3000000000", "literal '3000000000' is too large" +

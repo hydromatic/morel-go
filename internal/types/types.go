@@ -90,6 +90,37 @@ type Record struct {
 	Fields []Field
 }
 
+// Named is an instance of a datatype, e.g. "color" or
+// "int option".
+type Named struct {
+	typeBase
+
+	Args []Type
+	Name string
+}
+
+// namedDesc returns the description of a datatype instance:
+// "color", "int option", "(int,bool) pair".
+func namedDesc(name string, args []Type) string {
+	switch len(args) {
+	case 0:
+		return name
+	case 1:
+		return descArg(args[0]) + " " + name
+	default:
+		var b strings.Builder
+		b.WriteString("(")
+		for i, arg := range args {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			b.WriteString(arg.String())
+		}
+		b.WriteString(") " + name)
+		return b.String()
+	}
+}
+
 // varName returns the description of the type variable with the
 // given ordinal: 'a, 'b, ..., 'z, 'ba, 'bb, ..., 'zz, 'baa, ...
 // It is a base-26 number with 'a' as 0 and 'z' as 25.

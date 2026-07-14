@@ -58,9 +58,11 @@ linters:
     - gocyclo
   settings:
     dupword:
-      # "list list" appears in Morel types such as "int list list".
+      # Type constructors repeat in Morel types such as
+      # "int list list" and "bool option option".
       ignore:
         - list
+        - option
     goconst:
       ignore-tests: true
     exhaustive:

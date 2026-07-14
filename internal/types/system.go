@@ -22,9 +22,12 @@ import (
 	"strings"
 )
 
-// System interns types: equal types are the same pointer.
+// System interns types: equal types are the same pointer. It
+// also registers datatypes and their constructors.
 type System struct {
-	byKey map[string]Type
+	byKey     map[string]Type
+	datatypes map[string]int
+	tycons    map[string]TyCon
 
 	Bool   Type
 	Char   Type
@@ -34,10 +37,21 @@ type System struct {
 	Unit   Type
 }
 
+// TyCon describes a datatype constructor: its argument type (nil
+// for a constant constructor) and the datatype it constructs.
+type TyCon struct {
+	Arg    Type
+	Result Type
+}
+
 // NewSystem returns a system with the primitive types
 // registered.
 func NewSystem() *System {
-	s := &System{byKey: map[string]Type{}}
+	s := &System{
+		byKey:     map[string]Type{},
+		datatypes: map[string]int{},
+		tycons:    map[string]TyCon{},
+	}
 	prim := func(name string) Type {
 		t := &Primitive{typeBase{name}}
 		s.byKey[name] = t
@@ -52,10 +66,48 @@ func NewSystem() *System {
 	return s
 }
 
-// Lookup returns the type with the given name (a primitive, or
-// in time a datatype or alias), or nil.
+// DatatypeArity returns the number of type parameters of a
+// registered datatype.
+func (s *System) DatatypeArity(name string) (int, bool) {
+	arity, ok := s.datatypes[name]
+	return arity, ok
+}
+
+// DeclareDatatype registers a datatype and its arity. A
+// zero-arity datatype is interned immediately so that Lookup
+// finds it.
+func (s *System) DeclareDatatype(name string, arity int) {
+	s.datatypes[name] = arity
+	if arity == 0 {
+		s.Named(name)
+	}
+}
+
+// DeclareTyCon registers a datatype constructor; arg is nil for
+// a constant constructor.
+func (s *System) DeclareTyCon(name string, arg, result Type) {
+	s.tycons[name] = TyCon{Arg: arg, Result: result}
+}
+
+// Lookup returns the type with the given name (a primitive or a
+// zero-arity datatype), or nil.
 func (s *System) Lookup(name string) Type {
 	return s.byKey[name]
+}
+
+// LookupTyCon returns a registered datatype constructor.
+func (s *System) LookupTyCon(name string) (TyCon, bool) {
+	tc, ok := s.tycons[name]
+	return tc, ok
+}
+
+// Named returns the instance of a datatype with the given type
+// arguments, e.g. Named("option", Int) is "int option".
+func (s *System) Named(name string, args ...Type) Type {
+	key := namedDesc(name, args)
+	return s.intern(key, func() Type {
+		return &Named{typeBase{key}, args, name}
+	})
 }
 
 // Var returns the type variable with the given ordinal.

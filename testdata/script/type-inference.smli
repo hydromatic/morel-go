@@ -112,6 +112,16 @@ Sys.set ("lineWidth", 78);
 > val it : unit
 :t {a = 1, b = true};
 > val it : {a:int, b:bool}
+:t NONE;
+> val it : 'a option
+:t SOME 4;
+> val it : int option
+:t SOME (SOME true);
+> val it : bool option option
+:t SOME (SOME [1, 2]);
+> val it : int list option option
+:t SOME (SOME {a=1, b=true});
+> val it : {a:int, b:bool} option option
 :t {a=1,b=true};
 > val it : {a:int, b:bool}
 :t {{a=1,b=true} with b=false};
