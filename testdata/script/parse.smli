@@ -128,4 +128,38 @@ Sys.parseTree "1 + ~a";
 Sys.parseTree "~f x";
 > val it = "(negate (apply (id f) (id x)))" : string
 
+(*) Conditionals
+Sys.parseTree "if a then b else c";
+> val it = "(if (id a) (id b) (id c))" : string
+Sys.parseTree "2 * if a then b else c";
+> val it = "(times (int_literal 2) (if (id a) (id b) (id c)))" : string
+
+(*) Functions and matches
+Sys.parseTree "fn x => x";
+> val it = "(fn (match (idPat x) (id x)))" : string
+Sys.parseTree "fn _ => 1";
+> val it = "(fn (match wildcard (int_literal 1)))" : string
+Sys.parseTree "fn 0 => 1 | x => x";
+> val it = "(fn (match (int_literal_pat 0) (int_literal 1)) (match (idPat x) (id x)))" : string
+Sys.parseTree "fn x => x + 1";
+> val it = "(fn (match (idPat x) (plus (id x) (int_literal 1))))" : string
+Sys.parseTree "case x of 0 => 1 | _ => 2";
+> val it = "(case (id x) (match (int_literal_pat 0) (int_literal 1)) (match wildcard (int_literal 2)))" : string
+
+(*) Patterns
+Sys.parseTree "fn (a, b) => a";
+> val it = "(fn (match (tuplePat (idPat a) (idPat b)) (id a)))" : string
+Sys.parseTree "fn () => 1";
+> val it = "(fn (match (tuplePat) (int_literal 1)))" : string
+Sys.parseTree "fn x :: xs => x";
+> val it = "(fn (match (cons_pat x :: xs) (id x)))" : string
+Sys.parseTree "fn [a, b] => a";
+> val it = "(fn (match (list_pat [a, b]) (id a)))" : string
+Sys.parseTree "fn {a, b} => a";
+> val it = "(fn (match (record_pat {a = a, b = b}) (id a)))" : string
+Sys.parseTree "fn {a, ...} => a";
+> val it = "(fn (match (record_pat {a = a, ...}) (id a)))" : string
+Sys.parseTree "fn all as (a, b) => a";
+> val it = "(fn (match (as_pat all as (a, b)) (id a)))" : string
+
 (*) End parse.smli

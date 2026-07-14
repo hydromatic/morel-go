@@ -334,12 +334,18 @@ func (p *Parser) atom() (ast.Expr, error) {
 	tok := p.tok
 	// lint: sort until '^\t}' where '^\tcase '
 	switch tok.Kind {
+	case token.Case:
+		return p.caseExpr()
+	case token.Fn:
+		return p.fnExpr()
 	case token.Ident:
 		err := p.next()
 		if err != nil {
 			return nil, err
 		}
 		return ast.NewID(tok.Span, tok.Text), nil
+	case token.If:
+		return p.ifExpr()
 	case token.LBrace:
 		return p.recordExpr()
 	case token.LBracket:
@@ -355,6 +361,131 @@ func (p *Parser) atom() (ast.Expr, error) {
 	default:
 		return p.literal()
 	}
+}
+
+// ifExpr parses "if e1 then e2 else e3".
+func (p *Parser) ifExpr() (ast.Expr, error) {
+	start := p.tok.Span.Start
+	err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	cond, err := p.expr()
+	if err != nil {
+		return nil, err
+	}
+	ifTrue, err := p.keywordExpr(token.Then)
+	if err != nil {
+		return nil, err
+	}
+	ifFalse, err := p.keywordExpr(token.Else)
+	if err != nil {
+		return nil, err
+	}
+	span := token.Span{Start: start, End: ifFalse.Span().End}
+	return ast.NewIf(span, cond, ifTrue, ifFalse), nil
+}
+
+// keywordExpr consumes the given keyword and parses the
+// expression that follows it.
+func (p *Parser) keywordExpr(kw token.Kind) (ast.Expr, error) {
+	err := p.expect(kw)
+	if err != nil {
+		return nil, err
+	}
+	err = p.next()
+	if err != nil {
+		return nil, err
+	}
+	return p.expr()
+}
+
+// fnExpr parses "fn match | match ...".
+func (p *Parser) fnExpr() (ast.Expr, error) {
+	start := p.tok.Span.Start
+	err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	matches, err := p.matchList()
+	if err != nil {
+		return nil, err
+	}
+	last := matches[len(matches)-1]
+	span := token.Span{Start: start, End: last.Span().End}
+	return ast.NewFn(span, matches), nil
+}
+
+// caseExpr parses "case e of match | match ...".
+func (p *Parser) caseExpr() (ast.Expr, error) {
+	start := p.tok.Span.Start
+	err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	exp, err := p.expr()
+	if err != nil {
+		return nil, err
+	}
+	err = p.expect(token.Of)
+	if err != nil {
+		return nil, err
+	}
+	err = p.next()
+	if err != nil {
+		return nil, err
+	}
+	matches, err := p.matchList()
+	if err != nil {
+		return nil, err
+	}
+	last := matches[len(matches)-1]
+	span := token.Span{Start: start, End: last.Span().End}
+	return ast.NewCase(span, exp, matches), nil
+}
+
+// matchList parses "match | match | ..." where each match is
+// "pat => exp".
+func (p *Parser) matchList() ([]*ast.Match, error) {
+	var matches []*ast.Match
+	for {
+		m, err := p.match()
+		if err != nil {
+			return nil, err
+		}
+		matches = append(matches, m)
+		if p.tok.Kind != token.Bar {
+			return matches, nil
+		}
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
+	}
+}
+
+func (p *Parser) match() (*ast.Match, error) {
+	pat, err := p.pat()
+	if err != nil {
+		return nil, err
+	}
+	err = p.expect(token.RArrow)
+	if err != nil {
+		return nil, err
+	}
+	err = p.next()
+	if err != nil {
+		return nil, err
+	}
+	exp, err := p.expr()
+	if err != nil {
+		return nil, err
+	}
+	span := token.Span{
+		Start: pat.Span().Start,
+		End:   exp.Span().End,
+	}
+	return ast.NewMatch(span, pat, exp), nil
 }
 
 func (p *Parser) literal() (ast.Expr, error) {

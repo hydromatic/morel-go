@@ -42,8 +42,22 @@ func dump(b *strings.Builder, node Node) {
 		b.WriteString(" ")
 		dump(b, n.Arg)
 		b.WriteString(")")
+	case *Case:
+		b.WriteString("(case ")
+		dump(b, n.Exp)
+		dumpMatches(b, "", n.Matches)
+	case *Fn:
+		dumpMatches(b, "(fn", n.Matches)
 	case *ID:
 		b.WriteString("(id " + n.Name + ")")
+	case *If:
+		b.WriteString("(if ")
+		dump(b, n.Cond)
+		b.WriteString(" ")
+		dump(b, n.IfTrue)
+		b.WriteString(" ")
+		dump(b, n.IfFalse)
+		b.WriteString(")")
 	case *InfixCall:
 		b.WriteString("(" + n.Kind.String() + " ")
 		dump(b, n.A0)
@@ -54,6 +68,12 @@ func dump(b *strings.Builder, node Node) {
 		sexp(b, "list", n.Args)
 	case *Literal:
 		dumpLiteral(b, n)
+	case *Match:
+		b.WriteString("(match ")
+		dumpPat(b, n.Pat)
+		b.WriteString(" ")
+		dump(b, n.Exp)
+		b.WriteString(")")
 	case *PrefixCall:
 		b.WriteString("(" + n.Kind.String() + " ")
 		dump(b, n.A)
@@ -72,6 +92,42 @@ func dump(b *strings.Builder, node Node) {
 		sexp(b, "tuple", n.Args)
 	default:
 		panic(fmt.Sprintf("dump: unknown node %T", node))
+	}
+}
+
+func dumpMatches(b *strings.Builder, open string,
+	matches []*Match,
+) {
+	b.WriteString(open)
+	for _, m := range matches {
+		b.WriteString(" ")
+		dump(b, m)
+	}
+	b.WriteString(")")
+}
+
+// dumpPat renders a pattern. Simple patterns have their own
+// forms; compound patterns render as the pattern's op name plus
+// its unparsed source.
+func dumpPat(b *strings.Builder, p Pat) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch n := p.(type) {
+	case *IDPat:
+		b.WriteString("(idPat " + n.Name + ")")
+	case *LiteralPat:
+		b.WriteString("(" + n.Kind.String() + " " + n.Value + ")")
+	case *TuplePat:
+		b.WriteString("(tuplePat")
+		for _, a := range n.Args {
+			b.WriteString(" ")
+			dumpPat(b, a)
+		}
+		b.WriteString(")")
+	case *WildcardPat:
+		b.WriteString("wildcard")
+	default:
+		b.WriteString("(" + p.Op().String() + " " +
+			UnparsePat(p) + ")")
 	}
 }
 

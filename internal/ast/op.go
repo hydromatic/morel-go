@@ -61,6 +61,27 @@ const (
 	DivideOp
 	DivOp
 	ModOp
+
+	// Conditionals, functions, and matches.
+
+	IfOp
+	FnOp
+	CaseOp
+	MatchOp
+
+	// Patterns.
+
+	IDPatOp
+	WildcardPatOp
+	IntLiteralPatOp
+	RealLiteralPatOp
+	StringLiteralPatOp
+	CharLiteralPatOp
+	TuplePatOp
+	ListPatOp
+	RecordPatOp
+	ConsPatOp
+	AsPatOp
 )
 
 var opNames = map[Op]string{
@@ -98,6 +119,23 @@ var opNames = map[Op]string{
 	DivideOp:         "divide",
 	DivOp:            "div",
 	ModOp:            "mod",
+
+	IfOp:    "if",
+	FnOp:    "fn",
+	CaseOp:  "case",
+	MatchOp: "match",
+
+	IDPatOp:            "id_pat",
+	WildcardPatOp:      "wildcard_pat",
+	IntLiteralPatOp:    "int_literal_pat",
+	RealLiteralPatOp:   "real_literal_pat",
+	StringLiteralPatOp: "string_literal_pat",
+	CharLiteralPatOp:   "char_literal_pat",
+	TuplePatOp:         "tuple_pat",
+	ListPatOp:          "list_pat",
+	RecordPatOp:        "record_pat",
+	ConsPatOp:          "cons_pat",
+	AsPatOp:            "as_pat",
 }
 
 func (o Op) String() string {
