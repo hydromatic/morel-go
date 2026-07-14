@@ -172,7 +172,10 @@ func (*ListExp) Op() Op { return ListOp }
 // resolution.
 type Field struct {
 	Label string
-	Exp   Expr
+	// LabelSpan is the source range of the label, if the field
+	// was written "label = exp"; error reports anchor to it.
+	LabelSpan token.Span
+	Exp       Expr
 }
 
 // Record is a record expression, "{a = e1, b = e2, ...}", with

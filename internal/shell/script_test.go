@@ -104,7 +104,7 @@ func TestScriptCommentsAndTrailerEchoed(t *testing.T) {
 func TestScriptLexErrorIsOutput(t *testing.T) {
 	exec := scripted{"val y = 2;": "fine"}
 	checkScript(t, exec, "val x = ?;\nval y = 2;\n",
-		"val x = ?;\n> t.smli:1.9-1.10: illegal character\n"+
+		"val x = ?;\n> t.smli:1.9: illegal character\n"+
 			"val y = 2;\n> fine\n")
 }
 

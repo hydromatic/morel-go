@@ -200,7 +200,8 @@ func TestExecuteLists(t *testing.T) {
 			`concat ["con", "cat"];`,
 			`val it = "concat" : string`,
 		},
-		{"hd nil;", "uncaught exception Empty"},
+		{"hd nil;", "uncaught exception Empty\n" +
+			"  raised at: stdIn:1.1-1.7"},
 	})
 }
 
@@ -301,7 +302,8 @@ func TestExecuteArithmetic(t *testing.T) {
 		{"true andalso false;", "val it = false : bool"},
 		{"false orelse true;", "val it = true : bool"},
 		{"1 + 2 * 3;", "val it = 7 : int"},
-		{"7 div 0;", "uncaught exception Div"},
+		{"7 div 0;", "uncaught exception Div" +
+			" [divide by zero]\n  raised at: stdIn:1.1-1.8"},
 	})
 }
 
@@ -355,6 +357,35 @@ func TestExecuteRecursion(t *testing.T) {
 			"val keep = fn : int -> string",
 		},
 		{"keep 2;", `val it = "done" : string`},
+	})
+}
+
+// TestExecuteExceptions pins exception reports probed against
+// the java binary: the bracketed description, and "raised at"
+// spans (an application's own span; a match list's span for
+// Bind in case or fn; the pattern-through-expression span for
+// Bind in val).
+func TestExecuteExceptions(t *testing.T) {
+	runSession(t, [][2]string{
+		{"chr 999;", "uncaught exception Chr\n" +
+			"  raised at: stdIn:1.1-1.8"},
+		{"hd (tl [1]);", "uncaught exception Empty\n" +
+			"  raised at: stdIn:1.1-1.11"},
+		{"(fn 0 => 1) 5;", "uncaught exception Bind" +
+			" [nonexhaustive binding failure]\n" +
+			"  raised at: stdIn:1.5-1.11"},
+		{"case 5 of 0 => 1;", "uncaught exception Bind" +
+			" [nonexhaustive binding failure]\n" +
+			"  raised at: stdIn:1.11-1.17"},
+		{"val (1, x) = (2, 3);", "uncaught exception Bind" +
+			" [nonexhaustive binding failure]\n" +
+			"  raised at: stdIn:1.5-1.20"},
+		// After a failed statement, the session continues and
+		// 'it' is untouched.
+		{"1;", "val it = 1 : int"},
+		{"hd nil;", "uncaught exception Empty\n" +
+			"  raised at: stdIn:1.1-1.7"},
+		{"it;", "val it = 1 : int"},
 	})
 }
 

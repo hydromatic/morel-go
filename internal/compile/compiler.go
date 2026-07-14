@@ -61,7 +61,7 @@ func Statement(decl core.Decl,
 		if err != nil {
 			return nil, err
 		}
-		code = eval.Let(pat, exp, eval.Unit())
+		code = eval.Let(pat, exp, eval.Unit(), d.Span)
 		ids = core.PatIDs(d.Pat)
 	case *core.RecValDecl:
 		var err error
@@ -135,7 +135,7 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 		if err != nil {
 			return nil, err
 		}
-		return eval.Apply(fn, arg), nil
+		return eval.Apply(fn, arg, e.Span), nil
 	case *core.Case:
 		return c.compileCase(e)
 	case *core.Fn:
@@ -219,7 +219,7 @@ func (c *compiler) compileCase(caseExp *core.Case) (eval.Code,
 		}
 		clauses[i] = eval.MatchClause{Pat: pat, Body: body}
 	}
-	return eval.Case(scrutinee, clauses), nil
+	return eval.Case(scrutinee, clauses, caseExp.Span), nil
 }
 
 // compilePat compiles a pattern, allocating a slot for each name
@@ -292,7 +292,7 @@ func (c *compiler) compileLet(let *core.Let) (eval.Code, error) {
 		if err != nil {
 			return nil, err
 		}
-		return eval.Let(pat, init, body), nil
+		return eval.Let(pat, init, body, d.Span), nil
 	case *core.RecValDecl:
 		for _, bind := range d.Binds {
 			if idPat, ok := bind.Pat.(*core.IDPat); ok {

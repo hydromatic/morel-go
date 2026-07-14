@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hydromatic/morel-go/internal/token"
+
 	"github.com/hydromatic/morel-go/internal/ast"
 	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/types"
@@ -96,7 +98,11 @@ func (r *resolver) toDecl(env *coreEnv, decl ast.Decl) (core.Decl,
 	for _, id := range core.PatIDs(pat) {
 		env2 = env2.bind(id)
 	}
-	valDecl := &core.NonRecValDecl{Pat: pat, Exp: exp}
+	valDecl := &core.NonRecValDecl{
+		Pat:  pat,
+		Exp:  exp,
+		Span: bind.Span(),
+	}
 	return valDecl, env2, nil
 }
 
@@ -122,8 +128,9 @@ func (r *resolver) toRecDecl(env *coreEnv, d *ast.ValDecl) (
 			return nil, nil, err
 		}
 		binds[i] = &core.NonRecValDecl{
-			Pat: idPats[i],
-			Exp: exp,
+			Pat:  idPats[i],
+			Exp:  exp,
+			Span: bind.Span(),
 		}
 	}
 	return &core.RecValDecl{Binds: binds}, env2, nil
@@ -215,9 +222,10 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 			Name: "op ~",
 		}
 		return &core.Apply{
-			T:   t,
-			Fn:  &core.ID{Pat: fnPat},
-			Arg: arg,
+			T:    t,
+			Fn:   &core.ID{Pat: fnPat},
+			Arg:  arg,
+			Span: e.Span(),
 		}, nil
 	case *ast.Record:
 		return r.toRecord(env, e, t)
@@ -265,7 +273,13 @@ func (r *resolver) toApply(env *coreEnv, apply *ast.Apply,
 	if err != nil {
 		return nil, err
 	}
-	return &core.Apply{T: t, Fn: fn, Arg: arg}, nil
+	apply2 := &core.Apply{
+		T:    t,
+		Fn:   fn,
+		Arg:  arg,
+		Span: apply.Span(),
+	}
+	return apply2, nil
 }
 
 // toFn converts a function. A single rule that binds one name
@@ -309,6 +323,7 @@ func (r *resolver) toFn(env *coreEnv, fn *ast.Fn,
 		T:       fnType.Result,
 		Exp:     &core.ID{Pat: param},
 		Matches: matches,
+		Span:    matchesSpan(fn.Matches),
 	}
 	return &core.Fn{T: fnType, IDPat: param, Exp: body}, nil
 }
@@ -408,9 +423,10 @@ func (r *resolver) toInfix(env *coreEnv, call *ast.InfixCall,
 		Args: []core.Exp{a0, a1},
 	}
 	return &core.Apply{
-		T:   t,
-		Fn:  &core.ID{Pat: fnPat},
-		Arg: arg,
+		T:    t,
+		Fn:   &core.ID{Pat: fnPat},
+		Arg:  arg,
+		Span: call.Span(),
 	}, nil
 }
 
@@ -495,8 +511,23 @@ func (r *resolver) toCase(env *coreEnv, caseExp *ast.Case,
 	if err != nil {
 		return nil, err
 	}
-	return &core.Case{T: t, Exp: scrutinee, Matches: matches},
-		nil
+	caseExp2 := &core.Case{
+		T:       t,
+		Exp:     scrutinee,
+		Matches: matches,
+		Span:    matchesSpan(caseExp.Matches),
+	}
+	return caseExp2, nil
+}
+
+// matchesSpan is the position of a match list, from the first
+// rule's start to the last rule's end; a Bind failure is
+// reported there.
+func matchesSpan(matches []*ast.Match) token.Span {
+	return token.Span{
+		Start: matches[0].Span().Start,
+		End:   matches[len(matches)-1].Span().End,
+	}
 }
 
 func (r *resolver) toMatches(env *coreEnv,

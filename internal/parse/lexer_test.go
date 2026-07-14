@@ -208,8 +208,8 @@ func TestLexComments(t *testing.T) {
 func TestLexSpans(t *testing.T) {
 	toks := lex(t, "val x =\n  \"ab\";")
 	want := []string{
-		"1.1-1.4", "1.5-1.6", "1.7-1.8", "2.3-2.7",
-		"2.7-2.8",
+		"1.1-1.4", "1.5", "1.7", "2.3-2.7",
+		"2.7",
 	}
 	if len(toks) != len(want) {
 		t.Fatalf("got %d tokens, want %d", len(toks), len(want))
@@ -228,10 +228,10 @@ func TestLexErrors(t *testing.T) {
 		{"\"abc\ndef", "stdIn:1.1-2.4: unclosed string"},
 		{"(* abc", "stdIn:1.1-1.7: unclosed comment"},
 		{"(* a (* b *)", "stdIn:1.1-1.13: unclosed comment"},
-		{`"bad \q escape"`, "stdIn:1.6-1.7: illegal escape"},
-		{"a ? b", "stdIn:1.3-1.4: illegal character"},
-		{"#?", "stdIn:1.1-1.2: illegal character"},
-		{"''a", "stdIn:1.1-1.2: illegal character"},
+		{`"bad \q escape"`, "stdIn:1.6: illegal escape"},
+		{"a ? b", "stdIn:1.3: illegal character"},
+		{"#?", "stdIn:1.1: illegal character"},
+		{"''a", "stdIn:1.1: illegal character"},
 		{"`abc", "stdIn:1.1-1.5: unclosed quoted identifier"},
 	} {
 		if got := lexError(t, tc.src); got != tc.want {
@@ -254,6 +254,13 @@ func TestSpanString(t *testing.T) {
 		End:   token.Pos{Line: 2, Col: 3},
 	}
 	if got := point.String(); got != "2.3" {
+		t.Errorf("got %q", got)
+	}
+	oneChar := token.Span{
+		Start: token.Pos{Line: 1, Col: 9},
+		End:   token.Pos{Line: 1, Col: 10},
+	}
+	if got := oneChar.String(); got != "1.9" {
 		t.Errorf("got %q", got)
 	}
 }

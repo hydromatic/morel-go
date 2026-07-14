@@ -785,6 +785,7 @@ func (p *Parser) labeledField() (ast.Field, error) {
 	if p.tok.Kind == token.QuotedIdent {
 		label = unquoteIdent(label)
 	}
+	labelSpan := p.tok.Span
 	err := p.next()
 	if err != nil {
 		return ast.Field{}, err
@@ -797,5 +798,9 @@ func (p *Parser) labeledField() (ast.Field, error) {
 	if err != nil {
 		return ast.Field{}, err
 	}
-	return ast.Field{Label: label, Exp: exp}, nil
+	return ast.Field{
+		Label:     label,
+		LabelSpan: labelSpan,
+		Exp:       exp,
+	}, nil
 }

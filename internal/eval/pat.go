@@ -17,6 +17,8 @@
 
 package eval
 
+import "github.com/hydromatic/morel-go/internal/token"
+
 // Pat is a compiled pattern. Match tests a value, binding the
 // pattern's variables into the frame's slots, and reports
 // whether it matched.
@@ -116,14 +118,21 @@ type MatchClause struct {
 
 // Case returns code that evaluates a scrutinee and runs the body
 // of the first clause whose pattern matches; if none matches, it
-// raises Bind.
-func Case(scrutinee Code, clauses []MatchClause) Code {
-	return &caseCode{scrutinee: scrutinee, clauses: clauses}
+// raises Bind at the match list's position.
+func Case(scrutinee Code, clauses []MatchClause,
+	span token.Span,
+) Code {
+	return &caseCode{
+		scrutinee: scrutinee,
+		clauses:   clauses,
+		span:      span,
+	}
 }
 
 type caseCode struct {
 	scrutinee Code
 	clauses   []MatchClause
+	span      token.Span
 }
 
 func (c *caseCode) Eval(f *Frame) (Val, error) {
@@ -136,7 +145,7 @@ func (c *caseCode) Eval(f *Frame) (Val, error) {
 			return clause.Body.Eval(f)
 		}
 	}
-	return nil, &MorelError{Exn: ExnBind}
+	return nil, &MorelError{Exn: ExnBind, Span: c.span}
 }
 
 func (c *caseCode) Describe() string {

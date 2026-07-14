@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"github.com/hydromatic/morel-go/internal/core"
+	"github.com/hydromatic/morel-go/internal/token"
 )
 
 // Code is a compiled expression. It is an interface, not a bare
@@ -149,26 +150,32 @@ func (c *makeClosureCode) Describe() string {
 }
 
 // Apply returns code that evaluates a function and an argument
-// and applies one to the other.
-func Apply(fn, arg Code) Code {
-	return &applyCode{fn: fn, arg: arg}
+// and applies one to the other; span is where an exception
+// raised by the application is reported.
+func Apply(fn, arg Code, span token.Span) Code {
+	return &applyCode{fn: fn, arg: arg, span: span}
 }
 
 type applyCode struct {
-	fn  Code
-	arg Code
+	fn   Code
+	arg  Code
+	span token.Span
 }
 
 func (c *applyCode) Eval(f *Frame) (Val, error) {
 	fnVal, err := c.fn.Eval(f)
 	if err != nil {
-		return nil, err
+		return nil, restampSpan(err, c.span)
 	}
 	argVal, err := c.arg.Eval(f)
 	if err != nil {
 		return nil, err
 	}
-	return ApplyVal(fnVal, argVal)
+	v, err := ApplyVal(fnVal, argVal)
+	if err != nil {
+		return nil, stampSpan(err, c.span)
+	}
+	return v, nil
 }
 
 // ApplyVal applies a function value — a built-in or a closure —
@@ -243,14 +250,15 @@ func (c *letRecCode) Describe() string {
 // against a pattern (binding the pattern's variables into their
 // slots; a non-match raises Bind), and evaluates a body in their
 // scope.
-func Let(pat Pat, init, body Code) Code {
-	return &letCode{pat: pat, init: init, body: body}
+func Let(pat Pat, init, body Code, span token.Span) Code {
+	return &letCode{pat: pat, init: init, body: body, span: span}
 }
 
 type letCode struct {
 	pat  Pat
 	init Code
 	body Code
+	span token.Span
 }
 
 func (c *letCode) Eval(f *Frame) (Val, error) {
@@ -259,7 +267,7 @@ func (c *letCode) Eval(f *Frame) (Val, error) {
 		return nil, err
 	}
 	if !c.pat.Match(v, f) {
-		return nil, &MorelError{Exn: ExnBind}
+		return nil, &MorelError{Exn: ExnBind, Span: c.span}
 	}
 	return c.body.Eval(f)
 }
