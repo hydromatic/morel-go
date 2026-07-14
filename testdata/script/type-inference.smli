@@ -116,6 +116,10 @@ Sys.set ("lineWidth", 78);
 > val it : {a:int, b:bool}
 :t {{a=1,b=true} with b=false};
 > val it : {a:int, b:bool}
+:t fn x => case x of 0 => 1 | _ => 2;
+> val it : int -> int
+:t fn x => case x of 0 => "zero" | _ => "nonzero";
+> val it : int -> string
 
 (*) Polymorphic type variables
 :t fn _ => 42;
@@ -124,8 +128,22 @@ Sys.set ("lineWidth", 78);
 > val it : 'a -> 'b -> int
 :t fn x => x;
 > val it : 'a -> 'a
+:t let fun id x = x in id end;
+> val it : 'a -> 'a
+:t fun id x = x;
+> val id : 'a -> 'a
 :t fn x => fn y => x;
 > val it : 'a -> 'b -> 'a
+:t let fun first x y = x in first end;
+> val it : 'a -> 'b -> 'a
+:t fun first x y = x;
+> val first : 'a -> 'b -> 'a
+:t fun second x y = y;
+> val second : 'a -> 'b -> 'b
+:t fun choose b x y = if b then x else y;
+> val choose : bool -> 'a -> 'a -> 'a
+:t fun choose b (x, y) = if b then x else y;
+> val choose : bool -> 'a * 'a -> 'a
 
 (*) Record types, including duplicate fields
 :t {a=1, b=true};

@@ -122,6 +122,29 @@ func TestDeduce(t *testing.T) {
 		{"(fn {f, ...} => f) {f=1, g=true}", "int"},
 		{"{{a=1,b=true} with b=false}", "{a:int, b:bool}"},
 		{"let val x = {a=1, b=true} in #b x end", "bool"},
+		{"fun id x = x", "'a -> 'a"},
+		{"fun first x y = x", "'a -> 'b -> 'a"},
+		{
+			"fun choose b x y = if b then x else y",
+			"bool -> 'a -> 'a -> 'a",
+		},
+		{
+			"fun choose b (x, y) = if b then x else y",
+			"bool -> 'a * 'a -> 'a",
+		},
+		{"fun f 0 = true | f _ = false", "int -> bool"},
+		{"fun f 0 y = y | f x _ = x", "int -> int -> int"},
+		{"val rec f = fn x => f x", "'a -> 'b"},
+		{"fn x => case x of 0 => 1 | _ => 2", "int -> int"},
+		{
+			"fn x => case x of 0 => \"zero\" | _ => \"nonzero\"",
+			"int -> string",
+		},
+		{"let fun id x = x in id end", "'a -> 'a"},
+		{
+			"fn r => case r of {a=1, ...} => 1 | {b=2, ...} => 2",
+			"'a -> int",
+		},
 	} {
 		t.Run(tc.src, func(t *testing.T) {
 			resolved, err := deduce(t, tc.src)
@@ -163,6 +186,13 @@ func TestDeduceError(t *testing.T) {
 		{"#a", "unresolved flex record (can't tell what " +
 			"fields there are besides #a)"},
 		{"{a=1, b=true, a=3}", "duplicate field 'a' in record"},
+		{
+			// 'let' does not generalize: a let-bound
+			// value has one type, so 'id' cannot be used at both
+			// int and string.
+			"let val id = fn x => x in (id 1, id \"a\") end",
+			"Cannot deduce type: conflict",
+		},
 		{"3000000000", "literal '3000000000' is too large" +
 			" for type int"},
 	} {

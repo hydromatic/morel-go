@@ -60,7 +60,7 @@ func Deduce(sys *types.System, bindings []Binding,
 		env = &bindingTypeEnv{parent: env, bindings: byName}
 	}
 	var termMap []patTerm
-	err := r.deduceDecl(env, decl, &termMap)
+	decl2, err := r.deduceDecl(env, decl, &termMap)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func Deduce(sys *types.System, bindings []Binding,
 		nodeTerm: r.nodeTerm,
 		subst:    subst,
 	}
-	return &Resolved{Decl: decl, TypeMap: typeMap}, nil
+	return &Resolved{Decl: decl2, TypeMap: typeMap}, nil
 }
 
 // patTerm records that a pattern binds a name to a term; the
@@ -171,25 +171,14 @@ func (r *typeResolver) typeTerm(t types.Type,
 
 func (r *typeResolver) deduceDecl(env typeEnv, decl ast.Decl,
 	termMap *[]patTerm,
-) error {
+) (ast.Decl, error) {
 	switch d := decl.(type) {
+	case *ast.FunDecl:
+		return r.deduceValDecl(env, funToVal(d), termMap)
 	case *ast.ValDecl:
-		if d.Rec {
-			return &Error{
-				Span: d.Span(),
-				Msg:  "cannot deduce type for val rec",
-			}
-		}
-		for _, b := range d.Binds {
-			err := r.deduceValBind(env, b, termMap)
-			if err != nil {
-				return err
-			}
-		}
-		r.nodeTerm[decl] = r.primTerm("unit")
-		return nil
+		return r.deduceValDecl(env, d, termMap)
 	default:
-		return &Error{
+		return nil, &Error{
 			Span: decl.Span(),
 			Msg: "cannot deduce type for " +
 				decl.Op().String(),
@@ -197,11 +186,35 @@ func (r *typeResolver) deduceDecl(env typeEnv, decl ast.Decl,
 	}
 }
 
+func (r *typeResolver) deduceValDecl(env typeEnv,
+	decl *ast.ValDecl, termMap *[]patTerm,
+) (ast.Decl, error) {
+	// If recursive, bind each name (presumably a function) to
+	// its type variable before deducing the expressions' types.
+	env2 := env
+	vPats := make([]*unify.Var, len(decl.Binds))
+	for i, b := range decl.Binds {
+		vPats[i] = r.u.Variable()
+		if decl.Rec {
+			if idPat, ok := b.Pat.(*ast.IDPat); ok {
+				env2 = bind(env2, idPat.Name, vPats[i])
+			}
+		}
+	}
+	for i, b := range decl.Binds {
+		err := r.deduceValBind(env2, b, termMap, vPats[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	r.nodeTerm[decl] = r.primTerm("unit")
+	return decl, nil
+}
+
 func (r *typeResolver) deduceValBind(env typeEnv,
-	bind *ast.ValBind, termMap *[]patTerm,
+	bind *ast.ValBind, termMap *[]patTerm, vPat *unify.Var,
 ) error {
-	vPat := r.u.Variable()
-	err := r.deducePat(bind.Pat, termMap, vPat)
+	err := r.deducePat(bind.Pat, termMap, nil, vPat)
 	if err != nil {
 		return err
 	}
@@ -214,7 +227,7 @@ func (r *typeResolver) deduceValBind(env typeEnv,
 }
 
 func (r *typeResolver) deducePat(pat ast.Pat,
-	termMap *[]patTerm, v *unify.Var,
+	termMap *[]patTerm, labelNames []string, v *unify.Var,
 ) error {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch p := pat.(type) {
@@ -225,12 +238,12 @@ func (r *typeResolver) deducePat(pat ast.Pat,
 	case *ast.LiteralPat:
 		return r.deduceLiteral(pat, p.Kind, p.Value, v)
 	case *ast.RecordPat:
-		return r.deduceRecordPat(p, termMap, v)
+		return r.deduceRecordPat(p, termMap, labelNames, v)
 	case *ast.TuplePat:
 		terms := make([]unify.Term, len(p.Args))
 		for i, arg := range p.Args {
 			vArg := r.u.Variable()
-			err := r.deducePat(arg, termMap, vArg)
+			err := r.deducePat(arg, termMap, nil, vArg)
 			if err != nil {
 				return err
 			}
@@ -264,6 +277,8 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 	switch e := exp.(type) {
 	case *ast.Apply:
 		return r.deduceApply(env, e, v)
+	case *ast.Case:
+		return r.deduceCase(env, e, v)
 	case *ast.Fn:
 		vResult := r.u.Variable()
 		for _, m := range e.Matches {
@@ -289,12 +304,13 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 		return r.deduceIf(env, e, v)
 	case *ast.Let:
 		env2 := env
-		for _, d := range e.Decls {
+		for i, d := range e.Decls {
 			var termMap []patTerm
-			err := r.deduceDecl(env2, d, &termMap)
+			d2, err := r.deduceDecl(env2, d, &termMap)
 			if err != nil {
 				return err
 			}
+			e.Decls[i] = d2
 			env2 = bindAll(env2, termMap)
 		}
 		err := r.deduceExp(env2, e.Exp, v)
@@ -354,17 +370,17 @@ func (r *typeResolver) deduceLiteral(node ast.Node, kind ast.Op,
 	switch kind {
 	case ast.BoolLiteralOp:
 		name = "bool"
-	case ast.CharLiteralOp:
+	case ast.CharLiteralOp, ast.CharLiteralPatOp:
 		name = "char"
-	case ast.IntLiteralOp:
+	case ast.IntLiteralOp, ast.IntLiteralPatOp:
 		err := checkIntRange(node, value)
 		if err != nil {
 			return err
 		}
 		name = "int"
-	case ast.RealLiteralOp:
+	case ast.RealLiteralOp, ast.RealLiteralPatOp:
 		name = "real"
-	case ast.StringLiteralOp:
+	case ast.StringLiteralOp, ast.StringLiteralPatOp:
 		name = "string"
 	case ast.UnitLiteralOp:
 		name = "unit"
@@ -524,21 +540,31 @@ func (r *typeResolver) deduceRecord(env typeEnv,
 // deduceRecordPat handles a record pattern, e.g. "{a, b = p}" or
 // "{a, ...}".
 func (r *typeResolver) deduceRecordPat(pat *ast.RecordPat,
-	termMap *[]patTerm, v *unify.Var,
+	termMap *[]patTerm, labelNames []string, v *unify.Var,
 ) error {
-	fields := make([]labelTerm, len(pat.Fields))
 	byLabel := map[string]ast.Pat{}
-	for i, f := range pat.Fields {
-		fields[i] = labelTerm{label: f.Label}
+	for _, f := range pat.Fields {
 		byLabel[f.Label] = f.Pat
+	}
+	// The field set is the pattern's own labels or, in a match
+	// list, the union of the labels of the sibling patterns.
+	if labelNames == nil {
+		for _, f := range pat.Fields {
+			labelNames = append(labelNames, f.Label)
+		}
+	}
+	fields := make([]labelTerm, len(labelNames))
+	for i, label := range labelNames {
+		fields[i] = labelTerm{label: label}
 	}
 	sortFields(fields)
 	for i := range fields {
 		vArg := r.u.Variable()
-		err := r.deducePat(byLabel[fields[i].label], termMap,
-			vArg)
-		if err != nil {
-			return err
+		if fieldPat, ok := byLabel[fields[i].label]; ok {
+			err := r.deducePat(fieldPat, termMap, nil, vArg)
+			if err != nil {
+				return err
+			}
 		}
 		fields[i].term = vArg
 	}
@@ -602,6 +628,69 @@ func (r *typeResolver) deduceIf(env typeEnv, ifExp *ast.If,
 	return nil
 }
 
+// deduceCase handles "case exp of pat => exp | ...". Every rule's
+// pattern unifies with the scrutinee's type. If any rule has a
+// record pattern, all the rules' record patterns share the union
+// of their field names, which lets a rule mention only the fields
+// it needs.
+func (r *typeResolver) deduceCase(env typeEnv, caseExp *ast.Case,
+	v *unify.Var,
+) error {
+	v2 := r.u.Variable()
+	err := r.deduceExp(env, caseExp.Exp, v2)
+	if err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	var labelNames []string
+	if seq, ok := r.nodeTerm[caseExp.Exp].(*unify.Sequence); ok {
+		for _, label := range fieldList(seq) {
+			seen[label] = true
+			labelNames = append(labelNames, label)
+		}
+	}
+	for _, m := range caseExp.Matches {
+		if recordPat, ok := m.Pat.(*ast.RecordPat); ok {
+			for _, f := range recordPat.Fields {
+				if !seen[f.Label] {
+					seen[f.Label] = true
+					labelNames = append(labelNames, f.Label)
+				}
+			}
+		}
+	}
+	err = r.deduceMatchList(env, caseExp.Matches, labelNames,
+		v2, v)
+	if err != nil {
+		return err
+	}
+	r.reg(caseExp, v)
+	return nil
+}
+
+// deduceMatchList handles the rules of a case: each rule's
+// pattern has the scrutinee's type, and each rule's expression
+// has the result type.
+func (r *typeResolver) deduceMatchList(env typeEnv,
+	matches []*ast.Match, labelNames []string,
+	argVariable, resultVariable *unify.Var,
+) error {
+	for _, m := range matches {
+		var termMap []patTerm
+		err := r.deducePat(m.Pat, &termMap, labelNames,
+			argVariable)
+		if err != nil {
+			return err
+		}
+		env2 := bindAll(env, termMap)
+		err = r.deduceExp(env2, m.Exp, resultVariable)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // deduceMatch handles one match rule "pat => exp" of a fn: the
 // rule's type is "typeof(pat) -> typeof(exp)".
 func (r *typeResolver) deduceMatch(env typeEnv, match *ast.Match,
@@ -609,7 +698,7 @@ func (r *typeResolver) deduceMatch(env typeEnv, match *ast.Match,
 ) error {
 	vPat := r.u.Variable()
 	var termMap []patTerm
-	err := r.deducePat(match.Pat, &termMap, vPat)
+	err := r.deducePat(match.Pat, &termMap, nil, vPat)
 	if err != nil {
 		return err
 	}
