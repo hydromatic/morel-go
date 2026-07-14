@@ -169,6 +169,7 @@ func formats() map[string]commentFormat {
 			"\n{% endcomment %}\n-->", mdWidth,
 		},
 		"mod":  {"", "// ", "", noLimit},
+		"py":   {"#!/usr/bin/env python3\n", "# ", "", goWidth},
 		"sig":  {mlStart, mlPrefix, mlSuffix, noLimit},
 		"sml":  {mlStart, mlPrefix, mlSuffix, noLimit},
 		"smli": {mlStart, mlPrefix, mlSuffix, noLimit},
