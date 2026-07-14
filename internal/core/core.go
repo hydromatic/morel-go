@@ -220,3 +220,14 @@ type NonRecValDecl struct {
 func (*NonRecValDecl) Op() ast.Op { return ast.ValDeclOp }
 
 func (*NonRecValDecl) decl() {}
+
+// RecValDecl is a recursive value declaration: its names are in
+// scope in all of its own expressions.
+type RecValDecl struct {
+	Binds []*NonRecValDecl
+}
+
+// Op implements Decl.
+func (*RecValDecl) Op() ast.Op { return ast.ValDeclOp }
+
+func (*RecValDecl) decl() {}

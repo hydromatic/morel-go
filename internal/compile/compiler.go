@@ -37,25 +37,45 @@ type Compiled struct {
 func Statement(decl core.Decl,
 	values map[string]eval.Val,
 ) (*Compiled, error) {
-	valDecl, ok := decl.(*core.NonRecValDecl)
-	if !ok {
-		return nil, &Error{
-			Msg: "cannot compile " + decl.Op().String(),
-		}
-	}
 	c := &compiler{
 		values: values,
 		slots:  map[*core.IDPat]int{},
 	}
-	code, err := c.compileExp(valDecl.Exp)
-	if err != nil {
-		return nil, err
+	switch d := decl.(type) {
+	case *core.NonRecValDecl:
+		code, err := c.compileExp(d.Exp)
+		if err != nil {
+			return nil, err
+		}
+		return &Compiled{
+			Pat:   d.Pat,
+			Code:  code,
+			Slots: c.nSlots,
+		}, nil
+	case *core.RecValDecl:
+		if len(d.Binds) != 1 {
+			return nil, &Error{
+				Msg: "cannot compile multi-binding val rec",
+			}
+		}
+		bind := d.Binds[0]
+		// A recursive statement is its own let: bind the name,
+		// patch the self-reference, and yield the value.
+		code, err := c.compileRec(d,
+			eval.GetSlot(c.allocSlot(bind.Pat), bind.Pat.Name))
+		if err != nil {
+			return nil, err
+		}
+		return &Compiled{
+			Pat:   bind.Pat,
+			Code:  code,
+			Slots: c.nSlots,
+		}, nil
+	default:
+		return nil, &Error{
+			Msg: "cannot compile " + decl.Op().String(),
+		}
 	}
-	return &Compiled{
-		Pat:   valDecl.Pat,
-		Code:  code,
-		Slots: c.nSlots,
-	}, nil
 }
 
 // compiler converts Core to Code, assigning each bound variable
@@ -199,22 +219,61 @@ func (c *compiler) patCode(pat core.Pat) (eval.Pat, error) {
 }
 
 func (c *compiler) compileLet(let *core.Let) (eval.Code, error) {
-	valDecl, ok := let.Decl.(*core.NonRecValDecl)
-	if !ok {
+	switch d := let.Decl.(type) {
+	case *core.NonRecValDecl:
+		init, err := c.compileExp(d.Exp)
+		if err != nil {
+			return nil, err
+		}
+		slot := c.allocSlot(d.Pat)
+		body, err := c.compileExp(let.Exp)
+		if err != nil {
+			return nil, err
+		}
+		return eval.Let(slot, init, body), nil
+	case *core.RecValDecl:
+		for _, bind := range d.Binds {
+			c.allocSlot(bind.Pat)
+		}
+		body, err := c.compileExp(let.Exp)
+		if err != nil {
+			return nil, err
+		}
+		return c.compileRec(d, body)
+	default:
 		return nil, &Error{
 			Msg: "cannot compile " + let.Decl.Op().String(),
 		}
 	}
-	init, err := c.compileExp(valDecl.Exp)
-	if err != nil {
-		return nil, err
+}
+
+// compileRec compiles a recursive declaration whose names have
+// already been given slots, wrapping the body in a LetRec that
+// patches the closures' self-references.
+func (c *compiler) compileRec(d *core.RecValDecl,
+	body eval.Code,
+) (eval.Code, error) {
+	slots := make([]int, len(d.Binds))
+	inits := make([]eval.Code, len(d.Binds))
+	for i, bind := range d.Binds {
+		slots[i] = c.allocSlot(bind.Pat)
+		init, err := c.compileExp(bind.Exp)
+		if err != nil {
+			return nil, err
+		}
+		inits[i] = init
+	}
+	return eval.LetRec(slots, inits, body), nil
+}
+
+// allocSlot returns the frame slot of a variable, allocating one
+// on first use.
+func (c *compiler) allocSlot(pat *core.IDPat) int {
+	if slot, ok := c.slots[pat]; ok {
+		return slot
 	}
 	slot := c.nSlots
 	c.nSlots++
-	c.slots[valDecl.Pat] = slot
-	body, err := c.compileExp(let.Exp)
-	if err != nil {
-		return nil, err
-	}
-	return eval.Let(slot, init, body), nil
+	c.slots[pat] = slot
+	return slot
 }

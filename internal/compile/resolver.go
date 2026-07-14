@@ -65,7 +65,17 @@ func (r *resolver) toDecl(env *coreEnv, decl ast.Decl) (core.Decl,
 	*coreEnv, error,
 ) {
 	d, ok := decl.(*ast.ValDecl)
-	if !ok || len(d.Binds) != 1 || d.Rec {
+	if !ok {
+		return nil, nil, &Error{
+			Span: decl.Span(),
+			Msg: "cannot convert to core: " +
+				decl.Op().String(),
+		}
+	}
+	if d.Rec {
+		return r.toRecDecl(env, d)
+	}
+	if len(d.Binds) != 1 {
 		return nil, nil, &Error{
 			Span: decl.Span(),
 			Msg: "cannot convert to core: " +
@@ -83,6 +93,35 @@ func (r *resolver) toDecl(env *coreEnv, decl ast.Decl) (core.Decl,
 	}
 	valDecl := &core.NonRecValDecl{Pat: idPat, Exp: exp}
 	return valDecl, env.bind(idPat), nil
+}
+
+// toRecDecl converts a recursive declaration; its names are in
+// scope in all of its own expressions.
+func (r *resolver) toRecDecl(env *coreEnv, d *ast.ValDecl) (
+	core.Decl, *coreEnv, error,
+) {
+	idPats := make([]*core.IDPat, len(d.Binds))
+	env2 := env
+	for i, bind := range d.Binds {
+		idPat, err := r.toIDPat(bind.Pat)
+		if err != nil {
+			return nil, nil, err
+		}
+		idPats[i] = idPat
+		env2 = env2.bind(idPat)
+	}
+	binds := make([]*core.NonRecValDecl, len(d.Binds))
+	for i, bind := range d.Binds {
+		exp, err := r.toExp(env2, bind.Exp)
+		if err != nil {
+			return nil, nil, err
+		}
+		binds[i] = &core.NonRecValDecl{
+			Pat: idPats[i],
+			Exp: exp,
+		}
+	}
+	return &core.RecValDecl{Binds: binds}, env2, nil
 }
 
 // toIDPat converts a pattern that binds (at most) one name; a
