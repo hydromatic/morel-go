@@ -138,6 +138,21 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 		return eval.Apply(fn, arg, e.Span), nil
 	case *core.Case:
 		return c.compileCase(e)
+	case *core.Con:
+		con := eval.Con{
+			Datatype: e.Datatype,
+			Name:     e.Name,
+			Ordinal:  e.Ordinal,
+		}
+		if !e.HasArg {
+			return eval.Constant(con), nil
+		}
+		return eval.Constant(eval.Fn(
+			func(arg eval.Val) (eval.Val, error) {
+				con2 := con
+				con2.Arg = arg
+				return con2, nil
+			})), nil
 	case *core.Fn:
 		return c.compileFn(e)
 	case *core.ID:
@@ -234,6 +249,23 @@ func (c *compiler) compilePat(pat core.Pat) (eval.Pat, error) {
 func (c *compiler) patCode(pat core.Pat) (eval.Pat, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch p := pat.(type) {
+	case *core.Con0Pat:
+		con0Pat := eval.Con0Pat{
+			Datatype: p.Datatype,
+			Ordinal:  p.Ordinal,
+		}
+		return con0Pat, nil
+	case *core.ConPat:
+		arg, err := c.patCode(p.Arg)
+		if err != nil {
+			return nil, err
+		}
+		conPat := eval.ConAppPat{
+			Arg:      arg,
+			Datatype: p.Datatype,
+			Ordinal:  p.Ordinal,
+		}
+		return conPat, nil
 	case *core.ConsPat:
 		head, err := c.patCode(p.Head)
 		if err != nil {

@@ -360,6 +360,82 @@ func TestExecuteRecursion(t *testing.T) {
 	})
 }
 
+// TestExecuteDatatypes pins datatype-value sessions probed
+// against the java binary, including constructor-argument
+// parenthesization and the echo of a datatype declaration.
+func TestExecuteDatatypes(t *testing.T) {
+	runSession(t, [][2]string{
+		{"SOME 4;", "val it = SOME 4 : int option"},
+		{"NONE;", "val it = NONE : 'a option"},
+		{
+			"SOME (SOME 4);",
+			"val it = SOME (SOME 4) : int option option",
+		},
+		{
+			"SOME (1, 2);",
+			"val it = SOME (1,2) : (int * int) option",
+		},
+		{
+			"SOME [1, 2];",
+			"val it = SOME [1,2] : int list option",
+		},
+		{"SOME ~1;", "val it = SOME ~1 : int option"},
+		{`SOME "a";`, `val it = SOME "a" : string option`},
+		{
+			"datatype color = RED | GREEN | BLUE;",
+			"datatype color = RED | GREEN | BLUE",
+		},
+		{"RED;", "val it = RED : color"},
+		{"SOME RED;", "val it = SOME RED : color option"},
+		{
+			"datatype shape = CIRCLE of real | SQUARE of real;",
+			"datatype shape = CIRCLE of real | SQUARE of real",
+		},
+		{"CIRCLE 1.5;", "val it = CIRCLE 1.5 : shape"},
+		{
+			"case SOME 3 of NONE => 0 | SOME n => n + 1;",
+			"val it = 4 : int",
+		},
+		{
+			"case RED of RED => 1 | _ => 2;",
+			"val it = 1 : int",
+		},
+		{
+			"case GREEN of RED => 1 | _ => 2;",
+			"val it = 2 : int",
+		},
+		{"val SOME z = SOME 9;", "val z = 9 : int"},
+		{
+			"map SOME [1, 2];",
+			"val it = [SOME 1,SOME 2] : int option list",
+		},
+		{
+			"datatype 'a tree = LEAF" +
+				" | NODE of 'a tree * 'a * 'a tree;",
+			"datatype 'a tree = LEAF" +
+				" | NODE of 'a tree * 'a * 'a tree",
+		},
+		{
+			"NODE (LEAF, 5, LEAF);",
+			"val it = NODE (LEAF,5,LEAF) : int tree",
+		},
+		{
+			"fun depth LEAF = 0" +
+				" | depth (NODE (l, _, r)) = 1 + depth l;",
+			"val depth = fn : 'a tree -> int",
+		},
+		{
+			"depth (NODE (NODE (LEAF, 1, LEAF), 2, LEAF));",
+			"val it = 2 : int",
+		},
+		{"LESS;", "val it = LESS : order"},
+		{"LESS = EQUAL;", "val it = false : bool"},
+		{"SOME 1 = SOME 1;", "val it = true : bool"},
+		{"SOME 1 = SOME 2;", "val it = false : bool"},
+		{"SOME 1 = NONE;", "val it = false : bool"},
+	})
+}
+
 // TestExecuteExceptions pins exception reports probed against
 // the java binary: the bracketed description, and "raised at"
 // spans (an application's own span; a match list's span for

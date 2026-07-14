@@ -143,8 +143,11 @@ func (c *Config) seqDoc(open, closing string,
 		pp.Align(pp.Fill(pp.Empty(), items)), pp.Text(closing))
 }
 
-// conDoc lays out a datatype value such as "SOME 4"; an argument
-// that is not atomic is parenthesized, "SOME (SOME 4)".
+// conDoc lays out a datatype value such as "SOME 4". Only an
+// argument that is itself a constructor application needs
+// parentheses ("SOME (SOME 4)"); tuples, lists, and negative
+// numbers delimit themselves ("SOME (1,2)", "SOME [1]",
+// "SOME ~1").
 func (c *Config) conDoc(t *types.Named, v eval.Val,
 	depth int,
 ) pp.Doc {
@@ -155,18 +158,26 @@ func (c *Config) conDoc(t *types.Named, v eval.Val,
 	if con.Arg == nil {
 		return pp.Text(con.Name)
 	}
-	argType := conArgType(t)
-	argDoc := c.valueDoc(argType, con.Arg, depth+1)
-	if _, isPrim := argType.(*types.Primitive); !isPrim {
+	argDoc := c.valueDoc(c.conArgType(t, con), con.Arg, depth+1)
+	if argCon, isCon := con.Arg.(eval.Con); isCon &&
+		argCon.Arg != nil {
 		argDoc = pp.Concat(pp.Text("("), argDoc, pp.Text(")"))
 	}
 	return pp.Concat(pp.Text(con.Name), pp.Text(" "), argDoc)
 }
 
-// conArgType is a placeholder until datatype values arrive: the
-// argument type of a unary datatype such as option is its type
-// argument.
-func conArgType(t *types.Named) types.Type {
+// conArgType is the type of a constructor value's argument: the
+// constructor's declared argument type with the datatype's type
+// arguments substituted in.
+func (c *Config) conArgType(t *types.Named,
+	con eval.Con,
+) types.Type {
+	if c.sys != nil {
+		if tc, ok := c.sys.LookupTyCon(con.Name); ok &&
+			tc.Arg != nil {
+			return c.sys.Substitute(tc.Arg, t.Args)
+		}
+	}
 	if len(t.Args) == 1 {
 		return t.Args[0]
 	}

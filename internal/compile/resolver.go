@@ -219,14 +219,18 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 	case *ast.Fn:
 		return r.toFn(env, e, t)
 	case *ast.ID:
-		pat := env.get(e.Name)
-		if pat == nil {
-			// The name is not declared in this compilation unit
-			// (e.g. a built-in value), so make a declaration
-			// site for it.
-			pat = &core.IDPat{T: t, Name: e.Name}
+		if pat := env.get(e.Name); pat != nil {
+			return &core.ID{Pat: pat}, nil
 		}
-		return &core.ID{Pat: pat}, nil
+		if con, ok := r.toCon(e.Name, t); ok {
+			return con, nil
+		}
+		// The name is not declared in this compilation unit
+		// (e.g. a built-in value), so make a declaration site
+		// for it.
+		return &core.ID{
+			Pat: &core.IDPat{T: t, Name: e.Name},
+		}, nil
 	case *ast.If:
 		return r.toIf(env, e, t)
 	case *ast.InfixCall:
@@ -538,6 +542,52 @@ func (r *resolver) toRecord(env *coreEnv, record *ast.Record,
 	return &core.Tuple{T: t, Args: args}, nil
 }
 
+// toCon converts a reference to a datatype constructor. The
+// bool constructors are Go bools and "nil" is the empty list;
+// every other constructor is a Con value (or, applied, a Con
+// wrapper).
+func (r *resolver) toCon(name string, t types.Type) (core.Exp,
+	bool,
+) {
+	tc, ok := r.typeMap.sys.LookupTyCon(name)
+	if !ok {
+		return nil, false
+	}
+	switch datatypeOf(tc) {
+	case boolName:
+		literal := &core.Literal{
+			T:     t,
+			Kind:  ast.BoolLiteralOp,
+			Value: name == "true",
+		}
+		return literal, true
+	case listTyCon:
+		return &core.List{T: t}, true
+	default:
+		return &core.Con{
+			T:        t,
+			Datatype: datatypeOf(tc),
+			Name:     name,
+			Ordinal:  tc.Ordinal,
+			HasArg:   tc.Arg != nil,
+		}, true
+	}
+}
+
+// datatypeOf is the name of the datatype a constructor belongs
+// to.
+func datatypeOf(tc types.TyCon) string {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch result := tc.Result.(type) {
+	case *types.List:
+		return listTyCon
+	case *types.Named:
+		return result.Name
+	default:
+		return result.String()
+	}
+}
+
 // toCase converts "case e of pat => exp | ...". Each rule's
 // pattern variables are in scope in its body.
 func (r *resolver) toCase(env *coreEnv, caseExp *ast.Case,
@@ -604,20 +654,31 @@ func (r *resolver) toPat(pat ast.Pat) (core.Pat, error) {
 		// The annotation constrained the type during inference; the
 		// core pattern is just the pattern it wraps.
 		return r.toPat(p.Pat)
+	case *ast.ConPat:
+		tc, ok := r.typeMap.sys.LookupTyCon(p.Name)
+		if !ok || tc.Arg == nil {
+			return nil, &Error{
+				Span: pat.Span(),
+				Msg:  "unbound constructor: " + p.Name,
+			}
+		}
+		arg, err := r.toPat(p.Arg)
+		if err != nil {
+			return nil, err
+		}
+		conPat := &core.ConPat{
+			T:        t,
+			Datatype: datatypeOf(tc),
+			Name:     p.Name,
+			Ordinal:  tc.Ordinal,
+			Arg:      arg,
+		}
+		return conPat, nil
 	case *ast.ConsPat:
 		return r.toConsPat(p, t)
 	case *ast.IDPat:
-		if _, isCon := r.typeMap.sys.LookupTyCon(p.Name); isCon {
-			// A constant constructor. For now only "nil" (the
-			// empty list) has a runtime form.
-			if p.Name == "nil" {
-				return &core.ListPat{T: t}, nil
-			}
-			return nil, &Error{
-				Span: pat.Span(),
-				Msg: "cannot convert to core: constructor " +
-					p.Name,
-			}
+		if tc, isCon := r.typeMap.sys.LookupTyCon(p.Name); isCon {
+			return r.toCon0Pat(p.Name, tc, t), nil
 		}
 		return &core.IDPat{T: t, Name: p.Name}, nil
 	case *ast.ListPat:
@@ -683,6 +744,31 @@ func (r *resolver) toPat(pat ast.Pat) (core.Pat, error) {
 	}
 }
 
+// toCon0Pat converts a constant constructor in a pattern: the
+// bool constructors match as literals, "nil" as the empty list,
+// and any other as its (datatype, ordinal).
+func (r *resolver) toCon0Pat(name string, tc types.TyCon,
+	t types.Type,
+) core.Pat {
+	switch datatypeOf(tc) {
+	case boolName:
+		return &core.LiteralPat{
+			T:     t,
+			Kind:  ast.BoolLiteralOp,
+			Value: name == "true",
+		}
+	case listTyCon:
+		return &core.ListPat{T: t}
+	default:
+		return &core.Con0Pat{
+			T:        t,
+			Datatype: datatypeOf(tc),
+			Name:     name,
+			Ordinal:  tc.Ordinal,
+		}
+	}
+}
+
 func (r *resolver) toConsPat(p *ast.ConsPat,
 	t types.Type,
 ) (core.Pat, error) {
@@ -718,6 +804,9 @@ func (r *resolver) flattenLet(env *coreEnv, decls []ast.Decl,
 ) (core.Exp, error) {
 	if len(decls) == 0 {
 		return r.toExp(env, exp)
+	}
+	if _, isDatatype := decls[0].(*ast.DatatypeDecl); isDatatype {
+		return r.flattenLet(env, decls[1:], exp)
 	}
 	decl, env2, err := r.toDecl(env, decls[0])
 	if err != nil {
