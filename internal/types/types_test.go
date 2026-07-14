@@ -96,6 +96,35 @@ func TestDescriptions(t *testing.T) {
 	}
 }
 
+func TestTyConOrdinals(t *testing.T) {
+	s := types.NewSystem()
+	s.DeclareDatatype("order", 0)
+	order := s.Named("order")
+	s.DeclareTyCon("LESS", nil, order)
+	s.DeclareTyCon("EQUAL", nil, order)
+	s.DeclareTyCon("GREATER", nil, order)
+	s.DeclareDatatype("option", 1)
+	option := s.Named("option", s.Var(0))
+	s.DeclareTyCon("NONE", nil, option)
+	s.DeclareTyCon("SOME", s.Var(0), option)
+	for _, tc := range []struct {
+		name    string
+		ordinal int
+	}{
+		{"LESS", 0},
+		{"EQUAL", 1},
+		{"GREATER", 2},
+		{"NONE", 0},
+		{"SOME", 1},
+	} {
+		con, ok := s.LookupTyCon(tc.name)
+		if !ok || con.Ordinal != tc.ordinal {
+			t.Errorf("%s: got %d, want %d", tc.name,
+				con.Ordinal, tc.ordinal)
+		}
+	}
+}
+
 func TestParse(t *testing.T) {
 	s := types.NewSystem()
 	for _, src := range []string{

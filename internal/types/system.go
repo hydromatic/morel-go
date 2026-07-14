@@ -28,6 +28,7 @@ type System struct {
 	byKey     map[string]Type
 	datatypes map[string]int
 	tycons    map[string]TyCon
+	conCount  map[string]int
 
 	Bool   Type
 	Char   Type
@@ -38,10 +39,13 @@ type System struct {
 }
 
 // TyCon describes a datatype constructor: its argument type (nil
-// for a constant constructor) and the datatype it constructs.
+// for a constant constructor), the datatype it constructs, and
+// its ordinal among the datatype's constructors in declaration
+// order. Runtime constructor values carry (datatype, ordinal).
 type TyCon struct {
-	Arg    Type
-	Result Type
+	Arg     Type
+	Result  Type
+	Ordinal int
 }
 
 // NewSystem returns a system with the primitive types
@@ -51,6 +55,7 @@ func NewSystem() *System {
 		byKey:     map[string]Type{},
 		datatypes: map[string]int{},
 		tycons:    map[string]TyCon{},
+		conCount:  map[string]int{},
 	}
 	prim := func(name string) Type {
 		t := &Primitive{typeBase{name}}
@@ -84,9 +89,26 @@ func (s *System) DeclareDatatype(name string, arity int) {
 }
 
 // DeclareTyCon registers a datatype constructor; arg is nil for
-// a constant constructor.
+// a constant constructor. Constructors of one datatype get
+// ordinals in declaration order.
 func (s *System) DeclareTyCon(name string, arg, result Type) {
-	s.tycons[name] = TyCon{Arg: arg, Result: result}
+	key := datatypeName(result)
+	ordinal := s.conCount[key]
+	s.conCount[key] = ordinal + 1
+	s.tycons[name] = TyCon{
+		Arg:     arg,
+		Result:  result,
+		Ordinal: ordinal,
+	}
+}
+
+// datatypeName is the name a datatype's constructors are counted
+// under.
+func datatypeName(result Type) string {
+	if named, ok := result.(*Named); ok {
+		return named.Name
+	}
+	return result.String()
 }
 
 // Lookup returns the type with the given name (a primitive or a
