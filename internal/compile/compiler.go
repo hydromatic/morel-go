@@ -150,6 +150,16 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 		return nil, &Error{Msg: "not found: " + e.Pat.Name}
 	case *core.Let:
 		return c.compileLet(e)
+	case *core.List:
+		args := make([]eval.Code, len(e.Args))
+		for i, arg := range e.Args {
+			a, err := c.compileExp(arg)
+			if err != nil {
+				return nil, err
+			}
+			args[i] = a
+		}
+		return eval.Tuple(args), nil
 	case *core.Literal:
 		return eval.Constant(e.Value), nil
 	case *core.Tuple:
@@ -224,8 +234,28 @@ func (c *compiler) compilePat(pat core.Pat) (eval.Pat, error) {
 func (c *compiler) patCode(pat core.Pat) (eval.Pat, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch p := pat.(type) {
+	case *core.ConsPat:
+		head, err := c.patCode(p.Head)
+		if err != nil {
+			return nil, err
+		}
+		tail, err := c.patCode(p.Tail)
+		if err != nil {
+			return nil, err
+		}
+		return eval.ConsPat{Head: head, Tail: tail}, nil
 	case *core.IDPat:
 		return eval.SlotPat{Slot: c.slots[p]}, nil
+	case *core.ListPat:
+		pats := make([]eval.Pat, len(p.Args))
+		for i, arg := range p.Args {
+			argPat, err := c.patCode(arg)
+			if err != nil {
+				return nil, err
+			}
+			pats[i] = argPat
+		}
+		return eval.ListPat{Pats: pats}, nil
 	case *core.LiteralPat:
 		return eval.LiteralPat{V: p.Value}, nil
 	case *core.TuplePat:

@@ -128,6 +128,20 @@ func (t *Tuple) Type() types.Type { return t.T }
 
 func (*Tuple) exp() {}
 
+// List is a list value, "[e1, e2, ...]".
+type List struct {
+	T    types.Type
+	Args []Exp
+}
+
+// Op implements Exp.
+func (*List) Op() ast.Op { return ast.ListOp }
+
+// Type implements Exp.
+func (l *List) Type() types.Type { return l.T }
+
+func (*List) exp() {}
+
 // Case matches an expression against a list of patterns; "if c
 // then a else b" becomes "case c of true => a | _ => b".
 type Case struct {
@@ -220,8 +234,15 @@ func PatIDs(p Pat) []*IDPat {
 func walkPat(p Pat, ids *[]*IDPat) {
 	// lint: sort until '^	}' where '^	case '
 	switch p := p.(type) {
+	case *ConsPat:
+		walkPat(p.Head, ids)
+		walkPat(p.Tail, ids)
 	case *IDPat:
 		*ids = append(*ids, p)
+	case *ListPat:
+		for _, arg := range p.Args {
+			walkPat(arg, ids)
+		}
 	case *LiteralPat, *WildcardPat:
 	case *TuplePat:
 		for _, arg := range p.Args {
@@ -244,6 +265,36 @@ func (*TuplePat) Op() ast.Op { return ast.TuplePatOp }
 func (p *TuplePat) Type() types.Type { return p.T }
 
 func (*TuplePat) pat() {}
+
+// ListPat matches a list of exactly its length; "nil" is a
+// ListPat with no elements.
+type ListPat struct {
+	T    types.Type
+	Args []Pat
+}
+
+// Op implements Pat.
+func (*ListPat) Op() ast.Op { return ast.ListPatOp }
+
+// Type implements Pat.
+func (p *ListPat) Type() types.Type { return p.T }
+
+func (*ListPat) pat() {}
+
+// ConsPat matches a non-empty list, "x :: xs".
+type ConsPat struct {
+	T    types.Type
+	Head Pat
+	Tail Pat
+}
+
+// Op implements Pat.
+func (*ConsPat) Op() ast.Op { return ast.ConsPatOp }
+
+// Type implements Pat.
+func (p *ConsPat) Type() types.Type { return p.T }
+
+func (*ConsPat) pat() {}
 
 // NonRecValDecl is a non-recursive value declaration.
 type NonRecValDecl struct {

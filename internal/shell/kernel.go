@@ -89,6 +89,7 @@ func NewKernel(name string) *Kernel {
 	}
 	values["true"] = true
 	values["false"] = false
+	values["nil"] = []eval.Val{}
 	return &Kernel{
 		name:     name,
 		config:   DefaultConfig(),
