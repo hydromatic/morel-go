@@ -230,6 +230,16 @@ func (r *typeResolver) deducePat(pat ast.Pat,
 		return nil
 	case *ast.LiteralPat:
 		return r.deduceLiteral(pat, p.Kind, p.Value, v)
+	case *ast.TuplePat:
+		if len(p.Args) == 0 {
+			r.regEquiv(pat, v, r.primTerm("unit"))
+			return nil
+		}
+		return &Error{
+			Span: pat.Span(),
+			Msg: "cannot deduce type for pattern " +
+				pat.Op().String(),
+		}
 	case *ast.WildcardPat:
 		r.reg(pat, v)
 		return nil

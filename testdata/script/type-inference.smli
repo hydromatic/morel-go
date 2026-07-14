@@ -1,0 +1,91 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Type inference tests.
+ *
+ * Generally, each test will use '>type' rather than '> val', so that
+ * Morel just infers the type, and does not execute.
+ *)
+Sys.set ("lineWidth", 78);
+> val it = () : unit
+
+(* Test the test infrastructure.
+ * ':t' can be on same line or previous line.
+ * The expression is not executed, only type-checked.
+ * Non-exhaustive matches are flagged. *)
+:t 1;
+> val it : int
+:t
+1;
+> val it : int
+
+(*) Type tests
+:t #"h";
+> val it : char
+:t "hello";
+> val it : string
+:t 1;
+> val it : int
+:t 6.02e~23;
+> val it : real
+:t 6e~23;
+> val it : real
+:t 6E~23;
+> val it : real
+:t 6E23;
+> val it : real
+:t ();
+> val it : unit
+:t true;
+> val it : bool
+:t false;
+> val it : bool
+:t (1);
+> val it : int
+:t fn () => 3;
+> val it : unit -> int
+:t fn () => fn () => 4;
+> val it : unit -> unit -> int
+:t fn f => fn g => fn x => g (f x);
+> val it : ('a -> 'b) -> ('b -> 'c) -> 'a -> 'c
+:t fn x => fn f => f x;
+> val it : 'a -> ('a -> 'b) -> 'b
+
+(* Basic type tests (migrated from MainTest.testType) *)
+:t 1;
+> val it : int
+:t 0e0;
+> val it : real
+:t "";
+> val it : string
+:t if true then 1.0 else 2.0;
+> val it : real
+:t (1);
+> val it : int
+:t ();
+> val it : unit
+
+(*) Polymorphic type variables
+:t fn _ => 42;
+> val it : 'a -> int
+:t fn _ => fn _ => 42;
+> val it : 'a -> 'b -> int
+:t fn x => x;
+> val it : 'a -> 'a
+:t fn x => fn y => x;
+> val it : 'a -> 'b -> 'a
