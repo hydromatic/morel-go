@@ -31,6 +31,9 @@ linters:
     # Forbids returning interfaces; the evaluator's Code values are
     # interfaces by design.
     - ireturn
+    # Forbids package-level variables; an interpreter's token,
+    # keyword, and builtin tables are natural package-level state.
+    - gochecknoglobals
     # Forbids short names such as i, e, ok; conflicts with idiomatic Go.
     - varnamelen
     # Whitespace-style opinions that fight gofumpt.
