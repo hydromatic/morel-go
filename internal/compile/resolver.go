@@ -92,7 +92,12 @@ func (r *resolver) toIDPat(pat ast.Pat) (*core.IDPat, error) {
 	if err != nil {
 		return nil, err
 	}
+	// lint: sort until '^\t}' where '^\tcase '
 	switch p := pat.(type) {
+	case *ast.AnnotatedPat:
+		// The annotation constrained the type during inference; the
+		// core pattern is just the pattern it wraps.
+		return r.toIDPat(p.Pat)
 	case *ast.IDPat:
 		return &core.IDPat{T: t, Name: p.Name}, nil
 	case *ast.WildcardPat:

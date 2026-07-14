@@ -105,6 +105,10 @@ Sys.set ("lineWidth", 78);
 > val it : ('a -> 'b) -> ('b -> 'c) -> 'a -> 'c
 :t fn (f, g) => fn x => f (g x);
 > val it : ('a -> 'b) * ('c -> 'a) -> 'c -> 'b
+:t fn x: int => true;
+> val it : int -> bool
+:t fn (x: int, y: string) => (true, [1]);
+> val it : int * string -> bool * int list
 :t {f = fn () => 0, g = 1};
 > val it : {f:unit -> int, g:int}
 :t fn {f, g} => true;
@@ -212,6 +216,12 @@ end;
 > val it : int -> int
 :t fn x => case x of 0 => "zero" | _ => "nonzero";
 > val it : int -> string
+:t fn x: int => true;
+> val it : int -> bool
+:t fn x: int * int => true;
+> val it : int * int -> bool
+:t fn x: int * string => (false, #2 x);
+> val it : int * string -> bool * string
 
 (*) Function tuple types
 :t fn (x, y) => (x + 1, y + 1);

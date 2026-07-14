@@ -199,6 +199,24 @@ func TestDeduce(t *testing.T) {
 		{"map (fn x => x + 1) [1, 2]", "int list"},
 		{"abs ~3", "int"},
 		{"let val x = 1.0 in x + 2.0 end", "real"},
+		{"1: int", "int"},
+		{"fn x: int => true", "int -> bool"},
+		{
+			"fn (x: int, y: string) => (true, [1])",
+			"int * string -> bool * int list",
+		},
+		{
+			"fn x: int * (bool * int) => x",
+			"int * (bool * int) -> int * (bool * int)",
+		},
+		{"[]: int list", "int list"},
+		{
+			"[]: {a: int, b: string} list",
+			"{a:int, b:string} list",
+		},
+		{"NONE: int option", "int option"},
+		{"fn (x: 'a, y: 'a) => true", "'a * 'a -> bool"},
+		{"fun f (x: 'a) (y: 'a) = true", "'a -> 'a -> bool"},
 	} {
 		t.Run(tc.src, func(t *testing.T) {
 			resolved, err := deduce(t, tc.src)
