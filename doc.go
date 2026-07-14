@@ -15,6 +15,7 @@
 // language governing permissions and limitations under the
 // License.
 
-module github.com/hydromatic/morel-go
-
-go 1.25
+// Package morel is the root of morel-go, an interpreter for Morel,
+// a functional query language. The implementation lives under
+// internal/; the command lives under cmd/morel.
+package morel
