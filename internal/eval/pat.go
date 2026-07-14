@@ -45,6 +45,41 @@ func (p SlotPat) Match(v Val, f *Frame) bool {
 	return true
 }
 
+// ConsPat matches a non-empty list, binding its head and tail.
+type ConsPat struct {
+	Head Pat
+	Tail Pat
+}
+
+// Match implements Pat.
+func (p ConsPat) Match(v Val, f *Frame) bool {
+	vals, ok := v.([]Val)
+	if !ok || len(vals) == 0 {
+		return false
+	}
+	return p.Head.Match(vals[0], f) &&
+		p.Tail.Match(vals[1:], f)
+}
+
+// ListPat matches a list of exactly its length.
+type ListPat struct {
+	Pats []Pat
+}
+
+// Match implements Pat.
+func (p ListPat) Match(v Val, f *Frame) bool {
+	vals, ok := v.([]Val)
+	if !ok || len(vals) != len(p.Pats) {
+		return false
+	}
+	for i, pat := range p.Pats {
+		if !pat.Match(vals[i], f) {
+			return false
+		}
+	}
+	return true
+}
+
 // TuplePat matches a tuple or record value element-wise.
 type TuplePat struct {
 	Pats []Pat

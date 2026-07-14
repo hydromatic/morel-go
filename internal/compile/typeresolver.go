@@ -619,6 +619,16 @@ func (r *typeResolver) deducePat(pat ast.Pat,
 			patTerm{name: p.Name, term: v})
 		r.reg(pat, v)
 		return nil
+	case *ast.ListPat:
+		vElem := r.u.Variable()
+		for _, arg := range p.Args {
+			err := r.deducePat(arg, termMap, nil, vElem)
+			if err != nil {
+				return err
+			}
+		}
+		r.regEquiv(pat, v, unify.Apply(listTyCon, vElem))
+		return nil
 	case *ast.LiteralPat:
 		return r.deduceLiteral(pat, p.Kind, p.Value, v)
 	case *ast.RecordPat:

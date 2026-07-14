@@ -186,6 +186,16 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 		return r.toInfix(env, e, t)
 	case *ast.Let:
 		return r.flattenLet(env, e.Decls, e.Exp)
+	case *ast.ListExp:
+		args := make([]core.Exp, len(e.Args))
+		for i, arg := range e.Args {
+			a, err := r.toExp(env, arg)
+			if err != nil {
+				return nil, err
+			}
+			args[i] = a
+		}
+		return &core.List{T: t, Args: args}, nil
 	case *ast.Literal:
 		return r.toLiteral(e, t)
 	case *ast.PrefixCall:
@@ -523,8 +533,24 @@ func (r *resolver) toPat(pat ast.Pat) (core.Pat, error) {
 		// The annotation constrained the type during inference; the
 		// core pattern is just the pattern it wraps.
 		return r.toPat(p.Pat)
+	case *ast.ConsPat:
+		return r.toConsPat(p, t)
 	case *ast.IDPat:
+		if _, isCon := r.typeMap.sys.LookupTyCon(p.Name); isCon {
+			// A constant constructor. For now only "nil" (the
+			// empty list) has a runtime form.
+			if p.Name == "nil" {
+				return &core.ListPat{T: t}, nil
+			}
+			return nil, &Error{
+				Span: pat.Span(),
+				Msg: "cannot convert to core: constructor " +
+					p.Name,
+			}
+		}
 		return &core.IDPat{T: t, Name: p.Name}, nil
+	case *ast.ListPat:
+		return r.toListPat(p, t)
 	case *ast.LiteralPat:
 		value, err := literalValue(p.Kind, p.Value)
 		if err != nil {
@@ -584,6 +610,34 @@ func (r *resolver) toPat(pat ast.Pat) (core.Pat, error) {
 				pat.Op().String(),
 		}
 	}
+}
+
+func (r *resolver) toConsPat(p *ast.ConsPat,
+	t types.Type,
+) (core.Pat, error) {
+	head, err := r.toPat(p.A0)
+	if err != nil {
+		return nil, err
+	}
+	tail, err := r.toPat(p.A1)
+	if err != nil {
+		return nil, err
+	}
+	return &core.ConsPat{T: t, Head: head, Tail: tail}, nil
+}
+
+func (r *resolver) toListPat(p *ast.ListPat,
+	t types.Type,
+) (core.Pat, error) {
+	args := make([]core.Pat, len(p.Args))
+	for i, argPat := range p.Args {
+		arg, err := r.toPat(argPat)
+		if err != nil {
+			return nil, err
+		}
+		args[i] = arg
+	}
+	return &core.ListPat{T: t, Args: args}, nil
 }
 
 // flattenLet converts "let d1 d2 ... in e end" to nested Lets,
