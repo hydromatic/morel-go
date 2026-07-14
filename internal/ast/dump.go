@@ -44,10 +44,20 @@ func dump(b *strings.Builder, node Node) {
 		b.WriteString(")")
 	case *ID:
 		b.WriteString("(id " + n.Name + ")")
+	case *InfixCall:
+		b.WriteString("(" + n.Kind.String() + " ")
+		dump(b, n.A0)
+		b.WriteString(" ")
+		dump(b, n.A1)
+		b.WriteString(")")
 	case *ListExp:
 		sexp(b, "list", n.Args)
 	case *Literal:
 		dumpLiteral(b, n)
+	case *PrefixCall:
+		b.WriteString("(" + n.Kind.String() + " ")
+		dump(b, n.A)
+		b.WriteString(")")
 	case *Record:
 		b.WriteString("(record")
 		for _, f := range n.Fields {

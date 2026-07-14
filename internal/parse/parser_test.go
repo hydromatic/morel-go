@@ -57,7 +57,17 @@ func TestParseExprErrors(t *testing.T) {
 		{"", "stdIn:1.1: expected expression, found EOF"},
 		{
 			"1 +",
-			"stdIn:1.3-1.4: expected EOF, found +",
+			"stdIn:1.4: expected expression, found EOF",
+		},
+		// "~" applies only to a literal or a parenthesized
+		// expression, not to a bare identifier.
+		{
+			"~a * ~b",
+			"stdIn:1.6-1.7: expected expression, found ~",
+		},
+		{
+			"f ~x",
+			"stdIn:1.3-1.4: expected EOF, found ~",
 		},
 	} {
 		_, err := parse.Expr("stdIn", tc.src)
@@ -106,6 +116,52 @@ func TestParseSelectors(t *testing.T) {
 	checkExpr(t, `Sys.parseTree "x"`,
 		"(apply (apply (record_selector #parseTree) (id Sys)) "+
 			`(string_literal "x"))`)
+}
+
+func TestParseOperators(t *testing.T) {
+	checkExpr(t, "1 + 2 * 3",
+		"(plus (int_literal 1) "+
+			"(times (int_literal 2) (int_literal 3)))")
+	checkExpr(t, "1 - 2 - 3",
+		"(minus (minus (int_literal 1) (int_literal 2)) "+
+			"(int_literal 3))")
+	checkExpr(t, "1 div 2 mod 3",
+		"(mod (div (int_literal 1) (int_literal 2)) "+
+			"(int_literal 3))")
+	checkExpr(t, "x ^ y ^ z",
+		"(caret (caret (id x) (id y)) (id z))")
+	checkExpr(t, "f x + g y",
+		"(plus (apply (id f) (id x)) (apply (id g) (id y)))")
+	checkExpr(t, "1 < 2", "(lt (int_literal 1) (int_literal 2))")
+	checkExpr(t, "1 = 2", "(eq (int_literal 1) (int_literal 2))")
+	checkExpr(t, "x elem xs", "(elem (id x) (id xs))")
+	checkExpr(t, "x notelem xs", "(not_elem (id x) (id xs))")
+	checkExpr(t, "f o g o h",
+		"(compose (compose (id f) (id g)) (id h))")
+	checkExpr(t, "a andalso b orelse c",
+		"(orelse (andalso (id a) (id b)) (id c))")
+	checkExpr(t, "a implies b", "(implies (id a) (id b))")
+}
+
+func TestParseRightAssociative(t *testing.T) {
+	checkExpr(t, "1 :: 2 :: xs",
+		"(cons (int_literal 1) (cons (int_literal 2) (id xs)))")
+	checkExpr(t, "[1] @ [2] @ [3]",
+		"(at (list (int_literal 1)) "+
+			"(at (list (int_literal 2)) (list (int_literal 3))))")
+}
+
+func TestParseNegate(t *testing.T) {
+	checkExpr(t, "~x", "(negate (id x))")
+	// The operand of "~" is a whole multiplicative chain.
+	checkExpr(t, "~x * 2",
+		"(negate (times (id x) (int_literal 2)))")
+	checkExpr(t, "~a + b", "(plus (negate (id a)) (id b))")
+	checkExpr(t, "1 + ~a", "(plus (int_literal 1) (negate (id a)))")
+	checkExpr(t, "~f x", "(negate (apply (id f) (id x)))")
+	checkExpr(t, "~(1 + 2)",
+		"(negate (plus (int_literal 1) (int_literal 2)))")
+	checkExpr(t, "~ 1", "(negate (int_literal 1))")
 }
 
 func TestStmt(t *testing.T) {
