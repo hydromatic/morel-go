@@ -22,9 +22,11 @@ import (
 	"github.com/hydromatic/morel-go/internal/token"
 )
 
-// Parser builds an AST from tokens, with one token of lookahead.
+// Parser builds an AST from tokens, with up to two tokens of
+// lookahead.
 type Parser struct {
 	lexer *Lexer
+	ahead *token.Token
 	tok   token.Token
 	name  string
 }
@@ -83,12 +85,29 @@ func Stmt(name, src string) (ast.Expr, error) {
 }
 
 func (p *Parser) next() error {
+	if p.ahead != nil {
+		p.tok = *p.ahead
+		p.ahead = nil
+		return nil
+	}
 	tok, err := p.lexer.Next()
 	if err != nil {
 		return err
 	}
 	p.tok = tok
 	return nil
+}
+
+// peek returns the kind of the token after the current one.
+func (p *Parser) peek() (token.Kind, error) {
+	if p.ahead == nil {
+		tok, err := p.lexer.Next()
+		if err != nil {
+			return token.EOF, err
+		}
+		p.ahead = &tok
+	}
+	return p.ahead.Kind, nil
 }
 
 func (p *Parser) errorf(msg string) error {
@@ -103,10 +122,142 @@ func (p *Parser) expect(kind token.Kind) error {
 	return nil
 }
 
-// expr parses an expression: for now, one or more atoms (each
-// with postfix field selections); juxtaposition is
-// left-associative function application.
+// Operator tables by precedence level. Level 5 (cons, at) is
+// right-associative and level 6.5
+// (negate) is prefix; both are special-cased below.
+var (
+	level0Ops = map[token.Kind]ast.Op{
+		token.Implies: ast.ImpliesOp,
+	}
+	level1Ops = map[token.Kind]ast.Op{
+		token.Orelse: ast.OrelseOp,
+	}
+	level2Ops = map[token.Kind]ast.Op{
+		token.Andalso: ast.AndalsoOp,
+	}
+	level3Ops = map[token.Kind]ast.Op{
+		token.O: ast.ComposeOp,
+	}
+	level4Ops = map[token.Kind]ast.Op{
+		token.Le:      ast.LeOp,
+		token.Lt:      ast.LtOp,
+		token.Ge:      ast.GeOp,
+		token.Gt:      ast.GtOp,
+		token.Eq:      ast.EqOp,
+		token.Ne:      ast.NeOp,
+		token.Elem:    ast.ElemOp,
+		token.Notelem: ast.NotElemOp,
+	}
+	level5Ops = map[token.Kind]ast.Op{
+		token.Cons: ast.ConsOp,
+		token.At:   ast.AtOp,
+	}
+	level6Ops = map[token.Kind]ast.Op{
+		token.Plus:  ast.PlusOp,
+		token.Minus: ast.MinusOp,
+		token.Caret: ast.CaretOp,
+	}
+	level7Ops = map[token.Kind]ast.Op{
+		token.Star:  ast.TimesOp,
+		token.Slash: ast.DivideOp,
+		token.Div:   ast.DivOp,
+		token.Mod:   ast.ModOp,
+	}
+)
+
 func (p *Parser) expr() (ast.Expr, error) {
+	return p.leftChain(level0Ops, func() (ast.Expr, error) {
+		return p.leftChain(level1Ops, func() (ast.Expr, error) {
+			return p.leftChain(level2Ops,
+				func() (ast.Expr, error) {
+					return p.leftChain(level3Ops, p.expr4)
+				})
+		})
+	})
+}
+
+func (p *Parser) expr4() (ast.Expr, error) {
+	return p.leftChain(level4Ops, p.expr5)
+}
+
+// expr5 parses the right-associative cons/append level.
+func (p *Parser) expr5() (ast.Expr, error) {
+	e, err := p.expr6()
+	if err != nil {
+		return nil, err
+	}
+	op, ok := level5Ops[p.tok.Kind]
+	if !ok {
+		return e, nil
+	}
+	err = p.next()
+	if err != nil {
+		return nil, err
+	}
+	rhs, err := p.expr5()
+	if err != nil {
+		return nil, err
+	}
+	return ast.NewInfixCall(spanOver(e, rhs), op, e, rhs), nil
+}
+
+func (p *Parser) expr6() (ast.Expr, error) {
+	return p.leftChain(level6Ops, p.negate7)
+}
+
+// negate7 parses an optional prefix "~" whose operand is a whole
+// multiplicative chain: "~x * 2" is the negation of "x * 2", but
+// "~a + b" negates only "a".
+func (p *Parser) negate7() (ast.Expr, error) {
+	if p.tok.Kind != token.Tilde {
+		return p.expr7()
+	}
+	start := p.tok.Span.Start
+	err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	e, err := p.expr7()
+	if err != nil {
+		return nil, err
+	}
+	span := token.Span{Start: start, End: e.Span().End}
+	return ast.NewPrefixCall(span, ast.NegateOp, e), nil
+}
+
+func (p *Parser) expr7() (ast.Expr, error) {
+	return p.leftChain(level7Ops, p.applyChain)
+}
+
+// leftChain parses "next {op next}" for a left-associative
+// operator level.
+func (p *Parser) leftChain(ops map[token.Kind]ast.Op,
+	next func() (ast.Expr, error),
+) (ast.Expr, error) {
+	e, err := next()
+	if err != nil {
+		return nil, err
+	}
+	for {
+		op, ok := ops[p.tok.Kind]
+		if !ok {
+			return e, nil
+		}
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
+		rhs, err := next()
+		if err != nil {
+			return nil, err
+		}
+		e = ast.NewInfixCall(spanOver(e, rhs), op, e, rhs)
+	}
+}
+
+// applyChain parses one or more atoms (each with postfix field
+// selections); juxtaposition is left-associative application.
+func (p *Parser) applyChain() (ast.Expr, error) {
 	e, err := p.atomSuffixed()
 	if err != nil {
 		return nil, err
@@ -345,17 +496,27 @@ func (p *Parser) recordExpr() (ast.Expr, error) {
 }
 
 func (p *Parser) recordField() (ast.Field, error) {
+	if p.tok.Kind == token.Ident {
+		kind, err := p.peek()
+		if err != nil {
+			return ast.Field{}, err
+		}
+		if kind == token.Eq {
+			return p.labeledField()
+		}
+	}
 	e, err := p.expr()
 	if err != nil {
 		return ast.Field{}, err
 	}
-	if p.tok.Kind != token.Eq {
-		return ast.Field{Exp: e}, nil
-	}
-	id, ok := e.(*ast.ID)
-	if !ok {
-		return ast.Field{},
-			p.errorf("expected label before =")
+	return ast.Field{Exp: e}, nil
+}
+
+func (p *Parser) labeledField() (ast.Field, error) {
+	label := p.tok.Text
+	err := p.next()
+	if err != nil {
+		return ast.Field{}, err
 	}
 	err = p.next()
 	if err != nil {
@@ -365,5 +526,5 @@ func (p *Parser) recordField() (ast.Field, error) {
 	if err != nil {
 		return ast.Field{}, err
 	}
-	return ast.Field{Label: id.Name, Exp: exp}, nil
+	return ast.Field{Label: label, Exp: exp}, nil
 }

@@ -82,4 +82,50 @@ Sys.parseTree "x.a.b";
 Sys.parseTree "Sys.parseTree \"x\"";
 > val it = "(apply (apply (record_selector #parseTree) (id Sys)) (string_literal \"x\"))" : string
 
+(*) Operator precedence
+Sys.parseTree "1 + 2 * 3";
+> val it = "(plus (int_literal 1) (times (int_literal 2) (int_literal 3)))" : string
+Sys.parseTree "1 - 2 - 3";
+> val it = "(minus (minus (int_literal 1) (int_literal 2)) (int_literal 3))" : string
+Sys.parseTree "1 div 2 mod 3";
+> val it = "(mod (div (int_literal 1) (int_literal 2)) (int_literal 3))" : string
+Sys.parseTree "f x + g y";
+> val it = "(plus (apply (id f) (id x)) (apply (id g) (id y)))" : string
+Sys.parseTree "x ^ y ^ z";
+> val it = "(caret (caret (id x) (id y)) (id z))" : string
+Sys.parseTree "f o g o h";
+> val it = "(compose (compose (id f) (id g)) (id h))" : string
+Sys.parseTree "a andalso b orelse c";
+> val it = "(orelse (andalso (id a) (id b)) (id c))" : string
+Sys.parseTree "a implies b";
+> val it = "(implies (id a) (id b))" : string
+
+(*) Comparisons and membership
+Sys.parseTree "1 < 2";
+> val it = "(lt (int_literal 1) (int_literal 2))" : string
+Sys.parseTree "1 = 2";
+> val it = "(eq (int_literal 1) (int_literal 2))" : string
+Sys.parseTree "x elem xs";
+> val it = "(elem (id x) (id xs))" : string
+Sys.parseTree "x notelem xs";
+> val it = "(not_elem (id x) (id xs))" : string
+
+(*) Cons and append are right-associative
+Sys.parseTree "1 :: 2 :: xs";
+> val it = "(cons (int_literal 1) (cons (int_literal 2) (id xs)))" : string
+Sys.parseTree "[1] @ [2] @ [3]";
+> val it = "(at (list (int_literal 1)) (at (list (int_literal 2)) (list (int_literal 3))))" : string
+
+(*) Negation scopes over a multiplicative chain
+Sys.parseTree "~x";
+> val it = "(negate (id x))" : string
+Sys.parseTree "~x * 2";
+> val it = "(negate (times (id x) (int_literal 2)))" : string
+Sys.parseTree "~a + b";
+> val it = "(plus (negate (id a)) (id b))" : string
+Sys.parseTree "1 + ~a";
+> val it = "(plus (int_literal 1) (negate (id a)))" : string
+Sys.parseTree "~f x";
+> val it = "(negate (apply (id f) (id x)))" : string
+
 (*) End parse.smli

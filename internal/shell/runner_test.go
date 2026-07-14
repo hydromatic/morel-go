@@ -129,7 +129,7 @@ func TestKernelParseTree(t *testing.T) {
 	}
 	// A parse error in the argument is output.
 	got = k.Execute(`Sys.parseTree "1 +";`)
-	want = "parseTree:1.3-1.4: expected EOF, found +"
+	want = "parseTree:1.4: expected expression, found EOF"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}

@@ -36,6 +36,31 @@ const (
 	TupleOp
 	ListOp
 	RecordOp
+
+	// Infix and prefix operators, in increasing precedence.
+
+	ImpliesOp
+	OrelseOp
+	AndalsoOp
+	ComposeOp
+	LeOp
+	LtOp
+	GeOp
+	GtOp
+	EqOp
+	NeOp
+	ElemOp
+	NotElemOp
+	ConsOp
+	AtOp
+	PlusOp
+	MinusOp
+	CaretOp
+	NegateOp
+	TimesOp
+	DivideOp
+	DivOp
+	ModOp
 )
 
 var opNames = map[Op]string{
@@ -51,6 +76,28 @@ var opNames = map[Op]string{
 	TupleOp:          "tuple",
 	ListOp:           "list",
 	RecordOp:         "record",
+	ImpliesOp:        "implies",
+	OrelseOp:         "orelse",
+	AndalsoOp:        "andalso",
+	ComposeOp:        "compose",
+	LeOp:             "le",
+	LtOp:             "lt",
+	GeOp:             "ge",
+	GtOp:             "gt",
+	EqOp:             "eq",
+	NeOp:             "ne",
+	ElemOp:           "elem",
+	NotElemOp:        "not_elem",
+	ConsOp:           "cons",
+	AtOp:             "at",
+	PlusOp:           "plus",
+	MinusOp:          "minus",
+	CaretOp:          "caret",
+	NegateOp:         "negate",
+	TimesOp:          "times",
+	DivideOp:         "divide",
+	DivOp:            "div",
+	ModOp:            "mod",
 }
 
 func (o Op) String() string {

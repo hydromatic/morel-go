@@ -190,3 +190,47 @@ func NewRecord(span token.Span, fields []Field) *Record {
 
 // Op implements Node.
 func (*Record) Op() Op { return RecordOp }
+
+// InfixCall is the application of an infix operator.
+type InfixCall struct {
+	exprBase
+
+	A0   Expr
+	A1   Expr
+	Kind Op
+}
+
+// NewInfixCall returns an infix operator application.
+func NewInfixCall(span token.Span, kind Op, a0,
+	a1 Expr,
+) *InfixCall {
+	return &InfixCall{
+		exprBase: exprBase{base{span}},
+		A0:       a0,
+		A1:       a1,
+		Kind:     kind,
+	}
+}
+
+// Op implements Node.
+func (c *InfixCall) Op() Op { return c.Kind }
+
+// PrefixCall is the application of a prefix operator.
+type PrefixCall struct {
+	exprBase
+
+	A    Expr
+	Kind Op
+}
+
+// NewPrefixCall returns a prefix operator application.
+func NewPrefixCall(span token.Span, kind Op, a Expr) *PrefixCall {
+	return &PrefixCall{
+		exprBase: exprBase{base{span}},
+		A:        a,
+		Kind:     kind,
+	}
+}
+
+// Op implements Node.
+func (c *PrefixCall) Op() Op { return c.Kind }
