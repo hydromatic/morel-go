@@ -351,8 +351,9 @@ func TestResolve(t *testing.T) {
 	t.Run("literal", func(t *testing.T) {
 		decl := resolve(t, "val x = 1")
 		valDecl := as[*core.NonRecValDecl](t, decl)
-		if valDecl.Pat.Name != "x" {
-			t.Errorf("got %s", valDecl.Pat.Name)
+		xPat := as[*core.IDPat](t, valDecl.Pat)
+		if xPat.Name != "x" {
+			t.Errorf("got %s", xPat.Name)
 		}
 		literal := as[*core.Literal](t, valDecl.Exp)
 		if literal.Value != int32(1) {
@@ -400,11 +401,12 @@ func TestResolve(t *testing.T) {
 		let1 := as[*core.Let](t, valDecl.Exp)
 		let2 := as[*core.Let](t, let1.Exp)
 		yDecl := as[*core.NonRecValDecl](t, let2.Decl)
-		if yDecl.Pat.Name != "y" {
-			t.Errorf("got %s", yDecl.Pat.Name)
+		yPat := as[*core.IDPat](t, yDecl.Pat)
+		if yPat.Name != "y" {
+			t.Errorf("got %s", yPat.Name)
 		}
 		id := as[*core.ID](t, let2.Exp)
-		if id.Pat != yDecl.Pat {
+		if id.Pat != yPat {
 			t.Error("body does not reference y's declaration")
 		}
 	})

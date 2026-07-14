@@ -45,6 +45,25 @@ func (p SlotPat) Match(v Val, f *Frame) bool {
 	return true
 }
 
+// TuplePat matches a tuple or record value element-wise.
+type TuplePat struct {
+	Pats []Pat
+}
+
+// Match implements Pat.
+func (p TuplePat) Match(v Val, f *Frame) bool {
+	vals, ok := v.([]Val)
+	if !ok {
+		return false
+	}
+	for i, pat := range p.Pats {
+		if !pat.Match(vals[i], f) {
+			return false
+		}
+	}
+	return true
+}
+
 // WildcardPat matches anything, binding nothing.
 type WildcardPat struct{}
 
@@ -82,7 +101,7 @@ func (c *caseCode) Eval(f *Frame) (Val, error) {
 			return clause.Body.Eval(f)
 		}
 	}
-	return nil, &MorelError{Exn: "Bind"}
+	return nil, &MorelError{Exn: ExnBind}
 }
 
 func (c *caseCode) Describe() string {

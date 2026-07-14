@@ -19,7 +19,8 @@ package eval
 
 import (
 	"fmt"
-	"strconv"
+
+	"github.com/hydromatic/morel-go/internal/core"
 )
 
 // Code is a compiled expression. It is an interface, not a bare
@@ -95,7 +96,7 @@ func (c *Closure) Apply(arg Val) (Val, error) {
 		f.Slots[slot] = c.Captured[i]
 	}
 	if !c.Param.Match(arg, f) {
-		return nil, &MorelError{Exn: "Bind"}
+		return nil, &MorelError{Exn: ExnBind}
 	}
 	return c.Body.Eval(f)
 }
@@ -238,16 +239,18 @@ func (c *letRecCode) Describe() string {
 	return "letRec(" + c.body.Describe() + ")"
 }
 
-// Let returns code that evaluates an expression, stores it in a
-// variable's slot, and evaluates a body in its scope.
-func Let(slot int, init, body Code) Code {
-	return &letCode{slot: slot, init: init, body: body}
+// Let returns code that evaluates an expression, matches it
+// against a pattern (binding the pattern's variables into their
+// slots; a non-match raises Bind), and evaluates a body in their
+// scope.
+func Let(pat Pat, init, body Code) Code {
+	return &letCode{pat: pat, init: init, body: body}
 }
 
 type letCode struct {
+	pat  Pat
 	init Code
 	body Code
-	slot int
 }
 
 func (c *letCode) Eval(f *Frame) (Val, error) {
@@ -255,11 +258,43 @@ func (c *letCode) Eval(f *Frame) (Val, error) {
 	if err != nil {
 		return nil, err
 	}
-	f.Slots[c.slot] = v
+	if !c.pat.Match(v, f) {
+		return nil, &MorelError{Exn: ExnBind}
+	}
 	return c.body.Eval(f)
 }
 
 func (c *letCode) Describe() string {
-	return "let(" + strconv.Itoa(c.slot) + ", " +
-		c.init.Describe() + ", " + c.body.Describe() + ")"
+	return "let(" + c.init.Describe() + ", " +
+		c.body.Describe() + ")"
+}
+
+// Tuple returns code that evaluates its elements into a []Val.
+func Tuple(args []Code) Code {
+	return &tupleCode{args: args}
+}
+
+type tupleCode struct {
+	args []Code
+}
+
+func (c *tupleCode) Eval(f *Frame) (Val, error) {
+	vals := make([]Val, len(c.args))
+	for i, arg := range c.args {
+		v, err := arg.Eval(f)
+		if err != nil {
+			return nil, err
+		}
+		vals[i] = v
+	}
+	return vals, nil
+}
+
+func (c *tupleCode) Describe() string {
+	return "tuple(...)"
+}
+
+// Unit returns code that yields the unit value.
+func Unit() Code {
+	return Constant(core.Unit{})
 }
