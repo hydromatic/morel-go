@@ -76,10 +76,10 @@ func (p *Parser) pat() (ast.Pat, error) {
 	return ast.NewAsPat(span, id.Name, rhs), nil
 }
 
-// consPat parses "atomicPat [:: consPat]"; "::" is
+// consPat parses "appPat [:: consPat]"; "::" is
 // right-associative.
 func (p *Parser) consPat() (ast.Pat, error) {
-	pat, err := p.atomicPat()
+	pat, err := p.appPat()
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +101,52 @@ func (p *Parser) consPat() (ast.Pat, error) {
 	return ast.NewConsPat(span, pat, rhs), nil
 }
 
+// appPat parses an atomic pattern, optionally applied to an
+// argument when it is a constructor name: "SOME x".
+func (p *Parser) appPat() (ast.Pat, error) {
+	pat, err := p.atomicPat()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := pat.(*ast.IDPat)
+	if !ok || !isPatStart(p.tok.Kind) {
+		return pat, nil
+	}
+	arg, err := p.atomicPat()
+	if err != nil {
+		return nil, err
+	}
+	span := token.Span{
+		Start: id.Span().Start,
+		End:   arg.Span().End,
+	}
+	return ast.NewConPat(span, id.Name, arg), nil
+}
+
+// isPatStart reports whether a token can begin an atomic pattern.
+func isPatStart(kind token.Kind) bool {
+	if _, lit := literalPatOps[kind]; lit {
+		return true
+	}
+	// lint: sort until '^\t}' where '^\tcase '
+	switch kind {
+	case token.Ident:
+		return true
+	case token.LBrace:
+		return true
+	case token.LBracket:
+		return true
+	case token.LParen:
+		return true
+	case token.QuotedIdent:
+		return true
+	case token.Underscore:
+		return true
+	default:
+		return false
+	}
+}
+
 func (p *Parser) atomicPat() (ast.Pat, error) {
 	tok := p.tok
 	// lint: sort until '^\t}' where '^\tcase '
@@ -117,6 +163,13 @@ func (p *Parser) atomicPat() (ast.Pat, error) {
 		return p.listPat()
 	case token.LParen:
 		return p.tuplePat()
+	case token.QuotedIdent:
+		err := p.next()
+		if err != nil {
+			return nil, err
+		}
+		return ast.NewIDPat(tok.Span,
+			unquoteIdent(tok.Text)), nil
 	case token.Underscore:
 		err := p.next()
 		if err != nil {

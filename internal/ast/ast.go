@@ -176,10 +176,13 @@ type Field struct {
 }
 
 // Record is a record expression, "{a = e1, b = e2, ...}", with
-// fields in source order.
+// fields in source order. With is the source expression of a
+// record update, "{e with a = e1}", or nil; it does not appear
+// in the parse-tree dump.
 type Record struct {
 	exprBase
 
+	With   Expr
 	Fields []Field
 }
 

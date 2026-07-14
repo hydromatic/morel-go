@@ -82,6 +82,7 @@ const (
 	RecordPatOp
 	ConsPatOp
 	AsPatOp
+	ConPatOp
 
 	// Declarations.
 
@@ -103,6 +104,7 @@ const (
 	RecordTypeOp
 	AnnotatedExpOp
 	AnnotatedPatOp
+	ExpressionTypeOp
 
 	// Queries.
 
@@ -180,6 +182,7 @@ var opNames = map[Op]string{
 	RecordPatOp:        "record_pat",
 	ConsPatOp:          "cons_pat",
 	AsPatOp:            "as_pat",
+	ConPatOp:           "con_pat",
 
 	ValDeclOp:  "val",
 	ValBindOp:  "val_bind",
@@ -188,15 +191,16 @@ var opNames = map[Op]string{
 	FunMatchOp: "fun_match",
 	LetOp:      "let",
 
-	DatatypeDeclOp: "datatype_decl",
-	TypeDeclOp:     "type_decl",
-	TyVarOp:        "ty_var",
-	NamedTypeOp:    "named",
-	TupleTypeOp:    "tuple_type",
-	FunctionTypeOp: "function_type",
-	RecordTypeOp:   "record_type",
-	AnnotatedExpOp: "annotated_exp",
-	AnnotatedPatOp: "annotated_pat",
+	DatatypeDeclOp:   "datatype_decl",
+	TypeDeclOp:       "type_decl",
+	TyVarOp:          "ty_var",
+	NamedTypeOp:      "named",
+	TupleTypeOp:      "tuple_type",
+	FunctionTypeOp:   "function_type",
+	RecordTypeOp:     "record_type",
+	AnnotatedExpOp:   "annotated_exp",
+	AnnotatedPatOp:   "annotated_pat",
+	ExpressionTypeOp: "expression_type",
 
 	FromOp:      "from",
 	ExistsOp:    "exists",

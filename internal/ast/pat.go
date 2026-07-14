@@ -165,3 +165,20 @@ func NewAsPat(span token.Span, name string, pat Pat) *AsPat {
 
 // Op implements Node.
 func (*AsPat) Op() Op { return AsPatOp }
+
+// ConPat is the application of a constructor to a pattern,
+// "SOME x".
+type ConPat struct {
+	patBase
+
+	Name string
+	Arg  Pat
+}
+
+// NewConPat returns a constructor-application pattern.
+func NewConPat(span token.Span, name string, arg Pat) *ConPat {
+	return &ConPat{patBase: pb(span), Name: name, Arg: arg}
+}
+
+// Op implements Node.
+func (*ConPat) Op() Op { return ConPatOp }
