@@ -121,6 +121,8 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 	switch e := exp.(type) {
 	case *ast.Apply:
 		return r.toApply(env, e, t)
+	case *ast.Case:
+		return r.toCase(env, e, t)
 	case *ast.Fn:
 		return r.toFn(env, e, t)
 	case *ast.ID:
@@ -138,6 +140,27 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 		return r.flattenLet(env, e.Decls, e.Exp)
 	case *ast.Literal:
 		return r.toLiteral(e, t)
+	case *ast.PrefixCall:
+		if e.Kind != ast.NegateOp {
+			return nil, &Error{
+				Span: e.Span(),
+				Msg: "cannot convert to core: " +
+					e.Kind.String(),
+			}
+		}
+		arg, err := r.toExp(env, e.A)
+		if err != nil {
+			return nil, err
+		}
+		fnPat := &core.IDPat{
+			T:    r.typeMap.sys.Fn(t, t),
+			Name: "op ~",
+		}
+		return &core.Apply{
+			T:   t,
+			Fn:  &core.ID{Pat: fnPat},
+			Arg: arg,
+		}, nil
 	default:
 		return nil, &Error{
 			Span: exp.Span(),
@@ -244,6 +267,84 @@ func (r *resolver) toIf(env *coreEnv, ifExp *ast.If,
 	return caseExp, nil
 }
 
+// toCase converts "case e of pat => exp | ...". Each rule's
+// pattern variables are in scope in its body.
+func (r *resolver) toCase(env *coreEnv, caseExp *ast.Case,
+	t types.Type,
+) (core.Exp, error) {
+	scrutinee, err := r.toExp(env, caseExp.Exp)
+	if err != nil {
+		return nil, err
+	}
+	matches, err := r.toMatches(env, caseExp.Matches)
+	if err != nil {
+		return nil, err
+	}
+	return &core.Case{T: t, Exp: scrutinee, Matches: matches},
+		nil
+}
+
+func (r *resolver) toMatches(env *coreEnv,
+	matches []*ast.Match,
+) ([]core.Match, error) {
+	result := make([]core.Match, len(matches))
+	for i, m := range matches {
+		pat, err := r.toPat(m.Pat)
+		if err != nil {
+			return nil, err
+		}
+		env2 := env
+		for _, id := range core.PatIDs(pat) {
+			env2 = env2.bind(id)
+		}
+		body, err := r.toExp(env2, m.Exp)
+		if err != nil {
+			return nil, err
+		}
+		result[i] = core.Match{Pat: pat, Exp: body}
+	}
+	return result, nil
+}
+
+// toPat converts a pattern.
+func (r *resolver) toPat(pat ast.Pat) (core.Pat, error) {
+	t, err := r.typeMap.TypeOf(pat)
+	if err != nil {
+		return nil, err
+	}
+	// lint: sort until '^\t}' where '^\tcase '
+	switch p := pat.(type) {
+	case *ast.AnnotatedPat:
+		// The annotation constrained the type during inference; the
+		// core pattern is just the pattern it wraps.
+		return r.toPat(p.Pat)
+	case *ast.IDPat:
+		return &core.IDPat{T: t, Name: p.Name}, nil
+	case *ast.LiteralPat:
+		value, err := literalValue(p.Kind, p.Value)
+		if err != nil {
+			return nil, &Error{
+				Span: p.Span(),
+				Msg:  err.Error(),
+			}
+		}
+		literalPat := &core.LiteralPat{
+			T:     t,
+			Kind:  p.Kind,
+			Value: value,
+		}
+		return literalPat, nil
+	case *ast.WildcardPat:
+		return &core.WildcardPat{T: t}, nil
+	default:
+		return nil, &Error{
+			Span: pat.Span(),
+			Msg: "cannot convert to core: pattern " +
+				pat.Op().String(),
+		}
+	}
+}
+
 // flattenLet converts "let d1 d2 ... in e end" to nested Lets,
 // one declaration each.
 func (r *resolver) flattenLet(env *coreEnv, decls []ast.Decl,
@@ -267,23 +368,23 @@ func (r *resolver) flattenLet(env *coreEnv, decls []ast.Decl,
 func literalValue(kind ast.Op, text string) (any, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch kind {
-	case ast.CharLiteralOp:
+	case ast.CharLiteralOp, ast.CharLiteralPatOp:
 		return []rune(text)[0], nil
-	case ast.IntLiteralOp:
+	case ast.IntLiteralOp, ast.IntLiteralPatOp:
 		i, err := strconv.ParseInt(
 			strings.ReplaceAll(text, "~", "-"), 10, 32)
 		if err != nil {
 			return nil, &Error{Msg: "invalid literal: " + text}
 		}
 		return int32(i), nil
-	case ast.RealLiteralOp:
+	case ast.RealLiteralOp, ast.RealLiteralPatOp:
 		f, err := strconv.ParseFloat(
 			strings.ReplaceAll(text, "~", "-"), 32)
 		if err != nil {
 			return nil, &Error{Msg: "invalid literal: " + text}
 		}
 		return float32(f), nil
-	case ast.StringLiteralOp:
+	case ast.StringLiteralOp, ast.StringLiteralPatOp:
 		return text, nil
 	case ast.UnitLiteralOp:
 		return core.Unit{}, nil
