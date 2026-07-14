@@ -44,11 +44,35 @@ func dump(b *strings.Builder, node Node) {
 		b.WriteString(")")
 	case *ID:
 		b.WriteString("(id " + n.Name + ")")
+	case *ListExp:
+		sexp(b, "list", n.Args)
 	case *Literal:
 		dumpLiteral(b, n)
+	case *Record:
+		b.WriteString("(record")
+		for _, f := range n.Fields {
+			b.WriteString(" (" + f.Label + " ")
+			dump(b, f.Exp)
+			b.WriteString(")")
+		}
+		b.WriteString(")")
+	case *RecordSelector:
+		b.WriteString("(record_selector #" + n.Name + ")")
+	case *Tuple:
+		sexp(b, "tuple", n.Args)
 	default:
 		panic(fmt.Sprintf("dump: unknown node %T", node))
 	}
+}
+
+// sexp renders "(kind c1 c2 ...)".
+func sexp(b *strings.Builder, kind string, children []Expr) {
+	b.WriteString("(" + kind)
+	for _, c := range children {
+		b.WriteString(" ")
+		dump(b, c)
+	}
+	b.WriteString(")")
 }
 
 func dumpLiteral(b *strings.Builder, l *Literal) {

@@ -32,17 +32,25 @@ const (
 	UnitLiteralOp
 	IDOp
 	ApplyOp
+	RecordSelectorOp
+	TupleOp
+	ListOp
+	RecordOp
 )
 
 var opNames = map[Op]string{
-	IntLiteralOp:    "int_literal",
-	RealLiteralOp:   "real_literal",
-	StringLiteralOp: "string_literal",
-	CharLiteralOp:   "char_literal",
-	BoolLiteralOp:   "bool_literal",
-	UnitLiteralOp:   "unit_literal",
-	IDOp:            "id",
-	ApplyOp:         "apply",
+	IntLiteralOp:     "int_literal",
+	RealLiteralOp:    "real_literal",
+	StringLiteralOp:  "string_literal",
+	CharLiteralOp:    "char_literal",
+	BoolLiteralOp:    "bool_literal",
+	UnitLiteralOp:    "unit_literal",
+	IDOp:             "id",
+	ApplyOp:          "apply",
+	RecordSelectorOp: "record_selector",
+	TupleOp:          "tuple",
+	ListOp:           "list",
+	RecordOp:         "record",
 }
 
 func (o Op) String() string {

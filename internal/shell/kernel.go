@@ -20,6 +20,7 @@ package shell
 import (
 	"strings"
 
+	"github.com/hydromatic/morel-go/internal/ast"
 	"github.com/hydromatic/morel-go/internal/eval"
 	"github.com/hydromatic/morel-go/internal/parse"
 	"github.com/hydromatic/morel-go/internal/token"
@@ -53,11 +54,14 @@ func (k *Kernel) Config() *Config {
 // of the shape `A.b "str";` are evaluated; any other statement is
 // lexically validated only, producing no output.
 func (k *Kernel) Execute(stmt string) string {
-	fn, arg, ok := parse.MicroCall(k.name, stmt)
-	if ok {
-		if f, found := eval.Builtins[fn]; found {
-			return callString(f, arg)
+	e, err := parse.Stmt(k.name, stmt)
+	if err == nil {
+		if fn, arg, ok := builtinCall(e); ok {
+			if f, found := eval.Builtins[fn]; found {
+				return callString(f, arg)
+			}
 		}
+		return ""
 	}
 	l := parse.NewLexer(k.name, stmt)
 	for {
@@ -69,6 +73,34 @@ func (k *Kernel) Execute(stmt string) string {
 			return ""
 		}
 	}
+}
+
+// builtinCall matches the expression shape of a call to a
+// built-in: a selector applied to a structure name, applied to a
+// string literal (e.g. `Sys.parseTree "str"`), returning the
+// dotted name and the argument.
+func builtinCall(e ast.Expr) (string, string, bool) {
+	outer, ok := e.(*ast.Apply)
+	if !ok {
+		return "", "", false
+	}
+	lit, ok := outer.Arg.(*ast.Literal)
+	if !ok || lit.Kind != ast.StringLiteralOp {
+		return "", "", false
+	}
+	inner, ok := outer.Fn.(*ast.Apply)
+	if !ok {
+		return "", "", false
+	}
+	sel, ok := inner.Fn.(*ast.RecordSelector)
+	if !ok {
+		return "", "", false
+	}
+	id, ok := inner.Arg.(*ast.ID)
+	if !ok {
+		return "", "", false
+	}
+	return id.Name + "." + sel.Name, lit.Value, true
 }
 
 // callString invokes a built-in whose result is a string, and
