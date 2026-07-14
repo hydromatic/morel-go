@@ -279,6 +279,11 @@ func (r *typeResolver) reg(node ast.Node, v *unify.Var) {
 	r.nodeTerm[node] = v
 }
 
+// reg2 registers that a node's type is a term.
+func (r *typeResolver) reg2(node ast.Node, t unify.Term) {
+	r.nodeTerm[node] = t
+}
+
 // regEquiv registers that a node's type is a term, equivalent to
 // the variable.
 func (r *typeResolver) regEquiv(node ast.Node, v *unify.Var,
@@ -869,6 +874,7 @@ func (r *typeResolver) deduceApply(env typeEnv, apply *ast.Apply,
 		// "apply" is "#field arg": when vArg (the argument
 		// type) resolves to a record, we can deduce v.
 		r.selectorAction(sel, vArg, v)
+		r.reg2(sel, r.fnTerm(vArg, v))
 		r.selectorCalls = append(r.selectorCalls,
 			selectorCall{sel: sel, apply: apply})
 	} else {
