@@ -360,9 +360,75 @@ func TestExecuteRecursion(t *testing.T) {
 	})
 }
 
-// TestExecuteDatatypes pins datatype-value sessions probed
-// against the java binary, including constructor-argument
-// parenthesization and the echo of a datatype declaration.
+// TestExecuteCrossStatement stress-tests values that flow across
+// statement boundaries — the class of bugs that plagued
+// morel-rust. Every expected output was probed against the java
+// binary.
+func TestExecuteCrossStatement(t *testing.T) {
+	runSession(t, [][2]string{
+		// An escaping lambda calls its sibling recursive
+		// function; the pair binds two names in one statement.
+		{
+			"fun a x = fn () => b x and b x = x + 1;",
+			"val a = fn : int -> unit -> int\n" +
+				"val b = fn : int -> int",
+		},
+		{"val g = a 41;", "val g = fn : unit -> int"},
+		{"g ();", "val it = 42 : int"},
+		// A lambda escaping from inside a recursive function
+		// still reaches the function.
+		{
+			"fun countdown n = if n = 0 then (fn () => 0)" +
+				" else (fn () => countdown (n - 1) ());",
+			"val countdown = fn : int -> unit -> int",
+		},
+		{"(countdown 3) ();", "val it = 0 : int"},
+		// The recursive reference is created inside the init
+		// expression (not the init's own closure), so it must
+		// see the final value however deeply it was captured.
+		{
+			"val rec f = (fn g => g)" +
+				" (fn x => if x = 0 then 1 else f (x - 1));",
+			"val f = fn : int -> int",
+		},
+		{"f 3;", "val it = 1 : int"},
+		// A local recursive function captured by an escaping
+		// lambda, with a captured outer variable.
+		{
+			"fun outer n = let fun inner 0 = n" +
+				" | inner k = inner (k - 1)" +
+				" in fn () => inner 5 end;",
+			"val outer = fn : 'a -> unit -> 'a",
+		},
+		{"(outer 7) ();", "val it = 7 : int"},
+		// Closures stored in a list, extracted and applied.
+		{
+			"val fs = [fn x => x + 1, fn x => x * 2];",
+			"val fs = [fn,fn] : (int -> int) list",
+		},
+		{"hd fs 10;", "val it = 11 : int"},
+		// A closure held in 'it' and applied from 'it'.
+		{"fn x => x + 1;", "val it = fn : int -> int"},
+		{"it 5;", "val it = 6 : int"},
+		// Mutual recursion used two statements later.
+		{
+			"fun isEven 0 = true | isEven n = isOdd (n - 1)" +
+				" and isOdd 0 = false | isOdd n = isEven (n - 1);",
+			"val isEven = fn : int -> bool\n" +
+				"val isOdd = fn : int -> bool",
+		},
+		{
+			"val checker = isOdd;",
+			"val checker = fn : int -> bool",
+		},
+		{"checker 9;", "val it = true : bool"},
+		{"isEven 10;", "val it = true : bool"},
+	})
+}
+
+// TestExecuteDatatypes pins datatype-value sessions, including
+// constructor-argument parenthesization and the echo of a
+// datatype declaration.
 func TestExecuteDatatypes(t *testing.T) {
 	runSession(t, [][2]string{
 		{"SOME 4;", "val it = SOME 4 : int option"},
