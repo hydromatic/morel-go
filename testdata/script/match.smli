@@ -1,0 +1,93 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Pattern matching
+ *)
+
+(*) OK
+fun f 1 = 0
+  | f _ = 1;
+> val f = fn : int -> int
+f 1;
+> val it = 0 : int
+f 2;
+> val it = 1 : int
+
+(* The Ackermann-Péter function
+ * See "Recursion Equations as a Programming Language", D A Turner 1982 *)
+fun ack 0 n = n + 1
+  | ack m 0 = ack (m - 1) 1
+  | ack m n = ack (m - 1) (ack m (n - 1));
+> val ack = fn : int -> int -> int
+ack 0 0;
+> val it = 1 : int
+ack 0 1;
+> val it = 2 : int
+ack 1 0;
+> val it = 2 : int
+ack 1 2;
+> val it = 4 : int
+ack 2 3;
+> val it = 9 : int
+ack 3 3;
+> val it = 61 : int
+
+(* Various types, exhaustive & non-exhaustive --------------------- *)
+(*) From https://smlhelp.github.io/book/docs/start/syntax/
+
+(*) unit, exhaustive
+(fn () => ());
+> val it = fn : unit -> unit
+
+(*) bool, exhaustive
+(fn true  => 1
+  | false => 0);
+> val it = fn : bool -> int
+
+(*) order, exhaustive
+(fn LESS    => ~1
+  | EQUAL   => 0
+  | GREATER => 1);
+> val it = fn : order -> int
+
+(*) order, exhaustive
+(fn 0 => true
+  | _ => false);
+> val it = fn : int -> bool
+
+(*) int list, exhaustive
+(fn [] => 0
+  | x::_ => x + 1);
+> val it = fn : int list -> int
+
+(*) int * bool, exhaustive
+(fn (0,b) => true andalso b
+  | (n,_) => false);
+> val it = fn : int * bool -> bool
+
+(*) Exhaustive
+fun f [(SOME i)] = i
+  | f [NONE] = ~1
+  | f [] = 0
+  | f (one :: two :: rest) = ~2;
+> val f = fn : int option list -> int
+
+datatype color = RED | GREEN | BLUE;
+> datatype color = RED | GREEN | BLUE
+
+(*) End match.smli

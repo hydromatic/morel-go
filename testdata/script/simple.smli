@@ -1,0 +1,586 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *)
+Sys.set ("lineWidth", 78);
+> val it = () : unit
+
+(* Literals ------------------------------------------------------- *)
+
+1;
+> val it = 1 : int
+~2;
+> val it = ~2 : int
+~2147483647;
+> val it = ~2147483647 : int
+~2147483648;
+> val it = ~2147483648 : int
+2147483647;
+> val it = 2147483647 : int
+
+(* Integer literals outside the 32-bit 'int' range (~2147483648 to
+   2147483647) are rejected during validation. *)
+2147483648;
+> stdIn:1.1-1.11 Error: literal '2147483648' is too large for type int
+>   raised at: stdIn:1.1-1.11
+~2147483649;
+> stdIn:1.1-1.12 Error: literal '~2147483649' is too large for type int
+>   raised at: stdIn:1.1-1.12
+9999999999;
+> stdIn:1.1-1.11 Error: literal '9999999999' is too large for type int
+>   raised at: stdIn:1.1-1.11
+
+1.0;
+> val it = 1 : real
+0.0;
+> val it = 0 : real
+~0.0;
+> val it = ~0 : real
+~2.0;
+> val it = ~2 : real
+1.5;
+> val it = 1.5 : real
+1.0e10;
+> val it = 1E10 : real
+1.5e9;
+> val it = 1.5E9 : real
+"a string";
+> val it = "a string" : string
+"a \"quoted\" string\\with backslash";
+> val it = "a \"quoted\" string\\with backslash" : string
+"";
+> val it = "" : string
+#"a";
+> val it = #"a" : char
+#"\"";
+> val it = #"\"" : char
+#"\\";
+> val it = #"\\" : char
+true;
+> val it = true : bool
+[1,2,3];
+> val it = [1,2,3] : int list
+(1,2);
+> val it = (1,2) : int * int
+(1,(2,"three"),true);
+> val it = (1,(2,"three"),true) : int * (int * string) * bool
+[(1,"a"),(2,"b"),(3,"c")];
+> val it = [(1,"a"),(2,"b"),(3,"c")] : (int * string) list
+([1,2],["a","b","c"]);
+> val it = ([1,2],["a","b","c"]) : int list * string list
+{a=1, b="two"};
+> val it = {a=1,b="two"} : {a:int, b:string}
+{1="a", 2=true, 3=(3,4,5)};
+> val it = ("a",true,(3,4,5)) : string * bool * (int * int * int)
+("a", true, (3,4,5));
+> val it = ("a",true,(3,4,5)) : string * bool * (int * int * int)
+{1="a"};
+> val it = {1="a"} : {1:string}
+("a");
+> val it = "a" : string
+{1=1,2=2,3=3,4=4,5=5,6=6,7=7,8=8,9=9,10=10,11=11};
+> val it = (1,2,3,4,5,6,7,8,9,10,11)
+>   : int * int * int * int * int * int * int * int * int * int * int
+{7="seven"};
+> val it = {7="seven"} : {7:string}
+{1=1};
+> val it = {1=1} : {1:int}
+{1=1,2=2,3=3,5=5,6=6,7=7,8=8,9=9,10=10,11=11};
+> val it = {1=1,2=2,3=3,5=5,6=6,7=7,8=8,9=9,10=10,11=11}
+>   : {1:int, 2:int, 3:int, 5:int, 6:int, 7:int, 8:int, 9:int, 10:int, 11:int}
+
+(*) All the characters
+Sys.set ("printLength", 300);
+> val it = () : unit
+
+fun foo x
+  x'
+  x''
+  x'y
+  ABC123
+  Abc_123
+  Abc_
+  `a b` = 1;
+> val foo = fn : 'a -> 'b -> 'c -> 'd -> 'e -> 'f -> 'g -> 'h -> int
+val `val` = "yes, you can use keywords as identifiers";
+> val val = "yes, you can use keywords as identifiers" : string
+
+(* Comments ------------------------------------------------------- *)
+
+1 + (* 2 + *) 3;
+> val it = 4 : int
+
+1 +
+(* 2 +
+ *) 3;
+> val it = 4 : int
+
+(* 1 +
+2 +
+3 *) 5 + 6;
+> val it = 11 : int
+
+(* Test nested block comments *)
+"a" ^ (* outer comment
+       "b" ^ (* nested comment *) "c" ^
+       end of outer *)
+     "d";
+> val it = "ad" : string
+
+(* Test line comment inside block comment *)
+"a" ^ (* block comment start
+       "b" ^ (*) this is a line comment, not end of block
+       "c" ^
+       end of block *)
+    "d";
+> val it = "ad" : string
+
+(* Test block comment syntax inside line comment *)
+"a" ^ (*) line comment with (* fake block comment
+"b" ^
+"c";
+> val it = "abc" : string
+
+(* Multiple levels of nesting *)
+"a" ^ (* level 1
+        "b" ^ (* level 2
+           "c" ^ (* level 3 *) "d" ^
+           still in level 2 *) "e" ^
+        still in level 1 *)
+     "f";
+> val it = "af" : string
+
+(* Multiple levels of nesting, and output lines *)
+"a" ^ (* level 1
+        "b" ^ (* level 2
+           "c" ^ (* level 3 *) "d" ^
+> val it = "spurious, but must be preserved in output" : string
+           still in level 2 *) "e" ^
+        still in level 1 *)
+     "f";
+> val it = "af" : string
+
+(* Empty nested comment *)
+"a" ^ (* outer (* *) inner *) "b";
+> val it = "ab" : string
+
+(* Multiple stars before closing paren *)
+"a" ^ (***) "b" ^ "c";
+> val it = "abc" : string
+
+"a" ^ (* comment ***) "b";
+> val it = "ab" : string
+
+(* Adjacent comments *)
+"a" ^ (* block *) (*) line
+"b";
+> val it = "ab" : string
+
+(* Comments with many stars and parens *)
+"a" ^ (* *** *) "b" ^ (******) "c";
+> val it = "abc" : string
+
+(* Empty block comment *)
+"a" ^ (**) "b";
+> val it = "ab" : string
+
+(* Nested line comments inside block *)
+"a" ^ (* start
+         (* line 1
+          * line 2 *)
+         end *) "b";
+> val it = "ab" : string
+
+(* Comments interspersed in expression *)
+"a" (* c1 *) ^ (* c2 *) "b" (* c3 *) ^ (* c4 *) "c";
+> val it = "abc" : string
+
+(* Comment syntax in string literals should NOT be treated as comments *)
+"(*" ^ "*)";
+> val it = "(**)" : string
+
+"a (* comment? *) b";
+> val it = "a (* comment? *) b" : string
+
+"(*) line comment?";
+> val it = "(*) line comment?" : string
+
+"nested (* outer (* inner *) end *)";
+> val it = "nested (* outer (* inner *) end *)" : string
+
+(* Comment syntax inside char literals *)
+str #"(" ^ str #"*" ^ str #")";
+> val it = "(*)" : string
+
+(* Mixing real comments with string literals containing comment syntax *)
+"a" ^ (* real comment *) "(*fake*)" ^ "b";
+> val it = "a(*fake*)b" : string
+
+(*) "c" ^ (* This whole line is a comment including the string "and this"
+"d";
+> val it = "d" : string
+
+(* String with escaped quotes and comment syntax *)
+"\"(*\" and \"*)\"";
+> val it = "\"(*\" and \"*)\"" : string
+
+(* The scripting framework gets confused by output lines ('>')
+   after a line comment ('(*)') inside a
+   block comment. *)
+
+(* A block comment.
+
+(*) A line comment, followed by a command that is not executed.
+1 + 2;
+> val it = "wrong" : string
+
+End of block comment. *)
+"correct";
+> val it = "correct" : string
+
+(* Simple commands ------------------------------------------------ *)
+
+val x = 1;
+> val x = 1 : int
+x + 2;
+> val it = 3 : int
+let
+  fun fact n =
+    if n = 0
+    then 1
+    else n * (fact (n - 1))
+in
+  fact 5
+end;
+> val it = 120 : int
+let
+  fun plus x y = x + y
+in
+  plus 2
+end;
+> val it = fn : int -> int
+it 3;
+> val it = 5 : int
+
+fun strTimes s 0 l = l
+  | strTimes s i l = strTimes ("a" ^ s) (i - 1) (s :: l);
+> val strTimes = fn : string -> int -> string list -> string list
+
+strTimes "" 3 [];
+> val it = ["aa","a",""] : string list
+strTimes "" 8 [];
+> val it = ["aaaaaaa","aaaaaa","aaaaa","aaaa","aaa","aa","a",""] : string list
+strTimes "" 9 [];
+> val it = ["aaaaaaaa","aaaaaaa","aaaaaa","aaaaa","aaaa","aaa","aa","a",""]
+>   : string list
+strTimes "" 12 [];
+> val it =
+>   ["aaaaaaaaaaa","aaaaaaaaaa","aaaaaaaaa","aaaaaaaa","aaaaaaa","aaaaaa",
+>    "aaaaa","aaaa","aaa","aa","a",""] : string list
+
+(*) Bug: Fails due to lack of parentheses
+(*
+let
+  fun in_ e [] = false
+    | in_ e (h :: t) = e = h orelse in_ e t
+in
+  (in_ 3 [1,2,3], in_ 4 [1,2,3])
+end;
+*)
+
+(*) Succeeds when parentheses are added
+let
+  fun in_ e [] = false
+    | in_ e (h :: t) = e = h orelse (in_ e t)
+in
+  (in_ 3 [1,2,3], in_ 4 [1,2,3])
+end;
+> val it = (true,false) : bool * bool
+
+(*) Lambda on unit
+fn () => 1;
+> val it = fn : unit -> int
+it ();
+> val it = 1 : int
+
+(*) Multiple functions
+let
+  fun f x = 1
+  fun g x = 2
+in
+  f (g 0)
+end;
+> val it = 1 : int
+
+(*) Closure
+let
+  fun f x = 1 + x;
+  val x = f 2;
+  fun f y = x + y;
+  val x = 10
+in
+  f x
+end;
+> val it = 13 : int
+
+(*) As "Closure", but each 'fun' is replaced with a lambda.
+let
+  val f = fn x => 1 + x;
+  val x = f 2;
+  val f = fn y => x + y;
+  val x = 10
+in
+  f x
+end;
+> val it = 13 : int
+
+(*) As "Closure", but converted to nested 'let' expressions.
+let
+  fun f x = 1 + x
+in
+  let
+    val x = f 2
+  in
+    let
+      fun g y = x + y
+    in
+      let
+        val x = 10
+      in
+        g x
+      end
+    end
+  end
+end;
+> val it = 13 : int
+
+(*) Similar to "Closure", but a simpler expression.
+let
+  val x = 1;
+  fun f y = x + y;
+  val x = 10;
+in
+  f x
+end;
+> val it = 11 : int
+
+(* Similar to "Closure", but the two occurrences of 'x'
+ * have different data types, so that the bug is more obvious. *)
+let
+  val x = "abc";
+  fun g y = size x + y;
+  val x = 10
+in
+  g x
+end;
+> val it = 13 : int
+
+(*) As previous, but converting 'fun' to a lambda.
+let
+  val x = "abc";
+  val g = fn y => size x + y;
+  val x = 10
+in
+  g x
+end;
+> val it = 13 : int
+
+(*) A fun in a fun (test case for [MOREL-19])
+fun foo arg =
+  let
+    fun baz x = x
+  in
+    baz arg
+  end;
+> val foo = fn : 'a -> 'a
+foo 3;
+> val it = 3 : int
+
+(*) Mutually recursive functions
+let
+  fun f i = g (i * 2)
+  and g i = if i > 10 then i else f (i + 3)
+in
+  f
+end;
+> val it = fn : int -> int
+it 1;
+> val it = 26 : int
+
+(*) Same as previous, using 'val rec'
+let
+  val rec f = fn i => g (i * 2)
+  and g = fn i => if i > 10 then i else f (i + 3)
+in
+  f
+end;
+> val it = fn : int -> int
+it 1;
+> val it = 26 : int
+
+let
+  fun odd 0 = false
+    | odd n = even (n - 1)
+  and even 0 = true
+    | even n = odd (n - 1)
+in
+  (odd 17, even 17)
+end;
+> val it = (true,false) : bool * bool
+
+let
+  fun isZeroMod3 0 = true
+    | isZeroMod3 n = isTwoMod3 (n - 1)
+  and isOneMod3 0 = false
+    | isOneMod3 n = isZeroMod3 (n - 1)
+  and isTwoMod3 0 = false
+    | isTwoMod3 n = isOneMod3 (n - 1)
+in
+  (isZeroMod3 17, isOneMod3 17, isTwoMod3 17)
+end;
+> val it = (false,false,true) : bool * bool * bool
+
+(*) Composite declarations
+let
+  val (x, y) = (1, 2)
+in
+  x + y
+end;
+> val it = 3 : int
+(* Set 'it' to a value of a distinct type before the next tests, so
+ * that the assertions that follow show whether the val declarations
+ * leave 'it' alone. *)
+"composite";
+> val it = "composite" : string
+val (x, y) = (1, 2);
+> val x = 1 : int
+> val y = 2 : int
+(*) Composite val declarations do not assign 'it'.
+it;
+> val it = "composite" : string
+val (x, 2) = (1, 2);
+> val x = 1 : int
+it;
+> val it = "composite" : string
+val h :: t = [1, 2, 3];
+> val h = 1 : int
+> val t = [2,3] : int list
+it;
+> val it = "composite" : string
+(*) Empty (unit) value declarations do not assign 'it'.
+val () = ();
+it;
+> val it = "composite" : string
+val _ = 3;
+
+val SOME i = SOME 1;
+> val i = 1 : int
+
+val SOME i = NONE;
+> uncaught exception Bind [nonexhaustive binding failure]
+>   raised at: stdIn:1.5-1.18
+
+val SOME (i, NONE) = SOME (1, SOME false);
+> uncaught exception Bind [nonexhaustive binding failure]
+>   raised at: stdIn:1.5-1.42
+
+Sys.set ("matchCoverageEnabled", false);
+> val it = () : unit
+val (i, true) = (1, true);
+> val i = 1 : int
+val (i, false) = (1, true);
+> uncaught exception Bind [nonexhaustive binding failure]
+>   raised at: stdIn:1.5-1.27
+let
+  val (i, false) = (1, true)
+in
+  i + 1
+end;
+> uncaught exception Bind [nonexhaustive binding failure]
+>   raised at: stdIn:2.7-2.29
+
+(* Patterns ------------------------------------------------------- *)
+
+(* The following example is from "Introduction to Standard ML" by
+ * Robert Harper. *)
+
+val x = (( "foo", true ), 17 );
+> val x = (("foo",true),17) : (string * bool) * int
+
+Sys.set ("matchCoverageEnabled", false);
+> val it = () : unit
+
+(* Field access --------------------------------------------------- *)
+
+(*) Record field access using accessor
+val r = {a = 1, b = "two"};
+> val r = {a=1,b="two"} : {a:int, b:string}
+
+(*) Tuple field access using accessor
+val t = (42, "hello", 3.14);
+> val t = (42,"hello",3.14) : int * string * real
+
+(*) Nested tuple access
+val nested = ((1, 2), (3, 4));
+> val nested = ((1,2),(3,4)) : (int * int) * (int * int)
+
+(*) Mixed record and tuple access
+val mixed = {pair = (10, 20), name = "test"};
+> val mixed = {name="test",pair=(10,20)} : {name:string, pair:int * int}
+
+(*) Chained mixed access: tuple field, record field, tuple field
+val t2 = (({x = (100, 200)}, "a"), "b");
+> val t2 = (({x=(100,200)},"a"),"b") : ({x:int * int} * string) * string
+
+(* Syntactic ambiguity: real literals vs tuple access
+ * 3.1 is a real literal, not tuple access *)
+3.1;
+> val it = 3.1 : real
+
+(*) 3.2e1 is scientific notation (32.0)
+3.2e1;
+> val it = 32 : real
+
+(*) Spaces around dot
+val tup = ("a", "b");
+> val tup = ("a","b") : string * string
+
+(*) Unit values have no fields
+();
+> val it = () : unit
+{};
+> val it = () : unit
+
+(*) Singleton record with numeric field name (not a tuple)
+{1 = "hello"};
+> val it = {1="hello"} : {1:string}
+
+(* Errors --------------------------------------------------------- *)
+
+(* The first is printed as '1.9', the second as '1.9-1.11', and the
+ * third as '1.9-1.12'. *)
+"a string literal to reset the line counter after the comment";
+> val it = "a string literal to reset the line counter after the comment"
+>   : string
+val a = pq + 1;
+> stdIn:1.9-1.11 Error: unbound variable or constructor: pq
+>   raised at: stdIn:1.9-1.11
+val a = pqr + 1;
+> stdIn:1.9-1.12 Error: unbound variable or constructor: pqr
+>   raised at: stdIn:1.9-1.12
+
+(*) End simple.smli
