@@ -119,7 +119,7 @@ func (c *termToTypeConverter) sequenceType(s *unify.Sequence) (
 func (c *termToTypeConverter) recordType(s *unify.Sequence) (
 	types.Type, error,
 ) {
-	labels := strings.Split(s.Op, ":")[1:]
+	labels := splitQuoted(s.Op)[1:]
 	if len(labels) != len(s.Terms) {
 		return nil, fmt.Errorf("cannot convert term %s", s)
 	}

@@ -93,6 +93,35 @@ func TestDeduce(t *testing.T) {
 		{"let val f = fn x => x in f 1 end", "int"},
 		{"val x = if false then 2.5 else 3.5", "real"},
 		{"val _ = 1", "int"},
+		{"(1, true)", "int * bool"},
+		{
+			"(false, 1, (true, false))",
+			"bool * int * (bool * bool)",
+		},
+		{"[1]", "int list"},
+		{"[[1]]", "int list list"},
+		{"[(1, true), (2, false)]", "(int * bool) list"},
+		{"[]", "'a list"},
+		{"(1, [2], 3)", "int * int list * int"},
+		{"{a=1, b=\"two\"}", "{a:int, b:string}"},
+		{"{c=1, b=true}", "{b:bool, c:int}"},
+		{"{1 = true, 2 = 0}", "bool * int"},
+		{"{2=0,1=true}", "bool * int"},
+		{"{3=0,1=true,11=false}", "{1:bool, 3:int, 11:bool}"},
+		{"{}", "unit"},
+		{"#1 (true, 0)", "bool"},
+		{"#2 (true, 0)", "int"},
+		{"#1 {1=true,2=0}", "bool"},
+		{"#b {a=1, b=\"two\"}", "string"},
+		{
+			"fn (f, g) => fn x => f (g x)",
+			"('a -> 'b) * ('c -> 'a) -> 'c -> 'b",
+		},
+		{"fn {f, g} => true", "{f:'a, g:'b} -> bool"},
+		{"fn (x, y) => x", "'a * 'b -> 'a"},
+		{"(fn {f, ...} => f) {f=1, g=true}", "int"},
+		{"{{a=1,b=true} with b=false}", "{a:int, b:bool}"},
+		{"let val x = {a=1, b=true} in #b x end", "bool"},
 	} {
 		t.Run(tc.src, func(t *testing.T) {
 			resolved, err := deduce(t, tc.src)
@@ -128,9 +157,12 @@ func TestDeduceError(t *testing.T) {
 		},
 		{
 			"(fn x => if x then 1 else 2) 3",
-			"Cannot deduce type: conflict: int vs bool",
+			"Cannot deduce type: conflict: bool vs int",
 		},
 		{"fn x => x x", "Cannot deduce type: cycle"},
+		{"#a", "unresolved flex record (can't tell what " +
+			"fields there are besides #a)"},
+		{"{a=1, b=true, a=3}", "duplicate field 'a' in record"},
 		{"3000000000", "literal '3000000000' is too large" +
 			" for type int"},
 	} {

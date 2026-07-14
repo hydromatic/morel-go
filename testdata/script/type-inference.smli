@@ -57,12 +57,41 @@ Sys.set ("lineWidth", 78);
 > val it : bool
 :t (1);
 > val it : int
+
+:t (1, true);
+> val it : int * bool
+:t (false, 1, (true, false));
+> val it : bool * int * (bool * bool)
+:t (false, 1, (true, "a"), 2);
+> val it : bool * int * (bool * string) * int
+:t [1,2];
+> val it : int list
+:t [[1,2]];
+> val it : int list list
+:t [(1,2)];
+> val it : (int * int) list
+:t (1, [2]);
+> val it : int * int list
+:t (1, [2], 3);
+> val it : int * int list * int
+:t {a=1, b="two"};
+> val it : {a:int, b:string}
 :t fn () => 3;
 > val it : unit -> int
 :t fn () => fn () => 4;
 > val it : unit -> unit -> int
+:t (fn () => 5, fn () => 6);
+> val it : (unit -> int) * (unit -> int)
+:t fn () => (5, fn () => 6);
+> val it : unit -> int * (unit -> int)
 :t fn f => fn g => fn x => g (f x);
 > val it : ('a -> 'b) -> ('b -> 'c) -> 'a -> 'c
+:t fn (f, g) => fn x => f (g x);
+> val it : ('a -> 'b) * ('c -> 'a) -> 'c -> 'b
+:t {f = fn () => 0, g = 1};
+> val it : {f:unit -> int, g:int}
+:t fn {f, g} => true;
+> val it : {f:'a, g:'b} -> bool
 :t fn x => fn f => f x;
 > val it : 'a -> ('a -> 'b) -> 'b
 
@@ -75,10 +104,18 @@ Sys.set ("lineWidth", 78);
 > val it : string
 :t if true then 1.0 else 2.0;
 > val it : real
+:t (1, true);
+> val it : int * bool
 :t (1);
 > val it : int
 :t ();
 > val it : unit
+:t {a = 1, b = true};
+> val it : {a:int, b:bool}
+:t {a=1,b=true};
+> val it : {a:int, b:bool}
+:t {{a=1,b=true} with b=false};
+> val it : {a:int, b:bool}
 
 (*) Polymorphic type variables
 :t fn _ => 42;
@@ -89,3 +126,33 @@ Sys.set ("lineWidth", 78);
 > val it : 'a -> 'a
 :t fn x => fn y => x;
 > val it : 'a -> 'b -> 'a
+
+(*) Record types, including duplicate fields
+:t {a=1, b=true};
+> val it : {a:int, b:bool}
+:t {c=1, b=true};
+> val it : {b:bool, c:int}
+
+(*) Tuple labels
+:t { 1 = true, 2 = 0};
+> val it : bool * int
+:t {2=0,1=true};
+> val it : bool * int
+:t {3=0,1=true,11=false};
+> val it : {1:bool, 3:int, 11:bool}
+:t #1 {1=true,2=0};
+> val it : bool
+:t #1 (true, 0);
+> val it : bool
+:t #2 (true, 0);
+> val it : int
+:t {};
+> val it : unit
+
+(*) List types
+:t [1];
+> val it : int list
+:t [[1]];
+> val it : int list list
+:t [(1, true), (2, false)];
+> val it : (int * bool) list

@@ -169,12 +169,6 @@ func (r *typeResolver) typeTerm(t types.Type,
 	}
 }
 
-// recordLabel builds the term operator for a record type with the
-// given labels, e.g. "record:a:b".
-func recordLabel(labels []string) string {
-	return recordTyCon + ":" + strings.Join(labels, ":")
-}
-
 func (r *typeResolver) deduceDecl(env typeEnv, decl ast.Decl,
 	termMap *[]patTerm,
 ) error {
@@ -230,16 +224,20 @@ func (r *typeResolver) deducePat(pat ast.Pat,
 		return nil
 	case *ast.LiteralPat:
 		return r.deduceLiteral(pat, p.Kind, p.Value, v)
+	case *ast.RecordPat:
+		return r.deduceRecordPat(p, termMap, v)
 	case *ast.TuplePat:
-		if len(p.Args) == 0 {
-			r.regEquiv(pat, v, r.primTerm("unit"))
-			return nil
+		terms := make([]unify.Term, len(p.Args))
+		for i, arg := range p.Args {
+			vArg := r.u.Variable()
+			err := r.deducePat(arg, termMap, vArg)
+			if err != nil {
+				return err
+			}
+			terms[i] = vArg
 		}
-		return &Error{
-			Span: pat.Span(),
-			Msg: "cannot deduce type for pattern " +
-				pat.Op().String(),
-		}
+		r.regEquiv(pat, v, r.tupleTerm(terms))
+		return nil
 	case *ast.WildcardPat:
 		r.reg(pat, v)
 		return nil
@@ -305,8 +303,38 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 		}
 		r.reg(exp, v)
 		return nil
+	case *ast.ListExp:
+		vElem := r.u.Variable()
+		for _, arg := range e.Args {
+			err := r.deduceExp(env, arg, vElem)
+			if err != nil {
+				return err
+			}
+		}
+		r.regEquiv(exp, v, unify.Apply(listTyCon, vElem))
+		return nil
 	case *ast.Literal:
 		return r.deduceLiteral(exp, e.Kind, e.Value, v)
+	case *ast.Record:
+		return r.deduceRecord(env, e, v)
+	case *ast.RecordSelector:
+		return &Error{
+			Span: e.Span(),
+			Msg: "unresolved flex record (can't tell what " +
+				"fields there are besides #" + e.Name + ")",
+		}
+	case *ast.Tuple:
+		terms := make([]unify.Term, len(e.Args))
+		for i, arg := range e.Args {
+			vArg := r.u.Variable()
+			err := r.deduceExp(env, arg, vArg)
+			if err != nil {
+				return err
+			}
+			terms[i] = vArg
+		}
+		r.regEquiv(exp, v, r.tupleTerm(terms))
+		return nil
 	default:
 		return &Error{
 			Span: exp.Span(),
@@ -371,16 +399,185 @@ func (r *typeResolver) deduceApply(env typeEnv, apply *ast.Apply,
 ) error {
 	vFn := r.u.Variable()
 	vArg := r.u.Variable()
-	err := r.deduceExp(env, apply.Fn, vFn)
-	if err != nil {
-		return err
-	}
-	err = r.deduceExp(env, apply.Arg, vArg)
-	if err != nil {
-		return err
-	}
 	r.equiv(vFn, r.fnTerm(vArg, v))
+	if sel, ok := apply.Arg.(*ast.RecordSelector); ok {
+		// "apply" is "f #field": "#field" has type "vArg" and
+		// also "vRec -> vField"; when vRec resolves we can
+		// deduce vField.
+		vRec := r.u.Variable()
+		vField := r.u.Variable()
+		r.selectorAction(sel, vRec, vField)
+		r.regEquiv(apply.Arg, vArg, r.fnTerm(vRec, vField))
+	} else {
+		err := r.deduceExp(env, apply.Arg, vArg)
+		if err != nil {
+			return err
+		}
+	}
+	if sel, ok := apply.Fn.(*ast.RecordSelector); ok {
+		// "apply" is "#field arg": when vArg (the argument
+		// type) resolves to a record, we can deduce v.
+		r.selectorAction(sel, vArg, v)
+	} else {
+		err := r.deduceExp(env, apply.Fn, vFn)
+		if err != nil {
+			return err
+		}
+	}
 	r.reg(apply, v)
+	return nil
+}
+
+// selectorAction registers an action for the record selector
+// "#field": when the record type vArg becomes known, the
+// selector's result type vResult is the field's type.
+func (r *typeResolver) selectorAction(sel *ast.RecordSelector,
+	vArg, vResult *unify.Var,
+) {
+	fieldName := sel.Name
+	r.actions = append(r.actions, unify.VarAction{
+		Var: vArg,
+		Action: func(_ *unify.Var, t unify.Term,
+			s *unify.Substitution, add func(l, r unify.Term),
+		) {
+			if fieldType := lookupField(t, fieldName, s); fieldType != nil {
+				add(s.Resolve(vResult), fieldType)
+			}
+		},
+	})
+}
+
+// deduceRecord handles a record expression, e.g. "{a=1, b=2}" or
+// "{e with a=1}".
+func (r *typeResolver) deduceRecord(env typeEnv,
+	record *ast.Record, v *unify.Var,
+) error {
+	fields := make([]labelTerm, 0, len(record.Fields))
+	byLabel := map[string]ast.Expr{}
+	for _, f := range record.Fields {
+		label := f.Label
+		if label == "" {
+			id, ok := f.Exp.(*ast.ID)
+			if !ok {
+				return &Error{
+					Span: record.Span(),
+					Msg:  "cannot derive label for expression",
+				}
+			}
+			label = id.Name
+		}
+		if _, dup := byLabel[label]; dup {
+			return &Error{
+				Span: record.Span(),
+				Msg: "duplicate field '" + label +
+					"' in record",
+			}
+		}
+		byLabel[label] = f.Exp
+		fields = append(fields, labelTerm{label: label})
+	}
+	sortFields(fields)
+	labelTypes := map[string]unify.Term{}
+	for i := range fields {
+		vArg := r.u.Variable()
+		err := r.deduceExp(env, byLabel[fields[i].label], vArg)
+		if err != nil {
+			return err
+		}
+		fields[i].term = vArg
+		labelTypes[fields[i].label] = vArg
+	}
+	if record.With == nil {
+		r.regEquiv(record, v, r.recordTerm(fields))
+		return nil
+	}
+	v2 := r.u.Variable()
+	err := r.deduceExp(env, record.With, v2)
+	if err != nil {
+		return err
+	}
+	// When we know the type of the expression before 'with', we
+	// can unify the types of the fields it has in common with
+	// the explicit fields.
+	r.actions = append(r.actions, unify.VarAction{
+		Var: v2,
+		Action: func(_ *unify.Var, t unify.Term,
+			s *unify.Substitution, add func(l, r unify.Term),
+		) {
+			seq, ok := t.(*unify.Sequence)
+			if !ok {
+				return
+			}
+			for i, fieldName := range fieldList(seq) {
+				if labelType, common := labelTypes[fieldName]; common {
+					add(s.Resolve(labelType),
+						s.Resolve(seq.Terms[i]))
+				}
+			}
+		},
+	})
+	r.equiv(v, v2)
+	r.reg(record, v)
+	return nil
+}
+
+// deduceRecordPat handles a record pattern, e.g. "{a, b = p}" or
+// "{a, ...}".
+func (r *typeResolver) deduceRecordPat(pat *ast.RecordPat,
+	termMap *[]patTerm, v *unify.Var,
+) error {
+	fields := make([]labelTerm, len(pat.Fields))
+	byLabel := map[string]ast.Pat{}
+	for i, f := range pat.Fields {
+		fields[i] = labelTerm{label: f.Label}
+		byLabel[f.Label] = f.Pat
+	}
+	sortFields(fields)
+	for i := range fields {
+		vArg := r.u.Variable()
+		err := r.deducePat(byLabel[fields[i].label], termMap,
+			vArg)
+		if err != nil {
+			return err
+		}
+		fields[i].term = vArg
+	}
+	term := r.recordTerm(fields)
+	if !pat.Ellipsis {
+		r.regEquiv(pat, v, term)
+		return nil
+	}
+	// The pattern has an ellipsis, so it matches any record with
+	// at least these fields. When the source record's type
+	// becomes known, unify the named fields' types.
+	labelTypes := map[string]bool{}
+	for _, f := range fields {
+		labelTypes[f.label] = true
+	}
+	v2 := r.u.Variable()
+	r.equiv(v2, term)
+	r.actions = append(r.actions, unify.VarAction{
+		Var: v,
+		Action: func(_ *unify.Var, t unify.Term,
+			s *unify.Substitution, add func(l, r unify.Term),
+		) {
+			seq, ok := t.(*unify.Sequence)
+			if !ok {
+				return
+			}
+			var fields2 []labelTerm
+			for i, fieldName := range fieldList(seq) {
+				if labelTypes[fieldName] {
+					fields2 = append(fields2, labelTerm{
+						label: fieldName,
+						term:  seq.Terms[i],
+					})
+				}
+			}
+			add(s.Resolve(v2), r.recordTerm(fields2))
+		},
+	})
+	r.reg(pat, v)
 	return nil
 }
 
