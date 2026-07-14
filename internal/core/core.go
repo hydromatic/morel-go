@@ -1,0 +1,204 @@
+// Licensed to Julian Hyde under one or more contributor license
+// agreements.  See the NOTICE file distributed with this work
+// for additional information regarding copyright ownership.
+// Julian Hyde licenses this file to you under the Apache
+// License, Version 2.0 (the "License"); you may not use this
+// file except in compliance with the License.  You may obtain a
+// copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+// either express or implied.  See the License for the specific
+// language governing permissions and limitations under the
+// License.
+
+// Package core defines Morel's typed intermediate representation.
+// Core is smaller than the AST: every node carries its type,
+// "if" and "fn" match lists become "case" (Case is the only
+// destructuring construct), and each "let" binds one declaration.
+package core
+
+import (
+	"github.com/hydromatic/morel-go/internal/ast"
+	"github.com/hydromatic/morel-go/internal/types"
+)
+
+// Exp is an expression node.
+type Exp interface {
+	Op() ast.Op
+	Type() types.Type
+	exp()
+}
+
+// Pat is a pattern node.
+type Pat interface {
+	Op() ast.Op
+	Type() types.Type
+	pat()
+}
+
+// Decl is a declaration node.
+type Decl interface {
+	Op() ast.Op
+	decl()
+}
+
+// Unit is the value of the unit literal, "()".
+type Unit struct{}
+
+// Literal is a constant expression. Value holds one of the
+// runtime representations: int32, float32, string, rune, bool,
+// or Unit.
+type Literal struct {
+	T     types.Type
+	Kind  ast.Op
+	Value any
+}
+
+// Op implements Exp.
+func (l *Literal) Op() ast.Op { return l.Kind }
+
+// Type implements Exp.
+func (l *Literal) Type() types.Type { return l.T }
+
+func (*Literal) exp() {}
+
+// ID is a reference to a variable. It points to the IDPat that
+// declared the variable, so its type is the pattern's type.
+type ID struct {
+	Pat *IDPat
+}
+
+// Op implements Exp.
+func (*ID) Op() ast.Op { return ast.IDOp }
+
+// Type implements Exp.
+func (i *ID) Type() types.Type { return i.Pat.T }
+
+func (*ID) exp() {}
+
+// Apply is the application of a function to an argument.
+type Apply struct {
+	T   types.Type
+	Fn  Exp
+	Arg Exp
+}
+
+// Op implements Exp.
+func (*Apply) Op() ast.Op { return ast.ApplyOp }
+
+// Type implements Exp.
+func (a *Apply) Type() types.Type { return a.T }
+
+func (*Apply) exp() {}
+
+// Fn is a function with a single parameter. A source function
+// with a match list or a structured pattern becomes a Fn whose
+// body is a Case.
+type Fn struct {
+	T     *types.Fn
+	IDPat *IDPat
+	Exp   Exp
+}
+
+// Op implements Exp.
+func (*Fn) Op() ast.Op { return ast.FnOp }
+
+// Type implements Exp.
+func (f *Fn) Type() types.Type { return f.T }
+
+func (*Fn) exp() {}
+
+// Case matches an expression against a list of patterns; "if c
+// then a else b" becomes "case c of true => a | _ => b".
+type Case struct {
+	T       types.Type
+	Exp     Exp
+	Matches []Match
+}
+
+// Op implements Exp.
+func (*Case) Op() ast.Op { return ast.CaseOp }
+
+// Type implements Exp.
+func (c *Case) Type() types.Type { return c.T }
+
+func (*Case) exp() {}
+
+// Match is one rule of a Case.
+type Match struct {
+	Pat Pat
+	Exp Exp
+}
+
+// Let binds one declaration in the scope of an expression; a
+// source "let" with several declarations becomes nested Lets.
+type Let struct {
+	Decl Decl
+	Exp  Exp
+}
+
+// Op implements Exp.
+func (*Let) Op() ast.Op { return ast.LetOp }
+
+// Type implements Exp.
+func (l *Let) Type() types.Type { return l.Exp.Type() }
+
+func (*Let) exp() {}
+
+// IDPat is a pattern that binds a name.
+type IDPat struct {
+	T    types.Type
+	Name string
+}
+
+// Op implements Pat.
+func (*IDPat) Op() ast.Op { return ast.IDPatOp }
+
+// Type implements Pat.
+func (p *IDPat) Type() types.Type { return p.T }
+
+func (*IDPat) pat() {}
+
+// WildcardPat is the pattern "_".
+type WildcardPat struct {
+	T types.Type
+}
+
+// Op implements Pat.
+func (*WildcardPat) Op() ast.Op { return ast.WildcardPatOp }
+
+// Type implements Pat.
+func (p *WildcardPat) Type() types.Type { return p.T }
+
+func (*WildcardPat) pat() {}
+
+// LiteralPat is a constant pattern.
+type LiteralPat struct {
+	T     types.Type
+	Kind  ast.Op
+	Value any
+}
+
+// Op implements Pat.
+func (p *LiteralPat) Op() ast.Op { return p.Kind }
+
+// Type implements Pat.
+func (p *LiteralPat) Type() types.Type { return p.T }
+
+func (*LiteralPat) pat() {}
+
+// NonRecValDecl is a non-recursive value declaration binding one
+// name.
+type NonRecValDecl struct {
+	Pat *IDPat
+	Exp Exp
+}
+
+// Op implements Decl.
+func (*NonRecValDecl) Op() ast.Op { return ast.ValDeclOp }
+
+func (*NonRecValDecl) decl() {}
