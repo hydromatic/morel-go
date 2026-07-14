@@ -36,6 +36,12 @@ func Dump(node Node) string {
 func dump(b *strings.Builder, node Node) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch n := node.(type) {
+	case *AnnotatedExp:
+		b.WriteString("(annotatedExp ")
+		dump(b, n.Exp)
+		b.WriteString(" ")
+		dump(b, n.Type)
+		b.WriteString(")")
 	case *Apply:
 		b.WriteString("(apply ")
 		dump(b, n.Fn)
@@ -46,8 +52,23 @@ func dump(b *strings.Builder, node Node) {
 		b.WriteString("(case ")
 		dump(b, n.Exp)
 		dumpMatches(b, "", n.Matches)
+	case *DatatypeDecl:
+		b.WriteString("(datatype_decl " + unparseDatatype(n) +
+			")")
 	case *Fn:
 		dumpMatches(b, "(fn", n.Matches)
+	case *FnType:
+		b.WriteString("(fnType ")
+		dump(b, n.Param)
+		b.WriteString(" ")
+		dump(b, n.Result)
+		b.WriteString(")")
+	case *FunBind:
+		dumpList(b, "(funBind", n.Matches)
+	case *FunDecl:
+		dumpList(b, "(fun", n.Binds)
+	case *FunMatch:
+		dumpFunMatch(b, n)
 	case *ID:
 		b.WriteString("(id " + n.Name + ")")
 	case *If:
@@ -64,6 +85,8 @@ func dump(b *strings.Builder, node Node) {
 		b.WriteString(" ")
 		dump(b, n.A1)
 		b.WriteString(")")
+	case *Let:
+		dumpLet(b, n)
 	case *ListExp:
 		sexp(b, "list", n.Args)
 	case *Literal:
@@ -74,25 +97,106 @@ func dump(b *strings.Builder, node Node) {
 		b.WriteString(" ")
 		dump(b, n.Exp)
 		b.WriteString(")")
+	case *NamedType:
+		dumpNamedType(b, n)
 	case *PrefixCall:
 		b.WriteString("(" + n.Kind.String() + " ")
 		dump(b, n.A)
 		b.WriteString(")")
 	case *Record:
-		b.WriteString("(record")
-		for _, f := range n.Fields {
-			b.WriteString(" (" + f.Label + " ")
-			dump(b, f.Exp)
-			b.WriteString(")")
-		}
-		b.WriteString(")")
+		dumpRecord(b, n)
 	case *RecordSelector:
 		b.WriteString("(record_selector #" + n.Name + ")")
+	case *RecordType:
+		b.WriteString("(record_type " + UnparseType(n) + ")")
 	case *Tuple:
 		sexp(b, "tuple", n.Args)
+	case *TupleType:
+		dumpList(b, "(tupleType", n.Args)
+	case *TyVar:
+		b.WriteString("(tyVar " + n.Name + ")")
+	case *TypeDecl:
+		b.WriteString("(type_decl " + unparseTypeDecl(n) + ")")
+	case *ValBind:
+		b.WriteString("(valBind ")
+		dumpPat(b, n.Pat)
+		b.WriteString(" ")
+		dump(b, n.Exp)
+		b.WriteString(")")
+	case *ValDecl:
+		dumpValDecl(b, n)
 	default:
 		panic(fmt.Sprintf("dump: unknown node %T", node))
 	}
+}
+
+func dumpFunMatch(b *strings.Builder, n *FunMatch) {
+	b.WriteString("(funMatch " + n.Name)
+	for _, pat := range n.Pats {
+		b.WriteString(" ")
+		dumpPat(b, pat)
+	}
+	if n.ReturnType != nil {
+		b.WriteString(" ")
+		dump(b, n.ReturnType)
+	}
+	b.WriteString(" ")
+	dump(b, n.Exp)
+	b.WriteString(")")
+}
+
+func dumpLet(b *strings.Builder, n *Let) {
+	b.WriteString("(let")
+	for _, d := range n.Decls {
+		b.WriteString(" ")
+		dump(b, d)
+	}
+	b.WriteString(" ")
+	dump(b, n.Exp)
+	b.WriteString(")")
+}
+
+func dumpNamedType(b *strings.Builder, n *NamedType) {
+	b.WriteString("(named " + n.Name)
+	for _, a := range n.Args {
+		b.WriteString(" ")
+		dump(b, a)
+	}
+	b.WriteString(")")
+}
+
+func dumpRecord(b *strings.Builder, n *Record) {
+	b.WriteString("(record")
+	for _, f := range n.Fields {
+		b.WriteString(" (" + f.Label + " ")
+		dump(b, f.Exp)
+		b.WriteString(")")
+	}
+	b.WriteString(")")
+}
+
+func dumpValDecl(b *strings.Builder, n *ValDecl) {
+	b.WriteString("(val")
+	if n.Rec {
+		b.WriteString(" rec")
+	}
+	for _, vb := range n.Binds {
+		b.WriteString(" ")
+		dump(b, vb)
+	}
+	b.WriteString(")")
+}
+
+// dumpList renders "open child1 child2 ...)".
+func dumpList[T Node](b *strings.Builder, open string,
+	children []T,
+) {
+	b.WriteString(open)
+	for _, c := range children {
+		b.WriteString(" ")
+		dump(b, c)
+	}
+	b.WriteString(")")
 }
 
 func dumpMatches(b *strings.Builder, open string,
@@ -112,6 +216,12 @@ func dumpMatches(b *strings.Builder, open string,
 func dumpPat(b *strings.Builder, p Pat) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch n := p.(type) {
+	case *AnnotatedPat:
+		b.WriteString("(annotatedPat ")
+		dumpPat(b, n.Pat)
+		b.WriteString(" ")
+		dump(b, n.Type)
+		b.WriteString(")")
 	case *IDPat:
 		b.WriteString("(idPat " + n.Name + ")")
 	case *LiteralPat:

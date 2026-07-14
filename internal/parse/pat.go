@@ -37,6 +37,23 @@ func (p *Parser) pat() (ast.Pat, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A type annotation, "pat : t".
+	for p.tok.Kind == token.Colon {
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
+		var t ast.Type
+		t, err = p.typeExpr()
+		if err != nil {
+			return nil, err
+		}
+		span := token.Span{
+			Start: pat.Span().Start,
+			End:   t.Span().End,
+		}
+		pat = ast.NewAnnotatedPat(span, pat, t)
+	}
 	if p.tok.Kind != token.As {
 		return pat, nil
 	}

@@ -162,4 +162,72 @@ Sys.parseTree "fn {a, ...} => a";
 Sys.parseTree "fn all as (a, b) => a";
 > val it = "(fn (match (as_pat all as (a, b)) (id a)))" : string
 
+(*) Val declarations
+Sys.parseTree "val x = 1";
+> val it = "(val (valBind (idPat x) (int_literal 1)))" : string
+Sys.parseTree "val rec f = fn x => x";
+> val it = "(val rec (valBind (idPat f) (fn (match (idPat x) (id x)))))" : string
+Sys.parseTree "val x = 1 and y = 2";
+> val it = "(val (valBind (idPat x) (int_literal 1)) (valBind (idPat y) (int_literal 2)))" : string
+Sys.parseTree "val (a, b) = p";
+> val it = "(val (valBind (tuplePat (idPat a) (idPat b)) (id p)))" : string
+
+(*) Fun declarations
+Sys.parseTree "fun f x = x";
+> val it = "(fun (funBind (funMatch f (idPat x) (id x))))" : string
+Sys.parseTree "fun f 0 = 1 | f x = x + 1";
+> val it = "(fun (funBind (funMatch f (int_literal_pat 0) (int_literal 1)) (funMatch f (idPat x) (plus (id x) (int_literal 1)))))" : string
+Sys.parseTree "fun f x y = x";
+> val it = "(fun (funBind (funMatch f (idPat x) (idPat y) (id x))))" : string
+Sys.parseTree "fun add (a, b) = a + b";
+> val it = "(fun (funBind (funMatch add (tuplePat (idPat a) (idPat b)) (plus (id a) (id b)))))" : string
+Sys.parseTree "fun f x = x and g y = y";
+> val it = "(fun (funBind (funMatch f (idPat x) (id x))) (funBind (funMatch g (idPat y) (id y))))" : string
+
+(*) Let expressions
+Sys.parseTree "let val x = 1 in x end";
+> val it = "(let (val (valBind (idPat x) (int_literal 1))) (id x))" : string
+Sys.parseTree "let val x = 1; val y = 2 in x + y end";
+> val it = "(let (val (valBind (idPat x) (int_literal 1))) (val (valBind (idPat y) (int_literal 2))) (plus (id x) (id y)))" : string
+
+(*) Type annotations
+Sys.parseTree "1 : int";
+> val it = "(annotatedExp (int_literal 1) (named int))" : string
+Sys.parseTree "1 + 2 : int";
+> val it = "(annotatedExp (plus (int_literal 1) (int_literal 2)) (named int))" : string
+Sys.parseTree "x : int list list";
+> val it = "(annotatedExp (id x) (named list (named list (named int))))" : string
+Sys.parseTree "f : int -> int -> int";
+> val it = "(annotatedExp (id f) (fnType (named int) (fnType (named int) (named int))))" : string
+Sys.parseTree "x : int * bool * int";
+> val it = "(annotatedExp (id x) (tupleType (named int) (named bool) (named int)))" : string
+Sys.parseTree "x : {a: int, b: string}";
+> val it = "(annotatedExp (id x) (record_type {a: int, b: string}))" : string
+Sys.parseTree "x : ('a, 'b) pair";
+> val it = "(annotatedExp (id x) (named pair (tyVar 'a) (tyVar 'b)))" : string
+Sys.parseTree "x : (int -> int) list";
+> val it = "(annotatedExp (id x) (named list (fnType (named int) (named int))))" : string
+
+(*) Annotated patterns and return types
+Sys.parseTree "fn (x : int) => x";
+> val it = "(fn (match (annotatedPat (idPat x) (named int)) (id x)))" : string
+Sys.parseTree "val x : int = 1";
+> val it = "(val (valBind (annotatedPat (idPat x) (named int)) (int_literal 1)))" : string
+Sys.parseTree "fun f (x : int) : int = x";
+> val it = "(fun (funBind (funMatch f (annotatedPat (idPat x) (named int)) (named int) (id x))))" : string
+
+(*) Datatype and type declarations
+Sys.parseTree "datatype color = RED | GREEN";
+> val it = "(datatype_decl datatype color = RED | GREEN)" : string
+Sys.parseTree "datatype tree = LEAF of int | NODE of tree * tree";
+> val it = "(datatype_decl datatype tree = LEAF of int | NODE of tree * tree)" : string
+Sys.parseTree "datatype 'a opt = N | S of 'a";
+> val it = "(datatype_decl datatype 'a opt = N | S of 'a)" : string
+Sys.parseTree "datatype ('a, 'b) pair = P of 'a * 'b";
+> val it = "(datatype_decl datatype ('a, 'b) pair = P of 'a * 'b)" : string
+Sys.parseTree "datatype d = A | B and e = C";
+> val it = "(datatype_decl datatype d = A | B and e = C)" : string
+Sys.parseTree "type point = int * int";
+> val it = "(type_decl type point = int * int)" : string
+
 (*) End parse.smli

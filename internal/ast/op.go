@@ -82,6 +82,27 @@ const (
 	RecordPatOp
 	ConsPatOp
 	AsPatOp
+
+	// Declarations.
+
+	ValDeclOp
+	ValBindOp
+	FunDeclOp
+	FunBindOp
+	FunMatchOp
+	LetOp
+	DatatypeDeclOp
+	TypeDeclOp
+
+	// Types and annotations.
+
+	TyVarOp
+	NamedTypeOp
+	TupleTypeOp
+	FunctionTypeOp
+	RecordTypeOp
+	AnnotatedExpOp
+	AnnotatedPatOp
 )
 
 var opNames = map[Op]string{
@@ -136,6 +157,23 @@ var opNames = map[Op]string{
 	RecordPatOp:        "record_pat",
 	ConsPatOp:          "cons_pat",
 	AsPatOp:            "as_pat",
+
+	ValDeclOp:  "val",
+	ValBindOp:  "val_bind",
+	FunDeclOp:  "fun",
+	FunBindOp:  "fun_bind",
+	FunMatchOp: "fun_match",
+	LetOp:      "let",
+
+	DatatypeDeclOp: "datatype_decl",
+	TypeDeclOp:     "type_decl",
+	TyVarOp:        "ty_var",
+	NamedTypeOp:    "named",
+	TupleTypeOp:    "tuple_type",
+	FunctionTypeOp: "function_type",
+	RecordTypeOp:   "record_type",
+	AnnotatedExpOp: "annotated_exp",
+	AnnotatedPatOp: "annotated_pat",
 }
 
 func (o Op) String() string {

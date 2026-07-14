@@ -32,6 +32,9 @@ func UnparsePat(p Pat) string {
 func unparsePat(b *strings.Builder, p Pat) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch n := p.(type) {
+	case *AnnotatedPat:
+		unparsePat(b, n.Pat)
+		b.WriteString(" : " + UnparseType(n.Type))
 	case *AsPat:
 		b.WriteString(n.Name + " as ")
 		unparsePat(b, n.Pat)
@@ -51,6 +54,129 @@ func unparsePat(b *strings.Builder, p Pat) {
 		unparsePatList(b, "(", n.Args, ")")
 	case *WildcardPat:
 		b.WriteString("_")
+	}
+}
+
+// UnparseType renders a type expression as source text: a
+// function type parenthesizes a function-type parameter, and a
+// tuple type parenthesizes function- and tuple-type elements.
+func UnparseType(t Type) string {
+	var b strings.Builder
+	unparseType(&b, t)
+	return b.String()
+}
+
+func unparseType(b *strings.Builder, t Type) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch n := t.(type) {
+	case *FnType:
+		unparseTypeArg(b, n.Param, false)
+		b.WriteString(" -> ")
+		unparseType(b, n.Result)
+	case *NamedType:
+		unparseNamedType(b, n)
+	case *RecordType:
+		b.WriteString("{")
+		for i, f := range n.Fields {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(f.Label + ": ")
+			unparseType(b, f.Type)
+		}
+		b.WriteString("}")
+	case *TupleType:
+		for i, a := range n.Args {
+			if i > 0 {
+				b.WriteString(" * ")
+			}
+			unparseTypeArg(b, a, true)
+		}
+	case *TyVar:
+		b.WriteString(n.Name)
+	}
+}
+
+// unparseTypeArg parenthesizes an operand where the grammar
+// requires: a function type always, a tuple type inside another
+// tuple type.
+func unparseTypeArg(b *strings.Builder, t Type, inTuple bool) {
+	_, isFn := t.(*FnType)
+	_, isTuple := t.(*TupleType)
+	if isFn || (inTuple && isTuple) {
+		b.WriteString("(")
+		unparseType(b, t)
+		b.WriteString(")")
+		return
+	}
+	unparseType(b, t)
+}
+
+func unparseNamedType(b *strings.Builder, n *NamedType) {
+	switch len(n.Args) {
+	case 0:
+	case 1:
+		unparseTypeArg(b, n.Args[0], true)
+		b.WriteString(" ")
+	default:
+		b.WriteString("(")
+		for i, a := range n.Args {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			unparseType(b, a)
+		}
+		b.WriteString(") ")
+	}
+	b.WriteString(n.Name)
+}
+
+// unparseDatatype renders a datatype declaration, including its
+// keyword.
+func unparseDatatype(d *DatatypeDecl) string {
+	var b strings.Builder
+	b.WriteString("datatype ")
+	for i, bind := range d.Binds {
+		if i > 0 {
+			b.WriteString(" and ")
+		}
+		unparseTyVars(&b, bind.TyVars)
+		b.WriteString(bind.Name + " = ")
+		for j, c := range bind.Cons {
+			if j > 0 {
+				b.WriteString(" | ")
+			}
+			b.WriteString(c.Name)
+			if c.Of != nil {
+				b.WriteString(" of " + UnparseType(c.Of))
+			}
+		}
+	}
+	return b.String()
+}
+
+// unparseTypeDecl renders a type-alias declaration, including its
+// keyword.
+func unparseTypeDecl(d *TypeDecl) string {
+	var b strings.Builder
+	b.WriteString("type ")
+	for i, bind := range d.Binds {
+		if i > 0 {
+			b.WriteString(" and ")
+		}
+		unparseTyVars(&b, bind.TyVars)
+		b.WriteString(bind.Name + " = " + UnparseType(bind.Type))
+	}
+	return b.String()
+}
+
+func unparseTyVars(b *strings.Builder, tyVars []string) {
+	switch len(tyVars) {
+	case 0:
+	case 1:
+		b.WriteString(tyVars[0] + " ")
+	default:
+		b.WriteString("(" + strings.Join(tyVars, ", ") + ") ")
 	}
 }
 

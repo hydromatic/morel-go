@@ -54,15 +54,28 @@ func (k *Kernel) Config() *Config {
 // of the shape `A.b "str";` are evaluated; any other statement is
 // lexically validated only, producing no output.
 func (k *Kernel) Execute(stmt string) string {
-	e, err := parse.Stmt(k.name, stmt)
-	if err == nil {
-		if fn, arg, ok := builtinCall(e); ok {
-			if f, found := eval.Builtins[fn]; found {
-				return callString(f, arg)
-			}
-		}
+	n, err := parse.Stmt(k.name, stmt)
+	if err != nil {
+		return k.lexValidate(stmt)
+	}
+	e, isExpr := n.(ast.Expr)
+	if !isExpr {
 		return ""
 	}
+	fn, arg, ok := builtinCall(e)
+	if !ok {
+		return ""
+	}
+	f, found := eval.Builtins[fn]
+	if !found {
+		return ""
+	}
+	return callString(f, arg)
+}
+
+// lexValidate reports lexical errors in a statement the parser
+// cannot yet handle.
+func (k *Kernel) lexValidate(stmt string) string {
 	l := parse.NewLexer(k.name, stmt)
 	for {
 		tok, err := l.Next()
