@@ -65,7 +65,7 @@ func (r *resolver) toDecl(env *coreEnv, decl ast.Decl) (core.Decl,
 	*coreEnv, error,
 ) {
 	d, ok := decl.(*ast.ValDecl)
-	if !ok || len(d.Binds) != 1 {
+	if !ok || len(d.Binds) != 1 || d.Rec {
 		return nil, nil, &Error{
 			Span: decl.Span(),
 			Msg: "cannot convert to core: " +
