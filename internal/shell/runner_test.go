@@ -105,8 +105,9 @@ func TestRunnerTrailingComment(t *testing.T) {
 
 func TestKernelExecute(t *testing.T) {
 	k := shell.NewKernel("stdIn")
-	if got := k.Execute("val x = 1;"); got != "" {
-		t.Errorf("got %q", got)
+	want0 := "val x = 1 : int"
+	if got := k.Execute("val x = 1;"); got != want0 {
+		t.Errorf("got %q, want %q", got, want0)
 	}
 	want := "stdIn:1.9-1.10: illegal character"
 	if got := k.Execute("val x = ?;"); got != want {

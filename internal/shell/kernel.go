@@ -41,6 +41,7 @@ type Kernel struct {
 	name     string
 	sys      *types.System
 	bindings []compile.Binding
+	values   map[string]eval.Val
 }
 
 // NewKernel returns a kernel; name (e.g. "stdIn" or a file name)
@@ -55,10 +56,17 @@ func NewKernel(name string) *Kernel {
 	}
 	bindings := compile.TopBindings(sys)
 	bindings = append(bindings, result.Bindings...)
+	values := make(map[string]eval.Val, len(eval.Builtins))
+	for name, fn := range eval.Builtins {
+		values[name] = fn
+	}
+	values["true"] = true
+	values["false"] = false
 	return &Kernel{
 		name:     name,
 		sys:      sys,
 		bindings: bindings,
+		values:   values,
 	}
 }
 
@@ -83,11 +91,11 @@ func (k *Kernel) Execute(stmt string) string {
 	}
 	e, isExpr := n.(ast.Expr)
 	if !isExpr {
-		return ""
+		return k.executeStatement(n)
 	}
 	fn, arg, ok := builtinCall(e)
 	if !ok {
-		return ""
+		return k.executeStatement(n)
 	}
 	if fn == "Sys.set" {
 		// Session properties do not yet affect anything, so
@@ -96,13 +104,48 @@ func (k *Kernel) Execute(stmt string) string {
 	}
 	lit, isString := arg.(*ast.Literal)
 	if !isString || lit.Kind != ast.StringLiteralOp {
+		return k.executeStatement(n)
+	}
+	if fn == "Sys.parseTree" {
+		return callString(eval.Builtins[fn], lit.Value)
+	}
+	return ""
+}
+
+// executeStatement compiles and evaluates a statement, prints
+// the binding it makes as "val name = value : type", and adds
+// the binding to the environment. A statement that needs a
+// not-yet-implemented feature produces no output.
+func (k *Kernel) executeStatement(n ast.Node) string {
+	var decl ast.Decl
+	switch node := n.(type) {
+	case ast.Decl:
+		decl = node
+	case ast.Expr:
+		decl = compile.ItValDecl(node)
+	}
+	resolved, err := compile.Deduce(k.sys, k.bindings, decl)
+	if err != nil {
 		return ""
 	}
-	f, found := eval.Builtins[fn]
-	if !found {
+	coreDecl, err := compile.Resolve(resolved)
+	if err != nil {
 		return ""
 	}
-	return callString(f, lit.Value)
+	compiled, err := compile.Statement(coreDecl, k.values)
+	if err != nil {
+		return ""
+	}
+	frame := eval.NewFrame(compiled.Slots)
+	v, err := compiled.Code.Eval(frame)
+	if err != nil {
+		return err.Error()
+	}
+	pat := compiled.Pat
+	k.bind(pat.Name, pat.T)
+	k.values[pat.Name] = v
+	return "val " + pat.Name + " = " + formatValue(v, pat.T) +
+		" : " + pat.T.String()
 }
 
 // executeTypeOnly type-checks a statement, prints each binding as
