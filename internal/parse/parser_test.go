@@ -325,7 +325,6 @@ func TestParseTypeAnnotations(t *testing.T) {
 			"(named int))")
 	checkExpr(t, "x : int list",
 		"(annotatedExp (id x) (named list (named int)))")
-	//nolint:dupword // "list list" is a Morel type
 	checkExpr(t, "x : int list list",
 		"(annotatedExp (id x) "+
 			"(named list (named list (named int))))")

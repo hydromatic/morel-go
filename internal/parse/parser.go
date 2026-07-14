@@ -84,6 +84,23 @@ func Stmt(name, src string) (ast.Node, error) {
 	return n, nil
 }
 
+// TypeString parses src as a type expression.
+func TypeString(name, src string) (ast.Type, error) {
+	p, err := NewParser(name, src)
+	if err != nil {
+		return nil, err
+	}
+	t, err := p.typeExpr()
+	if err != nil {
+		return nil, err
+	}
+	err = p.expect(token.EOF)
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
 // DeclOrExpr parses src as a declaration or an expression.
 func DeclOrExpr(name, src string) (ast.Node, error) {
 	p, err := NewParser(name, src)
