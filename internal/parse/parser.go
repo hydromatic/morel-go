@@ -346,16 +346,22 @@ func (p *Parser) atomSuffixed() (ast.Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		err = p.expect(token.Ident)
-		if err != nil {
-			return nil, err
+		if p.tok.Kind != token.Ident &&
+			p.tok.Kind != token.IntLit &&
+			p.tok.Kind != token.QuotedIdent {
+			return nil, p.errorf("expected identifier, found " +
+				p.tok.Kind.String())
 		}
 		field := p.tok
+		fieldName := field.Text
+		if field.Kind == token.QuotedIdent {
+			fieldName = unquoteIdent(field.Text)
+		}
 		err = p.next()
 		if err != nil {
 			return nil, err
 		}
-		s := ast.NewRecordSelector(field.Span, field.Text)
+		s := ast.NewRecordSelector(field.Span, fieldName)
 		span := token.Span{
 			Start: e.Span().Start,
 			End:   field.Span.End,
@@ -378,8 +384,11 @@ func isAtomStart(kind token.Kind) bool {
 		return true
 	}
 	switch kind {
-	case token.Ident, token.Label, token.LParen,
-		token.LBracket, token.LBrace:
+	case token.Case, token.Current, token.Elements,
+		token.Exists, token.Fn, token.Forall, token.From,
+		token.Ident, token.If, token.Label, token.LParen,
+		token.LBracket, token.LBrace, token.Let, token.Ordinal,
+		token.QuotedIdent:
 		return true
 	default:
 		return false
@@ -394,7 +403,7 @@ func (p *Parser) atom() (ast.Expr, error) {
 	switch tok.Kind {
 	case token.Case:
 		return p.caseExpr()
-	case token.Current, token.Ordinal:
+	case token.Current, token.Elements, token.Ordinal:
 		err := p.next()
 		if err != nil {
 			return nil, err
@@ -430,6 +439,13 @@ func (p *Parser) atom() (ast.Expr, error) {
 		return ast.NewRecordSelector(tok.Span, tok.Text[1:]), nil
 	case token.Let:
 		return p.letExpr()
+	case token.QuotedIdent:
+		err := p.next()
+		if err != nil {
+			return nil, err
+		}
+		return ast.NewID(tok.Span,
+			unquoteIdent(tok.Text)), nil
 	default:
 		return p.literal()
 	}
@@ -665,15 +681,56 @@ func (p *Parser) exprList(closer token.Kind) ([]ast.Expr,
 // recordExpr parses "{a = e1, b = e2, ...}"; a field without
 // "label =" has an implicit label, filled in during resolution.
 func (p *Parser) recordExpr() (ast.Expr, error) {
-	fields, span, err := braceFields(p, p.recordField)
+	start := p.tok.Span.Start
+	err := p.next()
 	if err != nil {
 		return nil, err
 	}
-	return ast.NewRecord(span, fields), nil
+	var with ast.Expr
+	var fields []ast.Field
+	first := true
+	for p.tok.Kind != token.RBrace {
+		var f ast.Field
+		f, err = p.recordField()
+		if err != nil {
+			return nil, err
+		}
+		if first && f.Label == "" &&
+			p.tok.Kind == token.With {
+			with = f.Exp
+			err = p.next()
+			if err != nil {
+				return nil, err
+			}
+			first = false
+			continue
+		}
+		first = false
+		fields = append(fields, f)
+		if p.tok.Kind != token.Comma {
+			break
+		}
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
+	}
+	err = p.expect(token.RBrace)
+	if err != nil {
+		return nil, err
+	}
+	span := token.Span{Start: start, End: p.tok.Span.End}
+	err = p.next()
+	if err != nil {
+		return nil, err
+	}
+	r := ast.NewRecord(span, fields)
+	r.With = with
+	return r, nil
 }
 
 func (p *Parser) recordField() (ast.Field, error) {
-	if p.tok.Kind == token.Ident {
+	if p.labelStart() {
 		kind, err := p.peek()
 		if err != nil {
 			return ast.Field{}, err
@@ -689,8 +746,28 @@ func (p *Parser) recordField() (ast.Field, error) {
 	return ast.Field{Exp: e}, nil
 }
 
+// labelStart reports whether the current token can begin a record
+// field's label: a name, a backtick-quoted identifier, or a
+// canonical positive integer ("1", "2", ...). A numeric label
+// with a leading zero ("0", "007") is not a label, so "{0 = 0}"
+// parses as a record over the expression "0 = 0".
+func (p *Parser) labelStart() bool {
+	// lint: sort until '^	}' where '^	case '
+	switch p.tok.Kind {
+	case token.Ident, token.QuotedIdent:
+		return true
+	case token.IntLit:
+		return p.tok.Text[0] != '0'
+	default:
+		return false
+	}
+}
+
 func (p *Parser) labeledField() (ast.Field, error) {
 	label := p.tok.Text
+	if p.tok.Kind == token.QuotedIdent {
+		label = unquoteIdent(label)
+	}
 	err := p.next()
 	if err != nil {
 		return ast.Field{}, err

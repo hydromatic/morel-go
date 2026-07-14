@@ -286,4 +286,30 @@ Sys.parseTree "forall e in emps require e > 1";
 Sys.parseTree "from x in xs yield current + 1";
 > val it = "(from from x in xs yield current + 1)" : string
 
+(*) Constructor patterns
+Sys.parseTree "fn SOME x => x | NONE => 0";
+> val it = "(fn (match (con_pat SOME x) (id x)) (match (idPat NONE) (int_literal 0)))" : string
+Sys.parseTree "fun height Empty = 0 | height (Node (l, r)) = 1";
+> val it = "(fun (funBind (funMatch height (idPat Empty) (int_literal 0)) (funMatch height (con_pat Node (l, r)) (int_literal 1))))" : string
+
+(*) Hardening: tuple access, numeric labels, quoted identifiers
+Sys.parseTree "t.1";
+> val it = "(apply (record_selector #1) (id t))" : string
+Sys.parseTree "{1 = true, 2 = 0}";
+> val it = "(record (1 (id true)) (2 (int_literal 0)))" : string
+Sys.parseTree "`o`";
+> val it = "(id o)" : string
+Sys.parseTree "fun `<<` (a, b) = a";
+> val it = "(fun (funBind (funMatch << (tuplePat (idPat a) (idPat b)) (id a))))" : string
+
+(*) Hardening: empty queries, record update, typeof
+Sys.parseTree "(from)";
+> val it = "(from from)" : string
+Sys.parseTree "not exists";
+> val it = "(apply (id not) (exists exists))" : string
+Sys.parseTree "{e with deptno = 10}";
+> val it = "(record (deptno (int_literal 10)))" : string
+Sys.parseTree "x : typeof y";
+> val it = "(annotatedExp (id x) (expression_type typeof y))" : string
+
 (*) End parse.smli

@@ -55,6 +55,10 @@ func dump(b *strings.Builder, node Node) {
 	case *DatatypeDecl:
 		b.WriteString("(datatype_decl " + unparseDatatype(n) +
 			")")
+	case *ExpressionType:
+		b.WriteString("(expression_type typeof ")
+		unparseExpr(b, n.Exp, applyPrec)
+		b.WriteString(")")
 	case *Fn:
 		dumpMatches(b, "(fn", n.Matches)
 	case *FnType:

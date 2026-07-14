@@ -168,23 +168,22 @@ type UnorderStep struct{ stepBase }
 // Op implements Node.
 func (*UnorderStep) Op() Op { return UnorderOp }
 
-// SetOpStep is "union|intersect|except [distinct] exp".
+// SetOpStep is "union|intersect|except [distinct] exp, ...".
 type SetOpStep struct {
-	exprStep
+	stepBase
 
+	Exps     []Expr
 	Kind     Op
 	Distinct bool
 }
 
 // NewSetOpStep returns a union, intersect, or except step.
 func NewSetOpStep(span token.Span, kind Op, distinct bool,
-	exp Expr,
+	exps []Expr,
 ) *SetOpStep {
 	return &SetOpStep{
-		exprStep: exprStep{
-			stepBase: stepBase{base{span}},
-			Exp:      exp,
-		},
+		stepBase: stepBase{base{span}},
+		Exps:     exps,
 		Kind:     kind,
 		Distinct: distinct,
 	}

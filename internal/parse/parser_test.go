@@ -452,3 +452,45 @@ func TestParseQuantifiers(t *testing.T) {
 	checkExpr(t, "forall e in emps require e > 1",
 		"(forall forall e in emps require e > 1)")
 }
+
+func TestParseConstructorPatterns(t *testing.T) {
+	checkExpr(t, "fn SOME x => x | NONE => 0",
+		"(fn (match (con_pat SOME x) (id x)) "+
+			"(match (idPat NONE) (int_literal 0)))")
+	checkExpr(t, "fn (x, SOME y) => y",
+		"(fn (match (tuplePat (idPat x) (con_pat SOME y)) "+
+			"(id y)))")
+	// In a fun clause, a bare constructor stays a name pattern;
+	// application happens only inside full patterns.
+	checkDecl(t, "fun height Empty = 0 | height (Node (l, r)) = 1",
+		"(fun (funBind (funMatch height (idPat Empty) "+
+			"(int_literal 0)) (funMatch height "+
+			"(con_pat Node (l, r)) (int_literal 1))))")
+}
+
+func TestParseHardening(t *testing.T) {
+	checkExpr(t, "t.1", "(apply (record_selector #1) (id t))")
+	checkExpr(t, "{1 = true, 2 = 0}",
+		"(record (1 (id true)) (2 (int_literal 0)))")
+	checkExpr(t, "`o`", "(id o)")
+	checkDecl(t, "fun `<<` (a, b) = a",
+		"(fun (funBind (funMatch << "+
+			"(tuplePat (idPat a) (idPat b)) (id a))))")
+	checkExpr(t, "from x in xs group {} compute elements",
+		"(from from x in xs group {} compute elements)")
+	checkExpr(t, "(from)", "(from from)")
+	checkExpr(t, "not exists",
+		"(apply (id not) (exists exists))")
+	// The "with" source of a record update is not dumped.
+	checkExpr(t, "{e with deptno = 10}",
+		"(record (deptno (int_literal 10)))")
+	checkExpr(t, "x : typeof y",
+		"(annotatedExp (id x) (expression_type typeof y))")
+	// A fn is a valid application argument.
+	checkExpr(t, "iterate edges fn (a, b) => a",
+		"(apply (apply (id iterate) (id edges)) "+
+			"(fn (match (tuplePat (idPat a) (idPat b)) (id a))))")
+	// A set-op step takes a list of arguments.
+	checkExpr(t, "from i in xs except distinct ys, zs",
+		"(from from i in xs except distinct ys, zs)")
+}

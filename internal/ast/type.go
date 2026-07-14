@@ -222,3 +222,20 @@ func NewTypeDecl(span token.Span, binds []TypeBind) *TypeDecl {
 
 // Op implements Node.
 func (*TypeDecl) Op() Op { return TypeDeclOp }
+
+// ExpressionType is "typeof exp".
+type ExpressionType struct {
+	typeBase
+
+	Exp Expr
+}
+
+// NewExpressionType returns a typeof type.
+func NewExpressionType(span token.Span,
+	exp Expr,
+) *ExpressionType {
+	return &ExpressionType{typeBase: tb(span), Exp: exp}
+}
+
+// Op implements Node.
+func (*ExpressionType) Op() Op { return ExpressionTypeOp }

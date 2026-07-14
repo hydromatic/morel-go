@@ -84,8 +84,13 @@ func (p *Parser) postfixType() (ast.Type, error) {
 	if err != nil {
 		return nil, err
 	}
-	for p.tok.Kind == token.Ident {
+	for p.tok.Kind == token.Ident ||
+		p.tok.Kind == token.QuotedIdent {
 		name := p.tok
+		text := name.Text
+		if name.Kind == token.QuotedIdent {
+			text = unquoteIdent(text)
+		}
 		err = p.next()
 		if err != nil {
 			return nil, err
@@ -94,7 +99,7 @@ func (p *Parser) postfixType() (ast.Type, error) {
 			Start: t.Span().Start,
 			End:   name.Span.End,
 		}
-		t = ast.NewNamedType(span, name.Text, []ast.Type{t})
+		t = ast.NewNamedType(span, text, []ast.Type{t})
 	}
 	return t, nil
 }
@@ -113,12 +118,33 @@ func (p *Parser) atomicType() (ast.Type, error) {
 		return p.recordType()
 	case token.LParen:
 		return p.parenType()
+	case token.QuotedIdent:
+		err := p.next()
+		if err != nil {
+			return nil, err
+		}
+		return ast.NewNamedType(tok.Span,
+			unquoteIdent(tok.Text), nil), nil
 	case token.TyVar:
 		err := p.next()
 		if err != nil {
 			return nil, err
 		}
 		return ast.NewTyVar(tok.Span, tok.Text), nil
+	case token.Typeof:
+		err := p.next()
+		if err != nil {
+			return nil, err
+		}
+		exp, err := p.atomSuffixed()
+		if err != nil {
+			return nil, err
+		}
+		span := token.Span{
+			Start: tok.Span.Start,
+			End:   exp.Span().End,
+		}
+		return ast.NewExpressionType(span, exp), nil
 	default:
 		return nil, p.errorf("expected type, found " +
 			tok.Kind.String())

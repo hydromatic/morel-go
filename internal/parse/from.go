@@ -26,13 +26,17 @@ import (
 // forall): comma-separated scans, then steps in any order.
 func (p *Parser) fromExpr(kind ast.Op) (ast.Expr, error) {
 	start := p.tok.Span.Start
+	kwEnd := p.tok.Span.End
 	err := p.next()
 	if err != nil {
 		return nil, err
 	}
-	steps, err := p.scanList()
-	if err != nil {
-		return nil, err
+	var steps []ast.FromStep
+	if isPatStart(p.tok.Kind) {
+		steps, err = p.scanList()
+		if err != nil {
+			return nil, err
+		}
 	}
 	for {
 		step, err := p.fromStep()
@@ -44,8 +48,11 @@ func (p *Parser) fromExpr(kind ast.Op) (ast.Expr, error) {
 		}
 		steps = append(steps, step...)
 	}
-	last := steps[len(steps)-1]
-	span := token.Span{Start: start, End: last.Span().End}
+	end := kwEnd
+	if len(steps) > 0 {
+		end = steps[len(steps)-1].Span().End
+	}
+	span := token.Span{Start: start, End: end}
 	return ast.NewFrom(span, kind, steps), nil
 }
 
@@ -178,12 +185,27 @@ func (p *Parser) setOpStep(kind ast.Op) ([]ast.FromStep, error) {
 			return nil, err
 		}
 	}
-	exp, err := p.expr()
-	if err != nil {
-		return nil, err
+	var exps []ast.Expr
+	for {
+		exp, err := p.expr()
+		if err != nil {
+			return nil, err
+		}
+		exps = append(exps, exp)
+		if p.tok.Kind != token.Comma {
+			break
+		}
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
 	}
-	return []ast.FromStep{ast.NewSetOpStep(exp.Span(), kind,
-		distinct, exp)}, nil
+	span := token.Span{
+		Start: exps[0].Span().Start,
+		End:   exps[len(exps)-1].Span().End,
+	}
+	return []ast.FromStep{ast.NewSetOpStep(span, kind,
+		distinct, exps)}, nil
 }
 
 // throughStep parses "through pat in exp".

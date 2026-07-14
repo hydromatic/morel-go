@@ -38,6 +38,9 @@ func unparsePat(b *strings.Builder, p Pat) {
 	case *AsPat:
 		b.WriteString(n.Name + " as ")
 		unparsePat(b, n.Pat)
+	case *ConPat:
+		b.WriteString(n.Name + " ")
+		unparseConArg(b, n.Arg)
 	case *ConsPat:
 		unparseConsSide(b, n.A0)
 		b.WriteString(" :: ")
@@ -69,6 +72,9 @@ func UnparseType(t Type) string {
 func unparseType(b *strings.Builder, t Type) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch n := t.(type) {
+	case *ExpressionType:
+		b.WriteString("typeof ")
+		unparseExpr(b, n.Exp, applyPrec)
 	case *FnType:
 		unparseTypeArg(b, n.Param, false)
 		b.WriteString(" -> ")
@@ -177,6 +183,19 @@ func unparseTyVars(b *strings.Builder, tyVars []string) {
 		b.WriteString(tyVars[0] + " ")
 	default:
 		b.WriteString("(" + strings.Join(tyVars, ", ") + ") ")
+	}
+}
+
+// unparseConArg parenthesizes a constructor argument that is not
+// atomic.
+func unparseConArg(b *strings.Builder, p Pat) {
+	switch p.(type) {
+	case *AnnotatedPat, *AsPat, *ConPat, *ConsPat:
+		b.WriteString("(")
+		unparsePat(b, p)
+		b.WriteString(")")
+	default:
+		unparsePat(b, p)
 	}
 }
 
@@ -393,7 +412,12 @@ func unparseFrom(b *strings.Builder, f *From) {
 			if n.Distinct {
 				b.WriteString("distinct ")
 			}
-			unparseExpr(b, n.Exp, 0)
+			for i, e := range n.Exps {
+				if i > 0 {
+					b.WriteString(", ")
+				}
+				unparseExpr(b, e, 0)
+			}
 		case *SkipStep:
 			b.WriteString(" skip ")
 			unparseExpr(b, n.Exp, 0)

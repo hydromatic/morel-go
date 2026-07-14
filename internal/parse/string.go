@@ -67,3 +67,11 @@ func decodeEscape(b *strings.Builder, r []rune) int {
 	b.WriteRune(n)
 	return digits - 1
 }
+
+// unquoteIdent returns the name of a backtick-quoted identifier
+// token: the text without its backticks, with doubled backticks
+// undoubled.
+func unquoteIdent(text string) string {
+	s := text[1 : len(text)-1]
+	return strings.ReplaceAll(s, "``", "`")
+}

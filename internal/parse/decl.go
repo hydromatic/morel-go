@@ -325,12 +325,17 @@ func (p *Parser) funBind() (*ast.FunBind, error) {
 }
 
 func (p *Parser) funMatch() (*ast.FunMatch, error) {
-	err := p.expect(token.Ident)
-	if err != nil {
-		return nil, err
+	if p.tok.Kind != token.Ident &&
+		p.tok.Kind != token.QuotedIdent {
+		return nil, p.errorf("expected identifier, found " +
+			p.tok.Kind.String())
 	}
 	name := p.tok
-	err = p.next()
+	fnName := name.Text
+	if name.Kind == token.QuotedIdent {
+		fnName = unquoteIdent(name.Text)
+	}
+	err := p.next()
 	if err != nil {
 		return nil, err
 	}
@@ -370,7 +375,7 @@ func (p *Parser) funMatch() (*ast.FunMatch, error) {
 		Start: name.Span.Start,
 		End:   exp.Span().End,
 	}
-	return ast.NewFunMatch(span, name.Text, pats, returnType,
+	return ast.NewFunMatch(span, fnName, pats, returnType,
 		exp), nil
 }
 
