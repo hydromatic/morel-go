@@ -23,6 +23,7 @@ package core
 
 import (
 	"github.com/hydromatic/morel-go/internal/ast"
+	"github.com/hydromatic/morel-go/internal/token"
 	"github.com/hydromatic/morel-go/internal/types"
 )
 
@@ -80,11 +81,14 @@ func (i *ID) Type() types.Type { return i.Pat.T }
 
 func (*ID) exp() {}
 
-// Apply is the application of a function to an argument.
+// Apply is the application of a function to an argument. Span
+// is where a runtime exception raised by the application is
+// reported.
 type Apply struct {
-	T   types.Type
-	Fn  Exp
-	Arg Exp
+	T    types.Type
+	Fn   Exp
+	Arg  Exp
+	Span token.Span
 }
 
 // Op implements Exp.
@@ -143,11 +147,14 @@ func (l *List) Type() types.Type { return l.T }
 func (*List) exp() {}
 
 // Case matches an expression against a list of patterns; "if c
-// then a else b" becomes "case c of true => a | _ => b".
+// then a else b" becomes "case c of true => a | _ => b". Span
+// is the match list's position, where a Bind failure is
+// reported.
 type Case struct {
 	T       types.Type
 	Exp     Exp
 	Matches []Match
+	Span    token.Span
 }
 
 // Op implements Exp.
@@ -296,10 +303,13 @@ func (p *ConsPat) Type() types.Type { return p.T }
 
 func (*ConsPat) pat() {}
 
-// NonRecValDecl is a non-recursive value declaration.
+// NonRecValDecl is a non-recursive value declaration. Span
+// covers the pattern through the expression, where a Bind
+// failure is reported.
 type NonRecValDecl struct {
-	Pat Pat
-	Exp Exp
+	Pat  Pat
+	Exp  Exp
+	Span token.Span
 }
 
 // Op implements Decl.

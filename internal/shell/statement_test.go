@@ -107,7 +107,7 @@ func TestSplitError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	want := "stdIn:1.9-1.10: illegal character"
+	want := "stdIn:1.9: illegal character"
 	if err.Error() != want {
 		t.Errorf("got %q, want %q", err.Error(), want)
 	}

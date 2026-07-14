@@ -75,7 +75,7 @@ func TestRunnerLexError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "stdIn:1.9-1.10: illegal character\n<val y = 2;>\n"
+	want := "stdIn:1.9: illegal character\n<val y = 2;>\n"
 	if out != want || count != 1 {
 		t.Errorf("got %q (count %d), want %q (count 1)",
 			out, count, want)
@@ -109,7 +109,7 @@ func TestKernelExecute(t *testing.T) {
 	if got := k.Execute("val x = 1;"); got != want0 {
 		t.Errorf("got %q, want %q", got, want0)
 	}
-	want := "stdIn:1.9-1.10: illegal character"
+	want := "stdIn:1.9: illegal character"
 	if got := k.Execute("val x = ?;"); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}

@@ -199,7 +199,7 @@ func arith(intFn func(a, b int32) (Val, error),
 // Overflow as SML integer arithmetic does.
 func checkIntRange(i int64) (Val, error) {
 	if i < math.MinInt32 || i > math.MaxInt32 {
-		return nil, &MorelError{Exn: "Overflow"}
+		return nil, &MorelError{Exn: ExnOverflow}
 	}
 	return int32(i), nil
 }
@@ -220,7 +220,7 @@ func mulInt(a, b int32) (Val, error) {
 // negative infinity (unlike Go's, which rounds toward zero).
 func divInt(a, b int32) (Val, error) {
 	if b == 0 {
-		return nil, &MorelError{Exn: "Div"}
+		return nil, &MorelError{Exn: ExnDiv}
 	}
 	q := int64(a) / int64(b)
 	if (a%b != 0) && ((a < 0) != (b < 0)) {
@@ -233,7 +233,7 @@ func divInt(a, b int32) (Val, error) {
 // the divisor's sign.
 func modInt(a, b int32) (Val, error) {
 	if b == 0 {
-		return nil, &MorelError{Exn: "Div"}
+		return nil, &MorelError{Exn: ExnDiv}
 	}
 	r := a % b
 	if r != 0 && (r < 0) != (b < 0) {
@@ -267,7 +267,7 @@ func negFn(arg Val) (Val, error) {
 	switch v := arg.(type) {
 	case int32:
 		if v == math.MinInt32 {
-			return nil, &MorelError{Exn: "Overflow"}
+			return nil, &MorelError{Exn: ExnOverflow}
 		}
 		return -v, nil
 	case float32:

@@ -34,9 +34,12 @@ type Span struct {
 }
 
 // String renders a span in SML-NJ form, e.g. "1.14-1.25", or
-// "1.14" when the span is a single point.
+// "1.14" when the span is a single point or a single character
+// ("1.9" for a one-character token, "1.9-1.11" for a
+// two-character one).
 func (s Span) String() string {
-	if s.Start == s.End {
+	if s.Start.Line == s.End.Line && (s.Start.Col == s.End.Col ||
+		s.Start.Col+1 == s.End.Col) {
 		return fmt.Sprintf("%d.%d", s.Start.Line, s.Start.Col)
 	}
 	return fmt.Sprintf("%d.%d-%d.%d",

@@ -63,11 +63,11 @@ func TestParseExprErrors(t *testing.T) {
 		// expression, not to a bare identifier.
 		{
 			"~a * ~b",
-			"stdIn:1.6-1.7: expected expression, found ~",
+			"stdIn:1.6: expected expression, found ~",
 		},
 		{
 			"f ~x",
-			"stdIn:1.3-1.4: expected EOF, found ~",
+			"stdIn:1.3: expected EOF, found ~",
 		},
 	} {
 		_, err := parse.Expr("stdIn", tc.src)
