@@ -56,37 +56,30 @@ func Expr(name, src string) (ast.Expr, error) {
 	return e, nil
 }
 
-// MicroCall recognizes a statement of the exact shape
-// `A.b "str";` — the application of a dotted name to one string
-// literal. It returns the dotted name, the decoded string, and
-// whether the statement matched.
-func MicroCall(name, src string) (string, string, bool) {
-	l := NewLexer(name, src)
-	var toks []token.Token
-	for {
-		tok, err := l.Next()
-		if err != nil {
-			return "", "", false
-		}
-		if tok.Kind == token.EOF {
-			break
-		}
-		toks = append(toks, tok)
+// Stmt parses src as an expression statement: an expression
+// followed by ";".
+func Stmt(name, src string) (ast.Expr, error) {
+	p, err := NewParser(name, src)
+	if err != nil {
+		return nil, err
 	}
-	kinds := []token.Kind{
-		token.Ident, token.Dot, token.Ident,
-		token.StringLit, token.Semi,
+	e, err := p.expr()
+	if err != nil {
+		return nil, err
 	}
-	if len(toks) != len(kinds) {
-		return "", "", false
+	err = p.expect(token.Semi)
+	if err != nil {
+		return nil, err
 	}
-	for i, k := range kinds {
-		if toks[i].Kind != k {
-			return "", "", false
-		}
+	err = p.next()
+	if err != nil {
+		return nil, err
 	}
-	return toks[0].Text + "." + toks[2].Text,
-		Unquote(toks[3].Text), true
+	err = p.expect(token.EOF)
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
 }
 
 func (p *Parser) next() error {
@@ -110,23 +103,55 @@ func (p *Parser) expect(kind token.Kind) error {
 	return nil
 }
 
-// expr parses an expression: for now, one or more atoms;
-// juxtaposition is left-associative function application.
+// expr parses an expression: for now, one or more atoms (each
+// with postfix field selections); juxtaposition is
+// left-associative function application.
 func (p *Parser) expr() (ast.Expr, error) {
-	e, err := p.atom()
+	e, err := p.atomSuffixed()
 	if err != nil {
 		return nil, err
 	}
 	for isAtomStart(p.tok.Kind) {
-		arg, err := p.atom()
+		arg, err := p.atomSuffixed()
 		if err != nil {
 			return nil, err
 		}
+		e = ast.NewApply(spanOver(e, arg), e, arg)
+	}
+	return e, nil
+}
+
+func spanOver(a, b ast.Expr) token.Span {
+	return token.Span{Start: a.Span().Start, End: b.Span().End}
+}
+
+// atomSuffixed parses an atom followed by field selections:
+// "e.f" is the application of the selector "#f" to "e".
+func (p *Parser) atomSuffixed() (ast.Expr, error) {
+	e, err := p.atom()
+	if err != nil {
+		return nil, err
+	}
+	for p.tok.Kind == token.Dot {
+		err := p.next()
+		if err != nil {
+			return nil, err
+		}
+		err = p.expect(token.Ident)
+		if err != nil {
+			return nil, err
+		}
+		field := p.tok
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
+		s := ast.NewRecordSelector(field.Span, field.Text)
 		span := token.Span{
 			Start: e.Span().Start,
-			End:   arg.Span().End,
+			End:   field.Span.End,
 		}
-		e = ast.NewApply(span, e, arg)
+		e = ast.NewApply(span, s, e)
 	}
 	return e, nil
 }
@@ -140,33 +165,205 @@ var literalOps = map[token.Kind]ast.Op{
 }
 
 func isAtomStart(kind token.Kind) bool {
-	_, lit := literalOps[kind]
-	return lit || kind == token.Ident
+	if _, lit := literalOps[kind]; lit {
+		return true
+	}
+	switch kind {
+	case token.Ident, token.Label, token.LParen,
+		token.LBracket, token.LBrace:
+		return true
+	default:
+		return false
+	}
 }
 
-// atom parses an atomic expression: a literal or an identifier.
+// atom parses an atomic expression: a literal, an identifier, a
+// record selector, or a bracketed form.
 func (p *Parser) atom() (ast.Expr, error) {
 	tok := p.tok
-	if op, ok := literalOps[tok.Kind]; ok {
-		err := p.next()
-		if err != nil {
-			return nil, err
-		}
-		value := tok.Text
-		switch tok.Kind {
-		case token.StringLit, token.CharLit:
-			value = Unquote(tok.Text)
-		default:
-		}
-		return ast.NewLiteral(tok.Span, op, value), nil
-	}
-	if tok.Kind == token.Ident {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch tok.Kind {
+	case token.Ident:
 		err := p.next()
 		if err != nil {
 			return nil, err
 		}
 		return ast.NewID(tok.Span, tok.Text), nil
+	case token.LBrace:
+		return p.recordExpr()
+	case token.LBracket:
+		return p.listExpr()
+	case token.LParen:
+		return p.parenExpr()
+	case token.Label:
+		err := p.next()
+		if err != nil {
+			return nil, err
+		}
+		return ast.NewRecordSelector(tok.Span, tok.Text[1:]), nil
+	default:
+		return p.literal()
 	}
-	return nil, p.errorf("expected expression, found " +
-		p.tok.Kind.String())
+}
+
+func (p *Parser) literal() (ast.Expr, error) {
+	tok := p.tok
+	op, ok := literalOps[tok.Kind]
+	if !ok {
+		return nil, p.errorf("expected expression, found " +
+			p.tok.Kind.String())
+	}
+	err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	value := tok.Text
+	switch tok.Kind {
+	case token.StringLit, token.CharLit:
+		value = Unquote(tok.Text)
+	default:
+	}
+	return ast.NewLiteral(tok.Span, op, value), nil
+}
+
+// parenExpr parses "()" (unit), "(e)" (grouping), or
+// "(e1, e2, ...)" (a tuple).
+func (p *Parser) parenExpr() (ast.Expr, error) {
+	start := p.tok.Span.Start
+	err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	if p.tok.Kind == token.RParen {
+		span := token.Span{Start: start, End: p.tok.Span.End}
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
+		return ast.NewLiteral(span, ast.UnitLiteralOp, "()"), nil
+	}
+	args, end, err := p.exprList(token.RParen)
+	if err != nil {
+		return nil, err
+	}
+	if len(args) == 1 {
+		return args[0], nil
+	}
+	span := token.Span{Start: start, End: end}
+	return ast.NewTuple(span, args), nil
+}
+
+// listExpr parses "[e1, e2, ...]".
+func (p *Parser) listExpr() (ast.Expr, error) {
+	start := p.tok.Span.Start
+	err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	if p.tok.Kind == token.RBracket {
+		span := token.Span{Start: start, End: p.tok.Span.End}
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
+		return ast.NewListExp(span, nil), nil
+	}
+	args, end, err := p.exprList(token.RBracket)
+	if err != nil {
+		return nil, err
+	}
+	span := token.Span{Start: start, End: end}
+	return ast.NewListExp(span, args), nil
+}
+
+// exprList parses "e1, e2, ..." up to and including the closing
+// token, returning the expressions and the closer's end position.
+func (p *Parser) exprList(closer token.Kind) ([]ast.Expr,
+	token.Pos, error,
+) {
+	var args []ast.Expr
+	for {
+		e, err := p.expr()
+		if err != nil {
+			return nil, token.Pos{}, err
+		}
+		args = append(args, e)
+		if p.tok.Kind != token.Comma {
+			break
+		}
+		err = p.next()
+		if err != nil {
+			return nil, token.Pos{}, err
+		}
+	}
+	err := p.expect(closer)
+	if err != nil {
+		return nil, token.Pos{}, err
+	}
+	end := p.tok.Span.End
+	err = p.next()
+	if err != nil {
+		return nil, token.Pos{}, err
+	}
+	return args, end, nil
+}
+
+// recordExpr parses "{a = e1, b = e2, ...}"; a field without
+// "label =" has an implicit label, filled in during resolution.
+func (p *Parser) recordExpr() (ast.Expr, error) {
+	start := p.tok.Span.Start
+	err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	var fields []ast.Field
+	for p.tok.Kind != token.RBrace {
+		var f ast.Field
+		f, err = p.recordField()
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, f)
+		if p.tok.Kind != token.Comma {
+			break
+		}
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
+	}
+	err = p.expect(token.RBrace)
+	if err != nil {
+		return nil, err
+	}
+	span := token.Span{Start: start, End: p.tok.Span.End}
+	err = p.next()
+	if err != nil {
+		return nil, err
+	}
+	return ast.NewRecord(span, fields), nil
+}
+
+func (p *Parser) recordField() (ast.Field, error) {
+	e, err := p.expr()
+	if err != nil {
+		return ast.Field{}, err
+	}
+	if p.tok.Kind != token.Eq {
+		return ast.Field{Exp: e}, nil
+	}
+	id, ok := e.(*ast.ID)
+	if !ok {
+		return ast.Field{},
+			p.errorf("expected label before =")
+	}
+	err = p.next()
+	if err != nil {
+		return ast.Field{}, err
+	}
+	exp, err := p.expr()
+	if err != nil {
+		return ast.Field{}, err
+	}
+	return ast.Field{Label: id.Name, Exp: exp}, nil
 }

@@ -71,27 +71,58 @@ func TestParseExprErrors(t *testing.T) {
 	}
 }
 
-func TestMicroCall(t *testing.T) {
-	fn, arg, ok := parse.MicroCall("stdIn",
-		`Sys.parseTree "1 + 2";`)
-	if !ok || fn != "Sys.parseTree" || arg != "1 + 2" {
-		t.Errorf("got %q %q %v", fn, arg, ok)
+func TestParseBrackets(t *testing.T) {
+	checkExpr(t, "()", "(unit_literal ())")
+	checkExpr(t, "(1)", "(int_literal 1)")
+	checkExpr(t, "(1, 2)",
+		"(tuple (int_literal 1) (int_literal 2))")
+	checkExpr(t, "f (1, 2)",
+		"(apply (id f) (tuple (int_literal 1) (int_literal 2)))")
+	checkExpr(t, "[]", "(list)")
+	checkExpr(t, "[1, 2]",
+		"(list (int_literal 1) (int_literal 2))")
+	checkExpr(t, "[[1], []]",
+		"(list (list (int_literal 1)) (list))")
+}
+
+func TestParseRecords(t *testing.T) {
+	checkExpr(t, "{a = 1, b = 2}",
+		"(record (a (int_literal 1)) (b (int_literal 2)))")
+	// Fields keep source order.
+	checkExpr(t, "{b = 2, a = 1}",
+		"(record (b (int_literal 2)) (a (int_literal 1)))")
+	// An implicit label is empty until resolution.
+	checkExpr(t, "{x, a = 1}",
+		"(record ( (id x)) (a (int_literal 1)))")
+	checkExpr(t, "{}", "(record)")
+}
+
+func TestParseSelectors(t *testing.T) {
+	checkExpr(t, "#a", "(record_selector #a)")
+	checkExpr(t, "x.a", "(apply (record_selector #a) (id x))")
+	checkExpr(t, "x.a.b",
+		"(apply (record_selector #b) "+
+			"(apply (record_selector #a) (id x)))")
+	checkExpr(t, `Sys.parseTree "x"`,
+		"(apply (apply (record_selector #parseTree) (id Sys)) "+
+			`(string_literal "x"))`)
+}
+
+func TestStmt(t *testing.T) {
+	e, err := parse.Stmt("stdIn", "f 1;")
+	if err != nil {
+		t.Fatal(err)
 	}
-	fn, arg, ok = parse.MicroCall("stdIn",
-		"Sys.parseTree \"a\\nb\";")
-	if !ok || fn != "Sys.parseTree" || arg != "a\nb" {
-		t.Errorf("got %q %q %v", fn, arg, ok)
+	if got := ast.Dump(e); got != "(apply (id f) (int_literal 1))" {
+		t.Errorf("got %s", got)
 	}
-	for _, src := range []string{
-		"val x = 1;",
-		`parseTree "x";`,
-		`Sys.parseTree "x" "y";`,
-		`Sys.parseTree 1;`,
-		`Sys.parseTree "x"`,
-	} {
-		if _, _, ok := parse.MicroCall("stdIn", src); ok {
-			t.Errorf("MicroCall(%q): expected no match", src)
-		}
+	_, err = parse.Stmt("stdIn", "f 1")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	_, err = parse.Stmt("stdIn", "f 1; 2")
+	if err == nil {
+		t.Fatal("expected error")
 	}
 }
 

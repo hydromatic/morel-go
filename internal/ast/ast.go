@@ -115,3 +115,78 @@ func NewApply(span token.Span, fn, arg Expr) *Apply {
 
 // Op implements Node.
 func (*Apply) Op() Op { return ApplyOp }
+
+// RecordSelector is a field-selection function, "#label"; the
+// expression "e.f" parses as the application of "#f" to "e".
+type RecordSelector struct {
+	exprBase
+
+	Name string
+}
+
+// NewRecordSelector returns a record selector.
+func NewRecordSelector(span token.Span,
+	name string,
+) *RecordSelector {
+	return &RecordSelector{
+		exprBase: exprBase{base{span}},
+		Name:     name,
+	}
+}
+
+// Op implements Node.
+func (*RecordSelector) Op() Op { return RecordSelectorOp }
+
+// Tuple is a tuple expression, "(e1, e2, ...)".
+type Tuple struct {
+	exprBase
+
+	Args []Expr
+}
+
+// NewTuple returns a tuple expression.
+func NewTuple(span token.Span, args []Expr) *Tuple {
+	return &Tuple{exprBase: exprBase{base{span}}, Args: args}
+}
+
+// Op implements Node.
+func (*Tuple) Op() Op { return TupleOp }
+
+// ListExp is a list expression, "[e1, e2, ...]".
+type ListExp struct {
+	exprBase
+
+	Args []Expr
+}
+
+// NewListExp returns a list expression.
+func NewListExp(span token.Span, args []Expr) *ListExp {
+	return &ListExp{exprBase: exprBase{base{span}}, Args: args}
+}
+
+// Op implements Node.
+func (*ListExp) Op() Op { return ListOp }
+
+// Field is one field of a record expression. Label is empty for
+// an implicit label (e.g. "{x}"), which is filled in during
+// resolution.
+type Field struct {
+	Label string
+	Exp   Expr
+}
+
+// Record is a record expression, "{a = e1, b = e2, ...}", with
+// fields in source order.
+type Record struct {
+	exprBase
+
+	Fields []Field
+}
+
+// NewRecord returns a record expression.
+func NewRecord(span token.Span, fields []Field) *Record {
+	return &Record{exprBase: exprBase{base{span}}, Fields: fields}
+}
+
+// Op implements Node.
+func (*Record) Op() Op { return RecordOp }

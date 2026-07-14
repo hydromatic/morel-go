@@ -48,4 +48,38 @@ Sys.parseTree "f 1 2";
 Sys.parseTree "f x y";
 > val it = "(apply (apply (id f) (id x)) (id y))" : string
 
+(*) Unit, grouping, tuples
+Sys.parseTree "()";
+> val it = "(unit_literal ())" : string
+Sys.parseTree "(1)";
+> val it = "(int_literal 1)" : string
+Sys.parseTree "(1, 2)";
+> val it = "(tuple (int_literal 1) (int_literal 2))" : string
+Sys.parseTree "f (1, 2)";
+> val it = "(apply (id f) (tuple (int_literal 1) (int_literal 2)))" : string
+
+(*) Lists
+Sys.parseTree "[]";
+> val it = "(list)" : string
+Sys.parseTree "[1, 2]";
+> val it = "(list (int_literal 1) (int_literal 2))" : string
+
+(*) Records keep source field order
+Sys.parseTree "{a = 1, b = 2}";
+> val it = "(record (a (int_literal 1)) (b (int_literal 2)))" : string
+Sys.parseTree "{b = 2, a = 1}";
+> val it = "(record (b (int_literal 2)) (a (int_literal 1)))" : string
+Sys.parseTree "{x, a = 1}";
+> val it = "(record ( (id x)) (a (int_literal 1)))" : string
+
+(*) Selectors
+Sys.parseTree "#a";
+> val it = "(record_selector #a)" : string
+Sys.parseTree "x.a";
+> val it = "(apply (record_selector #a) (id x))" : string
+Sys.parseTree "x.a.b";
+> val it = "(apply (record_selector #b) (apply (record_selector #a) (id x)))" : string
+Sys.parseTree "Sys.parseTree \"x\"";
+> val it = "(apply (apply (record_selector #parseTree) (id Sys)) (string_literal \"x\"))" : string
+
 (*) End parse.smli
