@@ -111,6 +111,11 @@ DESC (DESC "a");
 (* "eqtype string" maps to "String" *)
 "x";
 > val it = "x" : string
+(* "eqtype 'a array" maps to "Array" *)
+(*) TODO 'a array
+(* "eqtype 'a vector" maps to "Vector" *)
+Vector.fromList [1];
+> val it = #[1] : int vector
 (* "eqtype 'a ref" is primitive *)
 (*) TODO 'a ref
 (* "datatype bool = false | true" is primitive *)
@@ -377,6 +382,10 @@ valOf;
 > val it = fn : 'a option -> 'a
 Option.valOf;
 > val it = fn : 'a option -> 'a
+
+(* "val vector : 'a list -> 'a vector" maps to "Vector.fromList" *)
+vector;
+> val it = fn : 'a list -> 'a vector
 Vector.fromList;
 > val it = fn : 'a list -> 'a vector
 

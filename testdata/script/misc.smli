@@ -29,6 +29,8 @@
 (*) Number of values in initial environment.
 
 (*) Now we have one more (due to "eLen").
+List.last (Sys.env());
+> val it = ("vector","forall 'a. 'a list -> 'a vector") : string * string
 
 (*) Define 3 variables.
 val (x,y,z) = (1,2,3);
