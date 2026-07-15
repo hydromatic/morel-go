@@ -97,7 +97,10 @@ func TestLoad(t *testing.T) {
 		var got string
 		for _, field := range record.Fields {
 			if field.Label == tc.field {
-				got = field.Type.String()
+				// A structure's members are numbered into one
+				// shared sequence, so a member's variables carry an
+				// offset; normalize it away, as the display does.
+				got = normVars(sys, field.Type).String()
 			}
 		}
 		if got != tc.want {
@@ -119,4 +122,54 @@ func TestLoad(t *testing.T) {
 	if !ok || tc.Result.String() != "order" {
 		t.Errorf("LESS: got %v", tc.Result)
 	}
+}
+
+// normVars renames a type's variables to 'a, 'b, ... in
+// first-encounter (left-to-right) order, the form types display
+// in, so a member type can be compared regardless of the offset
+// at which the structure's shared numbering placed it.
+func normVars(sys *types.System, t types.Type) types.Type {
+	order := map[int]int{}
+	var walk func(types.Type)
+	walk = func(t types.Type) {
+		// lint: sort until '^\t\t}' where '^\t\tcase '
+		switch t := t.(type) {
+		case *types.Fn:
+			walk(t.Param)
+			walk(t.Result)
+		case *types.List:
+			walk(t.Elem)
+		case *types.Named:
+			for _, a := range t.Args {
+				walk(a)
+			}
+		case *types.Record:
+			for _, f := range t.Fields {
+				walk(f.Type)
+			}
+		case *types.Tuple:
+			for _, a := range t.Args {
+				walk(a)
+			}
+		case *types.Var:
+			if _, ok := order[t.Ordinal]; !ok {
+				order[t.Ordinal] = len(order)
+			}
+		}
+	}
+	walk(t)
+	maxOrd := -1
+	for old := range order {
+		if old > maxOrd {
+			maxOrd = old
+		}
+	}
+	args := make([]types.Type, maxOrd+1)
+	for i := range args {
+		args[i] = sys.Var(i)
+	}
+	for old, rank := range order {
+		args[old] = sys.Var(rank)
+	}
+	return sys.Substitute(t, args)
 }

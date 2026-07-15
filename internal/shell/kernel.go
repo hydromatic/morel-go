@@ -323,8 +323,7 @@ func (k *Kernel) executeTypeOnly(src string) string {
 		if err != nil {
 			return err.Error()
 		}
-		lines = append(lines,
-			"val "+pat.Name+" : "+typ.String())
+		lines = append(lines, k.config.prettyType(pat.Name, typ))
 		k.bind(pat.Name, typ)
 	}
 	return strings.Join(lines, "\n")
