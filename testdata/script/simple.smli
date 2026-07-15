@@ -872,6 +872,22 @@ f ~1;
 > uncaught exception Subscript [subscript out of bounds]
 >   raised at: stdIn:1.11-1.43
 
+(*) bag of unit
+bag [(), ()];
+> val it = [(),()] : unit bag
+
+(*) single-element bag
+bag [42];
+> val it = [42] : int bag
+
+(*) empty bag
+bag ([] : string list);
+> val it = [] : string bag
+
+(*) list of bags
+[bag [1, 2], bag [3, 4]];
+> val it = [[1,2],[3,4]] : int bag list
+
 (*) Word literals: decimal and hexadecimal
 0w255;
 > val it = 0wxFF : word

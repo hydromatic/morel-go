@@ -44,6 +44,8 @@ STRING "hello";
 > val it = "hello" : string variant
 LIST [INT 1, INT 2];
 > val it = [1,2] : int list variant
+BAG [INT 3];
+> val it = [3] : int bag variant
 VECTOR [STRING "a"];
 > val it = #["a"] : string vector variant
 VARIANT_NONE;

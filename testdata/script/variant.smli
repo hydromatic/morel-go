@@ -82,6 +82,14 @@ LIST [INT 1, INT 2, INT 3];
 LIST [LIST [INT 1, INT 2], LIST [INT 3]];
 > val it = [[1,2],[3]] : int list list variant
 
+(*) BAG constructor - empty bag
+BAG [];
+> val it = [] : variant bag variant
+
+(*) BAG constructor - bag of ints
+BAG [INT 1, INT 2, INT 3, INT 2];
+> val it = [1,2,3,2] : int bag variant
+
 (*) VECTOR constructor - empty vector
 VECTOR [];
 > val it = #[] : variant vector variant

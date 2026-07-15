@@ -37,11 +37,15 @@ val (x,y,z) = (1,2,3);
 > val x = 1 : int
 > val y = 2 : int
 > val z = 3 : int
+List.last (Sys.env());
+> val it = ("z","int") : string * string
 
 (*) Overwrite one value, add another.
 val (w,z) = ("four","five");
 > val w = "four" : string
 > val z = "five" : string
+List.last (Sys.env());
+> val it = ("z","string") : string * string
 
 (* -------------------------------------------------------------------
  * Setting properties whose values are enums
@@ -109,6 +113,14 @@ in
   ((x + y) + z, x + (y + z))
 end;
 > val it = (1,0) : real * real
+
+(* -------------------------------------------------------------------
+ * [MOREL-311] op
+ *)
+foldl (op +) 0 [2,3,4];
+> val it = 9 : int
+foldl (op +) 0.0 [2.0,3.5,4.5];
+> val it = 10 : real
 op +;
 > val it = fn : int * int -> int
 op *;

@@ -33,6 +33,9 @@ Sys.set ("now", "2024-01-01T00:00:00Z");
 Sys.env;
 > val it = fn : unit -> (string * string) list
 
+env;
+> val it = fn : unit -> (string * string) list
+
 (*) val parseTree : string -> string
 Sys.parseTree;
 > val it = fn : string -> string
@@ -84,6 +87,8 @@ val x = 1 + 2;
 (*) val show : string -> string option
 Sys.show;
 > val it = fn : string -> string option
+show;
+> val it = fn : string -> string option
 Sys.show "hybrid";
 > val it = SOME "false" : string option
 Sys.set ("hybrid", true);
@@ -96,12 +101,32 @@ Sys.show "optionalInt";
 (*) val showAll : unit -> string * string option list
 Sys.showAll;
 > val it = fn : unit -> (string * string option) list
+showAll;
+> val it = fn : unit -> (string * string option) list
 List.length (Sys.showAll ());
+> val it = 22 : int
+List.length (showAll ());
 > val it = 22 : int
 
 (*) Mask version number since it changes with each release
 case Sys.show "productVersion" of
   SOME v => String.size v > 0
+| NONE => false;
+> val it = true : bool
+
+(*) Verify new properties are in showAll
+case List.find (fn (p, v) => p = "productName") (Sys.showAll ()) of
+  SOME (p, v) => p = "productName"
+| NONE => false;
+> val it = true : bool
+
+case List.find (fn (p, v) => p = "productVersion") (Sys.showAll ()) of
+  SOME (p, v) => p = "productVersion"
+| NONE => false;
+> val it = true : bool
+
+case List.find (fn (p, v) => p = "banner") (Sys.showAll ()) of
+  SOME (p, v) => p = "banner"
 | NONE => false;
 > val it = true : bool
 

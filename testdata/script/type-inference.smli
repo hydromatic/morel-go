@@ -362,6 +362,113 @@ stdIn:1.33-1.38 Error: operator and operand do not agree [overload - bad instant
 :t map (fn x => String.size x) ["abc", "de"];
 > val it : int list
 
+(* From/query type tests (migrated from MainTest.testFromType) *)
+:t from i in [1];
+> val it : int list
+:t from (i, j) in [("a", 1)];
+> val it : {i:string, j:int} list
+:t from (i, j) in [(1, 1), (2, 3)];
+> val it : {i:int, j:int} list
+:t from {c, a, ...} in [{a=1.0,b=true,c=3},{a=1.5,b=true,c=4}];
+> val it : {a:real, c:int} list
+
+:t
+from a in [1], b in [true] yield (b,a) where c;
+> stdIn:1.46 Error: unbound variable or constructor: c
+>   raised at: stdIn:1.46
+
+:t
+from a in [1], b in [true] yield (b,a) where b;
+> stdIn:1.46 Error: unbound variable or constructor: b
+>   raised at: stdIn:1.46
+
+:t from a in [1], b in [true] yield {b,a} where b;
+> val it : {a:int, b:bool} list
+
+:t
+from d in [{a=1,b=true}], i in [2] yield {d} yield a;
+> stdIn:1.52 Error: unbound variable or constructor: a
+>   raised at: stdIn:1.52
+
+:t from d in [{a=1,b=true}], i in [2] yield d yield a;
+> stdIn:1.63 Error: unbound variable or constructor: a
+>   raised at: stdIn:1.63
+
+:t from {c, a, ...} in [{a=1.0,b=true,c=3},{a=1.5,b=true,c=4}];
+> val it : {a:real, c:int} list
+:t fn f => from i in [1, 2, 3] where f i;
+> val it : (int -> bool) -> int list
+:t from a in [1], b in [true];
+> val it : {a:int, b:bool} list
+:t from a in [1], b in [()];
+> val it : {a:int, b:unit} list
+:t from a in [1], _ in [true];
+> val it : int list
+:t from a in [1], _ = ();
+> val it : int list
+
+:t from a in [1], b in [true] yield a;
+> val it : int list
+:t from a in [1], b in [true] yield {a,b};
+> val it : {a:int, b:bool} list
+:t from a in [1], b in [true] yield {y=a,b};
+> val it : {b:bool, y:int} list
+:t from a in [1], b in [true] yield {y=a,x=b,z=a};
+> val it : {x:bool, y:int, z:int} list
+:t from a in [1], b in [true] yield {y=a,x=b,z=a} yield {z,x};
+> val it : {x:bool, z:int} list
+:t from a in [1], b in [true] yield {y=a,x=b,z=a} yield {z};
+> val it : {z:int} list
+:t from a in [1], b in [true] yield (b,a);
+> val it : (bool * int) list
+:t from a in [1], b in [true] yield (b);
+> val it : bool list
+:t from a in [1], b in [true] yield {b,a} yield a;
+> val it : int list
+:t from a in [1], b in [true] yield {b,a} where b;
+> val it : {a:int, b:bool} list
+:t from a in [1], b in [true] yield {b,a,c="c"} where b;
+> val it : {a:int, b:bool, c:string} list
+:t from a in [1], b in [true] yield (b,a) where true;
+> val it : (bool * int) list
+:t from d in [{a=1,b=true}], i in [2] yield i;
+> val it : int list
+:t from d in [{a=1,b=true}], i in [2] yield {d};
+> val it : {d:{a:int, b:bool}} list
+:t from d in [{a=1,b=true}], i in [2] yield {d} where true;
+> val it : {d:{a:int, b:bool}} list
+:t from d in [{a=1,b=true}], i in [2] yield i yield 3;
+> val it : int list
+:t from d in [{a=1,b=true}], i in [2] yield d;
+> val it : {a:int, b:bool} list
+:t from d in [{a=1,b=true}], i in [2] yield d where true;
+> val it : {a:int, b:bool} list
+:t from d in [{a=1,b=true}], i in [2] yield i yield 3.0;
+> val it : real list
+
+(*) Records in queries
+:t
+from d in [{a=1,b=true}] yield d.x;
+> stdIn:1.34 Error: no field 'x' in type '{a:int, b:bool}'
+>   raised at: stdIn:1.34
+
+:t
+from d in [{a=1,b=true}] yield #x d;
+> stdIn:1.32-1.34 Error: no field 'x' in type '{a:int, b:bool}'
+>   raised at: stdIn:1.32-1.34
+
+(*) with
+:t from d in [{a=1,b=true}], i in [2] yield {d with b=false};
+> val it : {a:int, b:bool} list
+
+:t
+let
+  val records = from r in [{i=1,j=2}]
+in
+  from r2 in records
+end;
+> val it : {i:int, j:int} list
+
 (*) [MOREL-343] Same type var constrains both params to same type
 fun same (x: 'a, y: 'a) = (x, y);
 > val same = fn : 'a * 'a -> 'a * 'a
