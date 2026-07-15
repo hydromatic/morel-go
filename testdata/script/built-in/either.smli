@@ -1,0 +1,56 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Unit tests for the built-in `Either` structure, defined
+ * by the Standard ML Basis Library.
+ *)
+Sys.set ("lineWidth", 78);
+> val it = () : unit
+Sys.set ("printLength", 999);
+> val it = () : unit
+Sys.set ("stringDepth", ~1);
+> val it = () : unit
+
+Either.isLeft;
+> val it = fn : ('a,'b) either -> bool
+Either.isRight;
+> val it = fn : ('a,'b) either -> bool
+Either.asLeft;
+> val it = fn : ('a,'b) either -> 'a option
+Either.asRight;
+> val it = fn : ('a,'b) either -> 'b option
+Either.map;
+> val it = fn : ('a -> 'b) * ('c -> 'd) -> ('a,'c) either -> ('b,'d) either
+Either.mapLeft;
+> val it = fn : ('a -> 'b) -> ('a,'c) either -> ('b,'c) either
+Either.mapRight;
+> val it = fn : ('a -> 'b) -> ('c,'a) either -> ('c,'b) either
+Either.app;
+> val it = fn : ('a -> unit) * ('b -> unit) -> ('a,'b) either -> unit
+Either.appLeft;
+> val it = fn : ('a -> unit) -> ('a,'b) either -> unit
+Either.appRight;
+> val it = fn : ('a -> unit) -> ('b,'a) either -> unit
+Either.fold;
+> val it = fn : ('a * 'b -> 'b) * ('c * 'b -> 'b) -> 'b -> ('a,'c) either -> 'b
+Either.proj;
+> val it = fn : ('a,'a) either -> 'a
+Either.partition;
+> val it = fn : ('a,'b) either list -> 'a list * 'b list
+
+(*) End either.smli

@@ -1,0 +1,94 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Unit tests for the built-in `String` structure, defined
+ * by the Standard ML Basis Library.
+ *)
+Sys.set ("lineWidth", 78);
+> val it = () : unit
+Sys.set ("printLength", 999);
+> val it = () : unit
+Sys.set ("stringDepth", ~1);
+> val it = () : unit
+
+(*) val size : string -> int
+String.size;
+> val it = fn : string -> int
+String.size "abc";
+> val it = 3 : int
+String.size "";
+> val it = 0 : int
+
+(*) val ^ : string * string -> string
+String.`^`;
+> val it = fn : string * string -> string
+"a" ^ "bc";
+> val it = "abc" : string
+"a" ^ "";
+> val it = "a" : string
+"a" ^ "bc" ^ "" ^ "def";
+> val it = "abcdef" : string
+
+(*) val concat : string list -> string
+String.concat;
+> val it = fn : string list -> string
+String.concat ["a", "bc", "def"];
+> val it = "abcdef" : string
+String.concat ["a"];
+> val it = "a" : string
+String.concat [];
+> val it = "" : string
+
+(*) val str : char -> string
+String.str;
+> val it = fn : char -> string
+String.str #"a";
+> val it = "a" : string
+
+(*) val <= : string * string -> bool
+String.`<=`;
+> val it = fn : string * string -> bool
+"abc" <= "ab";
+> val it = false : bool
+"ab" <= "ab";
+> val it = true : bool
+
+(*) val >  : string * string -> bool
+String.`>`;
+> val it = fn : string * string -> bool
+"abc" > "ab";
+> val it = true : bool
+"ab" > "ab";
+> val it = false : bool
+
+(*) val >= : string * string -> bool
+String.`>=`;
+> val it = fn : string * string -> bool
+"abc" >= "ab";
+> val it = true : bool
+"ab" >= "ab";
+> val it = true : bool
+
+(* val toString : string -> String.string
+ * val scan       : (char, 'a) StringCvt.reader
+ *                    -> (string, 'a) StringCvt.reader
+ * val fromString : String.string -> string option
+ * val toCString : string -> String.string
+ * val fromCString : String.string -> string option *)
+
+(*) End string.smli

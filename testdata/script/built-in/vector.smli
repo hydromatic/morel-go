@@ -1,0 +1,105 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Unit tests for the built-in `Vector` structure, defined
+ * by the Standard ML Basis Library.
+ *)
+Sys.set ("lineWidth", 78);
+> val it = () : unit
+Sys.set ("printLength", 999);
+> val it = () : unit
+Sys.set ("stringDepth", ~1);
+> val it = () : unit
+
+(*) Vector.fromList : 'a list -> 'a vector
+Vector.fromList;
+> val it = fn : 'a list -> 'a vector
+
+(* supported in sml-nj but not morel:
+ #[1,2];
+ *)
+
+(*) Vector.tabulate : int * (int -> 'a) -> 'a vector
+Vector.tabulate;
+> val it = fn : int * (int -> 'a) -> 'a vector
+
+(*) Vector.length : 'a vector -> int
+Vector.length;
+> val it = fn : 'a vector -> int
+
+(*) Vector.sub : 'a vector * int -> 'a
+Vector.sub;
+> val it = fn : 'a vector * int -> 'a
+
+(*) Vector.update : 'a vector * int * 'a -> 'a vector
+Vector.update;
+> val it = fn : 'a vector * int * 'a -> 'a vector
+
+(*) Vector.concat : 'a vector list -> 'a vector
+Vector.concat;
+> val it = fn : 'a vector list -> 'a vector
+
+(*) Vector.appi : (int * 'a -> unit) -> 'a vector -> unit
+Vector.appi;
+> val it = fn : (int * 'a -> unit) -> 'a vector -> unit
+
+(*) Vector.app  : ('a -> unit) -> 'a vector -> unit
+Vector.app;
+> val it = fn : ('a -> unit) -> 'a vector -> unit
+
+(*) Vector.mapi : (int * 'a -> 'b) -> 'a vector -> 'b vector
+Vector.mapi;
+> val it = fn : (int * 'a -> 'b) -> 'a vector -> 'b vector
+
+(*) Vector.map  : ('a -> 'b) -> 'a vector -> 'b vector
+Vector.map;
+> val it = fn : ('a -> 'b) -> 'a vector -> 'b vector
+
+(*) Vector.foldli : (int * 'a * 'b -> 'b) -> 'b -> 'a vector -> 'b
+Vector.foldli;
+> val it = fn : (int * 'a * 'b -> 'b) -> 'b -> 'a vector -> 'b
+
+(*) Vector.foldri : (int * 'a * 'b -> 'b) -> 'b -> 'a vector -> 'b
+Vector.foldri;
+> val it = fn : (int * 'a * 'b -> 'b) -> 'b -> 'a vector -> 'b
+
+(*) Vector.foldr  : ('a * 'b -> 'b) -> 'b -> 'a vector -> 'b
+Vector.foldr;
+> val it = fn : ('a * 'b -> 'b) -> 'b -> 'a vector -> 'b
+
+(*) Vector.findi : (int * 'a -> bool) -> 'a vector -> (int * 'a) option
+Vector.findi;
+> val it = fn : (int * 'a -> bool) -> 'a vector -> (int * 'a) option
+
+(*) Vector.find  : ('a -> bool) -> 'a vector -> 'a option
+Vector.find;
+> val it = fn : ('a -> bool) -> 'a vector -> 'a option
+
+(*) Vector.exists : ('a -> bool) -> 'a vector -> bool
+Vector.`exists`;
+> val it = fn : ('a -> bool) -> 'a vector -> bool
+
+(*) Vector.all : ('a -> bool) -> 'a vector -> bool
+Vector.all;
+> val it = fn : ('a -> bool) -> 'a vector -> bool
+
+(*) Vector.collate : ('a * 'a -> order) -> 'a vector * 'a vector -> order
+Vector.collate;
+> val it = fn : ('a * 'a -> order) -> 'a vector * 'a vector -> order
+
+(*) End vector.smli
