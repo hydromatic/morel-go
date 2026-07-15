@@ -29,6 +29,14 @@ Sys.set ("timeZone", "UTC");
 Sys.set ("now", "2024-01-01T00:00:00Z");
 > val it = () : unit
 
+(*) val env : unit -> string list
+Sys.env;
+> val it = fn : unit -> (string * string) list
+
+(*) val parseTree : string -> string
+Sys.parseTree;
+> val it = fn : string -> string
+
 (*) Atoms and literals. A trailing `;` is optional.
 Sys.parseTree "42";
 > val it = "(int_literal 42)" : string
@@ -42,20 +50,68 @@ Sys.parseTree "1 + 2";
 > val it = "(plus (int_literal 1) (int_literal 2))" : string
 Sys.parseTree "f x";
 > val it = "(apply (id f) (id x))" : string
+
+(*) val plan : unit -> string
+Sys.plan;
+> val it = fn : unit -> string
 1 + 2;
 > val it = 3 : int
+
+(*) val planEx : string -> string
+Sys.planEx;
+> val it = fn : string -> string
 val zebra = true;
 > val zebra = true : bool
 val aardvark = 1 + (if zebra then 2 else 3);
 > val aardvark = 3 : int
+
+(*) val set : string * 'a -> unit
+Sys.set;
+> val it = fn : string * 'a -> unit
 Sys.set ("hybrid", false);
 > val it = () : unit
+
+(*) val planEx : string -> string
+Sys.planEx;
+> val it = fn : string -> string
 val x = 1 + 2;
 > val x = 3 : int
+
+(*) val show : string -> string option
+Sys.show;
+> val it = fn : string -> string option
+Sys.show "hybrid";
+> val it = SOME "false" : string option
 Sys.set ("hybrid", true);
 > val it = () : unit
+Sys.show "hybrid";
+> val it = SOME "true" : string option
+Sys.show "optionalInt";
+> val it = NONE : string option
+
+(*) val showAll : unit -> string * string option list
+Sys.showAll;
+> val it = fn : unit -> (string * string option) list
+List.length (Sys.showAll ());
+> val it = 22 : int
+
+(*) Mask version number since it changes with each release
+case Sys.show "productVersion" of
+  SOME v => String.size v > 0
+| NONE => false;
+> val it = true : bool
 
 Sys.set ("optionalInt", ~5);
+> val it = () : unit
+Sys.show "optionalInt";
+> val it = SOME "-5" : string option
+
+(*) val unset : string -> unit
+Sys.unset;
+> val it = fn : string -> unit
+Sys.unset "hybrid";
+> val it = () : unit
+Sys.unset "optionalInt";
 > val it = () : unit
 
 (*) End sys.smli

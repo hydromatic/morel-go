@@ -66,6 +66,8 @@ Sys.set ("inlinePassCount", 0);
 > val it = () : unit
 val noneInt = if true then NONE else SOME 0;
 > val noneInt = NONE : int option
+Sys.unset "inlinePassCount";
+> val it = () : unit
 Option.valOf noneInt;
 > uncaught exception Option
 >   raised at: stdIn:1.1-1.21

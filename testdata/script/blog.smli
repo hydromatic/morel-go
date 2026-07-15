@@ -571,6 +571,10 @@ fun sumTree EMPTY = 0
   | sumTree (NODE (i, l, r)) =
         i + sumTree l + sumTree r;
 > val sumTree = fn : intTree -> int
+val t = NODE (1, LEAF 2, NODE (3, EMPTY, LEAF 7));
+> val t = NODE (1,LEAF 2,NODE (3,EMPTY,LEAF 7)) : intTree
+sumTree t;
+> val it = 13 : int
 val rec sumTree = fn t =>
   case t of EMPTY => 0
     | LEAF i => i

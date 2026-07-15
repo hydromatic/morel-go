@@ -25,8 +25,16 @@ import "fmt"
 // optionDatatype names the datatype of option values.
 const optionDatatype = "option"
 
-// noneVal is the value NONE.
-var noneVal = Con{Datatype: optionDatatype, Name: "NONE"}
+// NoneVal is the value NONE.
+var NoneVal = Con{Datatype: optionDatatype, Name: "NONE"}
+
+// noneVal is NoneVal under its historical package-local name.
+var noneVal Val = NoneVal
+
+// SomeVal returns the value "SOME v".
+func SomeVal(v Val) Val {
+	return someVal(v)
+}
 
 // someVal returns the value "SOME v".
 func someVal(v Val) Val {

@@ -19,7 +19,8 @@ package shell
 
 import (
 	"errors"
-	"strconv"
+	"maps"
+	"os"
 	"strings"
 
 	"github.com/hydromatic/morel-go/internal/ast"
@@ -47,6 +48,7 @@ func DefaultConfig() Config {
 		PrintLength: defaultPrintLength,
 		PrintDepth:  defaultPrintDepth,
 		StringDepth: defaultStringDepth,
+		props:       map[string]string{},
 	}
 }
 
@@ -63,6 +65,10 @@ type Config struct {
 	// Directory is the working directory, as the "directory"
 	// and "scriptDirectory" properties report it.
 	Directory string
+
+	// props holds the explicitly set values of the properties
+	// that do not (yet) change behavior.
+	props map[string]string
 
 	// sys resolves datatype constructors when printing their
 	// values.
@@ -92,10 +98,25 @@ func NewKernel(name string) *Kernel {
 	}
 	bindings := compile.TopBindings(sys)
 	bindings = append(bindings, result.Bindings...)
+	config := DefaultConfig()
+	config.sys = sys
+	dir, err := os.Getwd()
+	if err == nil {
+		config.Directory = dir
+	}
+	k := &Kernel{
+		name:     name,
+		config:   config,
+		sys:      sys,
+		bindings: bindings,
+	}
 	values := make(map[string]eval.Val, len(eval.Builtins))
 	for name, fn := range eval.Builtins {
 		values[name] = fn
 	}
+	// The Sys implementations read and write session state, so
+	// the kernel supplies them.
+	maps.Copy(values, k.sysBuiltins())
 	// A structure is a record value whose fields are its
 	// members' implementations. A member without one gets a
 	// placeholder that fails if it is ever applied, so unpulled
@@ -108,7 +129,7 @@ func NewKernel(name string) *Kernel {
 		fields := make([]eval.Val, len(record.Fields))
 		for i, field := range record.Fields {
 			qualified := b.Name + "." + field.Label
-			if fn, ok := eval.Builtins[qualified]; ok {
+			if fn, ok := values[qualified]; ok {
 				fields[i] = fn
 			} else {
 				fields[i] = notImplemented(qualified)
@@ -116,15 +137,8 @@ func NewKernel(name string) *Kernel {
 		}
 		values[b.Name] = fields
 	}
-	config := DefaultConfig()
-	config.sys = sys
-	return &Kernel{
-		name:     name,
-		config:   config,
-		sys:      sys,
-		bindings: bindings,
-		values:   values,
-	}
+	k.values = values
+	return k
 }
 
 // Config returns the kernel's configuration; the kernel is its
@@ -165,15 +179,11 @@ func (k *Kernel) Execute(stmt string) string {
 	if !ok {
 		return k.executeStatement(n)
 	}
-	switch fn {
-	case "Sys.parseTree":
+	if fn == "Sys.parseTree" {
 		lit, isString := arg.(*ast.Literal)
 		if isString && lit.Kind == ast.StringLiteralOp {
 			return callString(eval.Builtins[fn], lit.Value)
 		}
-	case "Sys.set":
-		k.setProp(arg)
-		return "val it = () : unit"
 	}
 	return k.executeStatement(n)
 }
@@ -285,56 +295,6 @@ func unsupported(msg string) bool {
 		}
 	}
 	return false
-}
-
-// setProp handles `Sys.set ("name", value)` for the integer
-// printing properties; anything else is ignored for now.
-func (k *Kernel) setProp(arg ast.Expr) {
-	tuple, ok := arg.(*ast.Tuple)
-	if !ok || len(tuple.Args) != 2 {
-		return
-	}
-	nameLit, ok := tuple.Args[0].(*ast.Literal)
-	if !ok || nameLit.Kind != ast.StringLiteralOp {
-		return
-	}
-	value, ok := intValue(tuple.Args[1])
-	if !ok {
-		return
-	}
-	// lint: sort until '^	}' where '^	case '
-	switch nameLit.Value {
-	case "lineWidth":
-		k.config.LineWidth = value
-	case "printDepth":
-		k.config.PrintDepth = value
-	case "printLength":
-		k.config.PrintLength = value
-	case "stringDepth":
-		k.config.StringDepth = value
-	}
-}
-
-// intValue evaluates an integer literal, possibly negated.
-func intValue(e ast.Expr) (int, bool) {
-	neg := false
-	if prefix, ok := e.(*ast.PrefixCall); ok &&
-		prefix.Kind == ast.NegateOp {
-		neg = true
-		e = prefix.A
-	}
-	lit, ok := e.(*ast.Literal)
-	if !ok || lit.Kind != ast.IntLiteralOp {
-		return 0, false
-	}
-	i, err := strconv.Atoi(lit.Value)
-	if err != nil {
-		return 0, false
-	}
-	if neg {
-		i = -i
-	}
-	return i, true
 }
 
 // executeTypeOnly type-checks a statement, prints each binding as

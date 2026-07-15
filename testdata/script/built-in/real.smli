@@ -334,6 +334,8 @@ Real.fromString;
  * record list in non-tabular notation. *)
 Sys.set ("output", "tabular");
 > val it = () : unit
+Sys.unset "output";
+> val it = () : unit
 
 (* "toLarge r", "fromLarge r" convert between values of type real and type
    LargeReal.real. If r is too small or too large to be represented as a real,

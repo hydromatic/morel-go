@@ -213,6 +213,10 @@ func (s *System) Tuple(args ...Type) Type {
 // Record returns the record type with the given fields, sorted
 // into label order.
 func (s *System) Record(fields []Field) Type {
+	if len(fields) == 0 {
+		// "{}" is unit, as in SML.
+		return s.Unit
+	}
 	sorted := make([]Field, len(fields))
 	copy(sorted, fields)
 	sort.Slice(sorted, func(i, j int) bool {
