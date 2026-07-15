@@ -104,5 +104,7 @@ Int.toString;
  * users will see the record list in non-tabular notation. *)
 Sys.set ("output", "tabular");
 > val it = () : unit
+Sys.unset "output";
+> val it = () : unit
 
 (*) End int.smli

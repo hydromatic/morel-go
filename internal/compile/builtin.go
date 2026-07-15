@@ -92,6 +92,12 @@ var topBuiltins = map[string]topBuiltin{
 	"tl":      {"'a list -> 'a list", ""},
 	"trunc":   {realToInt, ""},
 	"valOf":   {"'a option -> 'a", ""},
+	"env":     {"unit -> (string * string) list", ""},
+	"plan":    {"unit -> string", ""},
+	"set":     {"string * 'a -> unit", ""},
+	"show":    {"string -> string option", ""},
+	"showAll": {"unit -> (string * string option) list", ""},
+	"unset":   {"string -> unit", ""},
 }
 
 // infixOpNames maps an infix operator's Op to the name of its

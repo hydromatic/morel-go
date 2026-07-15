@@ -164,6 +164,10 @@ height it;
 > val it = 1 : int
 height (Node(Empty, 1, Empty));
 > val it = 1 : int
+Node(Empty, 2, Node(Node(Empty, 3, Empty), 4, Empty));
+> val it = Node (Empty,2,Node (Node (Empty,3,Empty),4,Empty)) : inttree
+height it;
+> val it = 3 : int
 fun greater (x, y) = if x < y then y else x;
 > val greater = fn : 'a * 'a -> 'a
 (* disabled; should throw
