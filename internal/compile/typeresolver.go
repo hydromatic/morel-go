@@ -18,6 +18,7 @@
 package compile
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -94,6 +95,10 @@ func Deduce(sys *types.System, bindings []Binding,
 			nodeTerm: r.nodeTerm,
 			subst:    subst,
 		}
+		err = r.checkFieldRefs(typeMap)
+		if err != nil {
+			return nil, err
+		}
 		err = r.checkNumericOperators(typeMap)
 		if err != nil {
 			return nil, err
@@ -108,6 +113,77 @@ func Deduce(sys *types.System, bindings []Binding,
 type numericCall struct {
 	name  string
 	apply *ast.Apply
+}
+
+// selectorCall is a field reference "#field arg" (or its "arg
+// .field" sugar), to be checked against the resolved type of its
+// argument once unification is complete.
+type selectorCall struct {
+	sel   *ast.RecordSelector
+	apply *ast.Apply
+}
+
+// checkFieldRefs checks every field reference "#field arg" now
+// that unification has resolved its argument's type. An
+// argument whose
+// type is still a variable is a flex record we cannot resolve; a
+// non-record argument cannot have fields; and a record or tuple
+// argument must actually contain the field. The three cases carry
+// distinct messages and spans (the first two point at the
+// argument, the last at the selector).
+func (r *typeResolver) checkFieldRefs(m *TypeMap) error {
+	for _, call := range r.selectorCalls {
+		argType, err := m.TypeOf(call.apply.Arg)
+		if err != nil {
+			return err
+		}
+		if _, isVar := argType.(*types.Var); isVar {
+			return &Error{
+				Span: call.apply.Arg.Span(),
+				Msg: "unresolved flex record (can't tell what " +
+					"fields there are besides #" + call.sel.Name + ")",
+			}
+		}
+		names := fieldNames(argType)
+		if names == nil {
+			return &Error{
+				Span: call.apply.Arg.Span(),
+				Msg: "reference to field " + call.sel.Name +
+					" of non-record type " + argType.String(),
+			}
+		}
+		if !slices.Contains(names, call.sel.Name) {
+			return &Error{
+				Span: call.sel.Span(),
+				Msg: "no field '" + call.sel.Name + "' in type '" +
+					argType.String() + "'",
+			}
+		}
+	}
+	return nil
+}
+
+// fieldNames returns the field labels of a record or tuple type
+// (a tuple's fields are named "1", "2", ...), or nil if the type
+// is not record-like. unit, though the empty record, is a
+// primitive here and so counts as non-record.
+func fieldNames(t types.Type) []string {
+	switch t := t.(type) {
+	case *types.Record:
+		names := make([]string, len(t.Fields))
+		for i, f := range t.Fields {
+			names[i] = f.Label
+		}
+		return names
+	case *types.Tuple:
+		names := make([]string, len(t.Args))
+		for i := range t.Args {
+			names[i] = strconv.Itoa(i + 1)
+		}
+		return names
+	default:
+		return nil
+	}
 }
 
 // numericOpDomain gives the types for which each overloaded
@@ -169,15 +245,16 @@ type patTerm struct {
 // generates term equivalences from the structure of the tree,
 // and hands them to the unifier.
 type typeResolver struct {
-	sys          *types.System
-	u            *unify.Unifier
-	pairs        []unify.TermPair
-	nodeTerm     map[ast.Node]unify.Term
-	actions      []unify.VarAction
-	constraints  []unify.Constraint
-	preferred    []preferredType
-	numericCalls []numericCall
-	tyVarScopes  []map[string]*unify.Var
+	sys           *types.System
+	u             *unify.Unifier
+	pairs         []unify.TermPair
+	nodeTerm      map[ast.Node]unify.Term
+	actions       []unify.VarAction
+	constraints   []unify.Constraint
+	preferred     []preferredType
+	numericCalls  []numericCall
+	selectorCalls []selectorCall
+	tyVarScopes   []map[string]*unify.Var
 }
 
 // preferredType records that, if unification leaves v
@@ -764,6 +841,8 @@ func (r *typeResolver) deduceApply(env typeEnv, apply *ast.Apply,
 		// "apply" is "#field arg": when vArg (the argument
 		// type) resolves to a record, we can deduce v.
 		r.selectorAction(sel, vArg, v)
+		r.selectorCalls = append(r.selectorCalls,
+			selectorCall{sel: sel, apply: apply})
 	} else {
 		err := r.deduceExp(env, apply.Fn, vFn)
 		if err != nil {
