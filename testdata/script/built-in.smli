@@ -187,6 +187,10 @@ abs (valOf Int.minInt);
 >   raised at: stdIn:1.1-1.22
 abs ~3.5;
 > val it = 3.5 : real
+
+(* "val app : ('a -> unit) -> 'a list -> unit" maps to "List.app" *)
+app;
+> val it = fn : ('a -> unit) -> 'a list -> unit
 List.app;
 > val it = fn : ('a -> unit) -> 'a list -> unit
 General.before;
@@ -233,7 +237,15 @@ floor;
 > val it = fn : real -> int
 Real.floor;
 > val it = fn : real -> int
+
+(* "val foldl : ('a*'b->'b)-> 'b -> 'a list -> 'b" maps to "List.foldl" *)
+foldl;
+> val it = fn : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
 List.foldl;
+> val it = fn : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
+
+(* "val foldr : ('a*'b->'b)-> 'b -> 'a list -> 'b" maps to "List.foldr" *)
+foldr;
 > val it = fn : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
 List.foldr;
 > val it = fn : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b

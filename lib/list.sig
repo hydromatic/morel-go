@@ -29,6 +29,9 @@ sig
 
   (** is the type of polymorphic singly-linked lists. *)
   datatype 'a list = nil | `::` of 'a * 'a list
+
+  (** is the empty list. *)
+  val nil : 'a list [@@prototype "nil"]
   (**
    * is raised by operations that require a non-empty list when given an
    * empty list.

@@ -184,7 +184,7 @@ func stringCollateFn(f Val) (Val, error) {
 			if !ok {
 				panic(fmt.Sprintf("expected order, got %T", v))
 			}
-			if con.Name != "EQUAL" {
+			if con.Ordinal != equalOrdinal {
 				return con, nil
 			}
 		}

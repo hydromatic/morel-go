@@ -26,6 +26,37 @@ Sys.set ("printLength", 999);
 Sys.set ("stringDepth", ~1);
 > val it = () : unit
 
+List;
+> val it =
+>   {@=fn,all=fn,app=fn,collate=fn,concat=fn,drop=fn,`except`=fn,`exists`=fn,
+>    filter=fn,find=fn,foldl=fn,foldr=fn,getItem=fn,hd=fn,`intersect`=fn,
+>    last=fn,length=fn,map=fn,mapPartial=fn,mapi=fn,nil=[],nth=fn,null=fn,
+>    only=fn,partition=fn,rev=fn,revAppend=fn,tabulate=fn,`take`=fn,tl=fn}
+>   : {@:'a list * 'a list -> 'a list, all:('b -> bool) -> 'b list -> bool,
+>       app:('c -> unit) -> 'c list -> unit,
+>       collate:('d * 'd -> order) -> 'd list * 'd list -> order,
+>       concat:'e list list -> 'e list, drop:'f list * int -> 'f list,
+>       `except`:'g list list -> 'g list,
+>       `exists`:('h -> bool) -> 'h list -> bool,
+>       filter:('i -> bool) -> 'i list -> 'i list,
+>       find:('j -> bool) -> 'j list -> 'j option,
+>       foldl:('k * 'l -> 'l) -> 'l -> 'k list -> 'l,
+>       foldr:('m * 'n -> 'n) -> 'n -> 'm list -> 'n,
+>       getItem:'o list -> ('o * 'o list) option, hd:'p list -> 'p,
+>       `intersect`:'q list list -> 'q list, last:'r list -> 'r,
+>       length:'s list -> int, map:('t -> 'u) -> 't list -> 'u list,
+>       mapPartial:('v -> 'w option) -> 'v list -> 'w list,
+>       mapi:(int * 'x -> 'y) -> 'x list -> 'y list, nil:'z list,
+>       nth:'ba list * int -> 'ba, null:'bb list -> bool, only:'bc list -> 'bc,
+>       partition:('bd -> bool) -> 'bd list -> 'bd list * 'bd list,
+>       rev:'be list -> 'be list, revAppend:'bf list * 'bf list -> 'bf list,
+>       tabulate:int * (int -> 'bg) -> 'bg list,
+>       `take`:'bh list * int -> 'bh list, tl:'bi list -> 'bi list}
+
+(*) val nil : 'a list
+List.nil;
+> val it = [] : 'a list
+
 (*) val null : 'a list -> bool
 List.null;
 > val it = fn : 'a list -> bool
@@ -83,22 +114,69 @@ List.tl [];
 (*) val last : 'a list -> 'a
 List.last;
 > val it = fn : 'a list -> 'a
+List.last [1,2,3];
+> val it = 3 : int
+List.last [];
+> uncaught exception Empty
+>   raised at: stdIn:1.1-1.13
 
 (*) val getItem : 'a list -> ('a * 'a list) option
 List.getItem;
 > val it = fn : 'a list -> ('a * 'a list) option
+List.getItem [1,2,3];
+> val it = SOME (1,[2,3]) : (int * int list) option
+List.getItem [1];
+> val it = SOME (1,[]) : (int * int list) option
 
 (*) val nth : 'a list * int -> 'a
 List.nth;
 > val it = fn : 'a list * int -> 'a
+List.nth ([1,2,3], 2);
+> val it = 3 : int
+List.nth ([1], 0);
+> val it = 1 : int
+List.nth ([1,2,3], 3);
+> uncaught exception Subscript [subscript out of bounds]
+>   raised at: stdIn:1.1-1.22
+List.nth ([1,2,3], ~1);
+> uncaught exception Subscript [subscript out of bounds]
+>   raised at: stdIn:1.1-1.23
+
+(*) val only : 'a list -> 'a
+List.only [2];
+> val it = 2 : int
+List.only [1, 2, 3];
+> uncaught exception Size [size]
+>   raised at: stdIn:1.1-1.20
+List.only [];
+> uncaught exception Empty
+>   raised at: stdIn:1.1-1.13
 
 (*) val take : 'a list * int -> 'a list
 List.`take`;
 > val it = fn : 'a list * int -> 'a list
+List.`take` ([1,2,3], 0);
+> val it = [] : int list
+List.`take` ([1,2,3], 1);
+> val it = [1] : int list
+List.`take` ([1,2,3], 3);
+> val it = [1,2,3] : int list
+List.`take` ([1,2,3], 4);
+> uncaught exception Subscript [subscript out of bounds]
+>   raised at: stdIn:1.1-1.25
+List.`take` ([1,2,3], ~1);
+> uncaught exception Subscript [subscript out of bounds]
+>   raised at: stdIn:1.1-1.26
 
 (*) val drop : 'a list * int -> 'a list
 List.drop;
 > val it = fn : 'a list * int -> 'a list
+List.drop ([1,2,3], 0);
+> val it = [1,2,3] : int list
+List.drop ([1,2,3], 1);
+> val it = [2,3] : int list
+List.drop ([1,2,3], 3);
+> val it = [] : int list
 
 (*) val rev : 'a list -> 'a list
 List.rev;
@@ -115,18 +193,42 @@ List.rev [];
 (*) val concat : 'a list list -> 'a list
 List.concat;
 > val it = fn : 'a list list -> 'a list
+List.concat [[1],[2,3],[4,5,6]];
+> val it = [1,2,3,4,5,6] : int list
+List.concat [[1],[],[4,5,6]];
+> val it = [1,4,5,6] : int list
+List.concat [[],[],[]];
+> val it = [] : 'a list
+List.concat [];
+> val it = [] : 'a list
 
 (*) val revAppend : 'a list * 'a list -> 'a list
 List.revAppend;
 > val it = fn : 'a list * 'a list -> 'a list
+List.revAppend ([1,2],[3,4,5]);
+> val it = [2,1,3,4,5] : int list
+List.revAppend ([1],[3,4,5]);
+> val it = [1,3,4,5] : int list
+List.revAppend ([],[3,4,5]);
+> val it = [3,4,5] : int list
+List.revAppend ([1,2],[]);
+> val it = [2,1] : int list
+List.revAppend ([],[]);
+> val it = [] : 'a list
 
 (*) val app : ('a -> unit) -> 'a list -> unit
 List.app;
 > val it = fn : ('a -> unit) -> 'a list -> unit
+List.app (fn x => ignore (x + 2)) [2,3,4];
+> val it = () : unit
+List.app (fn x => ignore (x + 2)) [];
+> val it = () : unit
 
 (*) val mapi : (int * 'a -> 'b) -> 'a list -> 'b list
 List.mapi;
 > val it = fn : (int * 'a -> 'b) -> 'a list -> 'b list
+List.mapi (fn (i, s) => String.sub (s, i)) ["abc", "xyz"];
+> val it = [#"a",#"y"] : char list
 
 (*) val map : ('a -> 'b) -> 'a list -> 'b list
 List.map;
@@ -145,41 +247,118 @@ map (fn x => x) [];
 (*) val mapPartial : ('a -> 'b option) -> 'a list -> 'b list
 List.mapPartial;
 > val it = fn : ('a -> 'b option) -> 'a list -> 'b list
+List.mapPartial (fn x => if x mod 2 = 0 then NONE else SOME (x + 1)) [1,2,3,5,8];
+> val it = [2,4,6] : int list
+List.mapPartial (fn x => if x mod 2 = 0 then NONE else SOME (x + 1)) [];
+> val it = [] : int list
 
 (*) val find : ('a -> bool) -> 'a list -> 'a option
 List.find;
 > val it = fn : ('a -> bool) -> 'a list -> 'a option
+List.find (fn x => x mod 7 = 0) [2,3,5,8,13,21,34];
+> val it = SOME 21 : int option
+List.find (fn x => x mod 11 = 0) [2,3,5,8,13,21,34];
+> val it = NONE : int option
 
 (*) val filter : ('a -> bool) -> 'a list -> 'a list
 List.filter;
 > val it = fn : ('a -> bool) -> 'a list -> 'a list
+List.filter (fn x => x mod 2 = 0) [0,1,2,3,4,5];
+> val it = [0,2,4] : int list
+List.filter (fn x => x mod 2 = 0) [1,3];
+> val it = [] : int list
+List.filter (fn x => x mod 2 = 0) [];
+> val it = [] : int list
 
 (*) val partition : ('a -> bool) -> 'a list -> 'a list * 'a list
 List.partition;
 > val it = fn : ('a -> bool) -> 'a list -> 'a list * 'a list
+List.partition (fn x => x mod 2 = 0) [0,1,2,3,4,5];
+> val it = ([0,2,4],[1,3,5]) : int list * int list
+List.partition (fn x => x mod 2 = 0) [1];
+> val it = ([],[1]) : int list * int list
+List.partition (fn x => x mod 2 = 0) [];
+> val it = ([],[]) : int list * int list
 
 (*) val foldl : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
 List.foldl;
 > val it = fn : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
+List.foldl (fn (a, b) => a + b) 0 [1,2,3];
+> val it = 6 : int
+List.foldl (op +) 0 [1,2,3];
+> val it = 6 : int
+List.foldl (op +) 0 [];
+> val it = 0 : int
+List.foldl (fn (a, b) => b) 0 [1,2,3];
+> val it = 0 : int
+List.foldl (op -) 0 [1,2,3,4];
+> val it = 2 : int
 
 (*) val foldr : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
 List.foldr;
 > val it = fn : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
+List.foldr (fn (a, b) => a + b) 0 [1,2,3];
+> val it = 6 : int
+List.foldr (op +) 0 [1,2,3];
+> val it = 6 : int
+List.foldr (op +) 0 [];
+> val it = 0 : int
+List.foldr (fn (a, b) => b) 0 [1,2,3];
+> val it = 0 : int
+List.foldr (op -) 0 [1,2,3,4];
+> val it = ~2 : int
 
 (*) val exists : ('a -> bool) -> 'a list -> bool
 List.`exists`;
 > val it = fn : ('a -> bool) -> 'a list -> bool
+List.`exists` (fn x => x mod 2 = 0) [1,3,5];
+> val it = false : bool
+List.`exists` (fn x => x mod 2 = 0) [2,4,6];
+> val it = true : bool
+List.`exists` (fn x => x mod 2 = 0) [1,2,3];
+> val it = true : bool
+List.`exists` (fn x => x mod 2 = 0) [];
+> val it = false : bool
 
 (*) val all : ('a -> bool) -> 'a list -> bool
 List.all;
 > val it = fn : ('a -> bool) -> 'a list -> bool
+List.all (fn x => x mod 2 = 0) [1,3,5];
+> val it = false : bool
+List.all (fn x => x mod 2 = 0) [2,4,6];
+> val it = true : bool
+List.all (fn x => x mod 2 = 0) [1,2,3];
+> val it = false : bool
+List.all (fn x => x mod 2 = 0) [];
+> val it = true : bool
 
 (*) val tabulate : int * (int -> 'a) -> 'a list
 List.tabulate;
 > val it = fn : int * (int -> 'a) -> 'a list
+List.tabulate (5, let fun fact n = if n = 0 then 1 else n * fact (n - 1) in fact end);
+> val it = [1,1,2,6,24] : int list
+List.tabulate (1, let fun fact n = if n = 0 then 1 else n * fact (n - 1) in fact end);
+> val it = [1] : int list
+List.tabulate (0, let fun fact n = if n = 0 then 1 else n * fact (n - 1) in fact end);
+> val it = [] : int list
+List.tabulate (~1, let fun fact n = if n = 0 then 1 else n * fact (n - 1) in fact end);
+> uncaught exception Size [size]
+>   raised at: stdIn:1.1-1.87
 
 (*) val collate : ('a * 'a -> order) -> 'a list * 'a list -> order
 List.collate;
 > val it = fn : ('a * 'a -> order) -> 'a list * 'a list -> order
+List.collate (fn (x, y) => if x < y then LESS else if x = y then EQUAL else GREATER) ([1, 2,3], [1,3,4]);
+> val it = LESS : order
+List.collate (fn (x, y) => if x < y then LESS else if x = y then EQUAL else GREATER) ([1,2,3], [1,2,2]);
+> val it = GREATER : order
+List.collate (fn (x, y) => if x < y then LESS else if x = y then EQUAL else GREATER) ([1,2,3], [1,2]);
+> val it = GREATER : order
+List.collate (fn (x, y) => if x < y then LESS else if x = y then EQUAL else GREATER) ([1,2,3], [1,2,3,4]);
+> val it = LESS : order
+List.collate (fn (x, y) => if x < y then LESS else if x = y then EQUAL else GREATER) ([1,2,3], []);
+> val it = GREATER : order
+List.collate (fn (x, y) => if x < y then LESS else if x = y then EQUAL else GREATER) ([], []);
+> val it = EQUAL : order
 
 (*) End list.smli

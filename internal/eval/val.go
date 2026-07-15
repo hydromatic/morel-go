@@ -39,6 +39,7 @@ const (
 	ExnChr       = "Chr"
 	ExnDiv       = "Div"
 	ExnDomain    = "Domain"
+	ExnEmpty     = "Empty"
 	ExnOverflow  = "Overflow"
 	ExnSize      = "Size"
 	ExnSubscript = "Subscript"
@@ -63,7 +64,7 @@ var exnDescriptions = map[string]string{
 	"Domain":    "domain error",
 	"Match":     "nonexhaustive match failure",
 	ExnOverflow: "overflow",
-	"Size":      "size",
+	ExnSize:     "size",
 	"Subscript": "subscript out of bounds",
 }
 
