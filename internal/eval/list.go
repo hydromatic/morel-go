@@ -70,7 +70,7 @@ func caretFn(arg Val) (Val, error) {
 func hdFn(arg Val) (Val, error) {
 	list := asList(arg)
 	if len(list) == 0 {
-		return nil, &MorelError{Exn: "Empty"}
+		return nil, &MorelError{Exn: ExnEmpty}
 	}
 	return list[0], nil
 }
@@ -79,7 +79,7 @@ func hdFn(arg Val) (Val, error) {
 func tlFn(arg Val) (Val, error) {
 	list := asList(arg)
 	if len(list) == 0 {
-		return nil, &MorelError{Exn: "Empty"}
+		return nil, &MorelError{Exn: ExnEmpty}
 	}
 	return list[1:], nil
 }
@@ -247,4 +247,353 @@ func cmpOrdered[T int32 | float32 | string | uint64](a, b T) int {
 	default:
 		return 0
 	}
+}
+
+// lastFn is "List.last xs"; Empty on the empty list.
+func lastFn(arg Val) (Val, error) {
+	list := asList(arg)
+	if len(list) == 0 {
+		return nil, &MorelError{Exn: ExnEmpty}
+	}
+	return list[len(list)-1], nil
+}
+
+// getItemFn is "List.getItem xs": SOME (hd, tl), or NONE on the
+// empty list.
+func getItemFn(arg Val) (Val, error) {
+	list := asList(arg)
+	if len(list) == 0 {
+		return noneVal, nil
+	}
+	return someVal([]Val{list[0], list[1:]}), nil
+}
+
+// nthFn is "List.nth (xs, i)"; Subscript if i is out of range.
+func nthFn(arg Val) (Val, error) {
+	a, b := asPair(arg)
+	list, i := asList(a), asInt(b)
+	if i < 0 || int(i) >= len(list) {
+		return nil, &MorelError{Exn: ExnSubscript}
+	}
+	return list[i], nil
+}
+
+// onlyFn is "List.only xs" (a Morel extension): the sole
+// element; Empty if the list is empty, Size if it has more than
+// one element.
+func onlyFn(arg Val) (Val, error) {
+	list := asList(arg)
+	switch len(list) {
+	case 0:
+		return nil, &MorelError{Exn: ExnEmpty}
+	case 1:
+		return list[0], nil
+	default:
+		return nil, &MorelError{Exn: ExnSize}
+	}
+}
+
+// takeFn is "List.take (xs, i)": the first i elements;
+// Subscript if i < 0 or i > length xs.
+func takeFn(arg Val) (Val, error) {
+	a, b := asPair(arg)
+	list, i := asList(a), asInt(b)
+	if i < 0 || int(i) > len(list) {
+		return nil, &MorelError{Exn: ExnSubscript}
+	}
+	return list[:i], nil
+}
+
+// dropFn is "List.drop (xs, i)": all but the first i elements;
+// Subscript if i < 0 or i > length xs.
+func dropFn(arg Val) (Val, error) {
+	a, b := asPair(arg)
+	list, i := asList(a), asInt(b)
+	if i < 0 || int(i) > len(list) {
+		return nil, &MorelError{Exn: ExnSubscript}
+	}
+	return list[i:], nil
+}
+
+// listConcatFn is "List.concat xss", the concatenation of a
+// list of lists.
+func listConcatFn(arg Val) (Val, error) {
+	lists := asList(arg)
+	n := 0
+	for _, l := range lists {
+		n += len(asList(l))
+	}
+	out := make([]Val, 0, n)
+	for _, l := range lists {
+		out = append(out, asList(l)...)
+	}
+	return out, nil
+}
+
+// revAppendFn is "List.revAppend (xs, ys)": rev xs @ ys.
+func revAppendFn(arg Val) (Val, error) {
+	a, b := asPair(arg)
+	list, tail := asList(a), asList(b)
+	out := make([]Val, 0, len(list)+len(tail))
+	for _, v := range slices.Backward(list) {
+		out = append(out, v)
+	}
+	return append(out, tail...), nil
+}
+
+// appFn is "List.app f xs": f applied to each element for its
+// effect; the result is unit.
+func appFn(f Val) (Val, error) {
+	return Fn(func(arg Val) (Val, error) {
+		for _, v := range asList(arg) {
+			_, err := ApplyVal(f, v)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return unitVal, nil
+	}), nil
+}
+
+// mapPartialFn is "List.mapPartial f xs": the SOME results of f.
+func mapPartialFn(f Val) (Val, error) {
+	return Fn(func(arg Val) (Val, error) {
+		out := []Val{}
+		for _, v := range asList(arg) {
+			r, err := ApplyVal(f, v)
+			if err != nil {
+				return nil, err
+			}
+			if inner, isSome := asOption(r); isSome {
+				out = append(out, inner)
+			}
+		}
+		return out, nil
+	}), nil
+}
+
+// findFn is "List.find f xs": SOME of the first element
+// satisfying f, or NONE.
+func findFn(f Val) (Val, error) {
+	return Fn(func(arg Val) (Val, error) {
+		for _, v := range asList(arg) {
+			r, err := ApplyVal(f, v)
+			if err != nil {
+				return nil, err
+			}
+			if asBool(r) {
+				return someVal(v), nil
+			}
+		}
+		return noneVal, nil
+	}), nil
+}
+
+// filterFn is "List.filter f xs".
+func filterFn(f Val) (Val, error) {
+	return Fn(func(arg Val) (Val, error) {
+		out := []Val{}
+		for _, v := range asList(arg) {
+			r, err := ApplyVal(f, v)
+			if err != nil {
+				return nil, err
+			}
+			if asBool(r) {
+				out = append(out, v)
+			}
+		}
+		return out, nil
+	}), nil
+}
+
+// partitionFn is "List.partition f xs": the elements that
+// satisfy f, and those that do not.
+func partitionFn(f Val) (Val, error) {
+	return Fn(func(arg Val) (Val, error) {
+		yes, no := []Val{}, []Val{}
+		for _, v := range asList(arg) {
+			r, err := ApplyVal(f, v)
+			if err != nil {
+				return nil, err
+			}
+			if asBool(r) {
+				yes = append(yes, v)
+			} else {
+				no = append(no, v)
+			}
+		}
+		return []Val{yes, no}, nil
+	}), nil
+}
+
+// fold implements foldl (left-to-right) and foldr: f is applied
+// to (element, accumulator).
+func fold(leftToRight bool) Fn {
+	return Curry2(func(f, init Val) (Val, error) {
+		return Fn(func(arg Val) (Val, error) {
+			list := asList(arg)
+			acc := init
+			for i := range list {
+				v := list[i]
+				if !leftToRight {
+					v = list[len(list)-1-i]
+				}
+				r, err := ApplyVal(f, []Val{v, acc})
+				if err != nil {
+					return nil, err
+				}
+				acc = r
+			}
+			return acc, nil
+		}), nil
+	})
+}
+
+// existsFn is "List.exists f xs".
+func existsFn(f Val) (Val, error) {
+	return Fn(func(arg Val) (Val, error) {
+		for _, v := range asList(arg) {
+			r, err := ApplyVal(f, v)
+			if err != nil {
+				return nil, err
+			}
+			if asBool(r) {
+				return true, nil
+			}
+		}
+		return false, nil
+	}), nil
+}
+
+// allFn is "List.all f xs".
+func allFn(f Val) (Val, error) {
+	return Fn(func(arg Val) (Val, error) {
+		for _, v := range asList(arg) {
+			r, err := ApplyVal(f, v)
+			if err != nil {
+				return nil, err
+			}
+			if !asBool(r) {
+				return false, nil
+			}
+		}
+		return true, nil
+	}), nil
+}
+
+// tabulateFn is "List.tabulate (n, f)": the list [f 0, ...,
+// f (n-1)]; Size if n < 0.
+func tabulateFn(arg Val) (Val, error) {
+	a, b := asPair(arg)
+	n := asInt(a)
+	if n < 0 {
+		return nil, &MorelError{Exn: ExnSize}
+	}
+	out := make([]Val, n)
+	for i := range out {
+		r, err := ApplyVal(b, int32(i))
+		if err != nil {
+			return nil, err
+		}
+		out[i] = r
+	}
+	return out, nil
+}
+
+// listCollateFn is "List.collate f (xs, ys)": lexicographic
+// comparison using f on elements.
+func listCollateFn(f Val) (Val, error) {
+	return Fn(func(arg Val) (Val, error) {
+		a, b := asPair(arg)
+		xs, ys := asList(a), asList(b)
+		for i := 0; i < len(xs) && i < len(ys); i++ {
+			v, err := ApplyVal(f, []Val{xs[i], ys[i]})
+			if err != nil {
+				return nil, err
+			}
+			con, ok := v.(Con)
+			if !ok {
+				panic(fmt.Sprintf("expected order, got %T", v))
+			}
+			if con.Ordinal != equalOrdinal {
+				return con, nil
+			}
+		}
+		//nolint:gosec // a list's length fits in an int.
+		return orderVal(cmpOrdered(int32(len(xs)),
+			int32(len(ys)))), nil
+	}), nil
+}
+
+// exceptFn is "List.except [xs, ys, ...]" (a Morel extension):
+// the elements of the first list that appear in none of the
+// others.
+func exceptFn(arg Val) (Val, error) {
+	lists := asList(arg)
+	if len(lists) == 0 {
+		return []Val{}, nil
+	}
+	out := []Val{}
+	for _, v := range asList(lists[0]) {
+		found := false
+		for _, other := range lists[1:] {
+			for _, w := range asList(other) {
+				if valsEqual(v, w) {
+					found = true
+					break
+				}
+			}
+		}
+		if !found {
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}
+
+// intersectFn is "List.intersect [xs, ys, ...]" (a Morel
+// extension): the elements of the first list that appear in all
+// of the others.
+func intersectFn(arg Val) (Val, error) {
+	lists := asList(arg)
+	if len(lists) == 0 {
+		return []Val{}, nil
+	}
+	out := []Val{}
+	for _, v := range asList(lists[0]) {
+		inAll := true
+		for _, other := range lists[1:] {
+			found := false
+			for _, w := range asList(other) {
+				if valsEqual(v, w) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				inAll = false
+				break
+			}
+		}
+		if inAll {
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}
+
+// mapiFn is "List.mapi f xs": f applied to (index, element).
+func mapiFn(f Val) (Val, error) {
+	return Fn(func(arg Val) (Val, error) {
+		list := asList(arg)
+		out := make([]Val, len(list))
+		for i, v := range list {
+			r, err := ApplyVal(f, []Val{int32(i), v})
+			if err != nil {
+				return nil, err
+			}
+			out[i] = r
+		}
+		return out, nil
+	}), nil
 }
