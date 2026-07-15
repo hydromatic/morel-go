@@ -206,34 +206,73 @@ func conResultType(sys *types.System, t typeSpec) (types.Type,
 	return sys.Named(t.name, args...), tyVars
 }
 
+// member is a structure value with its type and the number of
+// distinct type variables that type mentions.
+type member struct {
+	field types.Field
+	nvars int
+}
+
 // bindVals binds the file's structure as a record whose fields
 // are its values, so that "String.size" is a field selection.
 // The General
 // structure's values also bind unqualified. A value whose type
 // cannot be converted yet is skipped.
 func (f *file) bindVals(sys *types.System, result *Result) {
-	var fields []types.Field
+	var members []member
 	for _, v := range f.vals {
-		t, err := parseType(sys, v.typ, map[string]int{})
+		tyVars := map[string]int{}
+		t, err := parseType(sys, v.typ, tyVars)
 		if err != nil {
 			result.Skipped = append(result.Skipped,
 				f.structure+"."+v.name)
 			continue
 		}
-		fields = append(fields,
-			types.Field{Label: v.name, Type: t})
+		members = append(members, member{
+			field: types.Field{Label: v.name, Type: t},
+			nvars: len(tyVars),
+		})
 		if f.structure == "General" {
 			result.Bindings = append(result.Bindings,
 				compile.Binding{Name: v.name, Type: t})
 		}
 	}
-	if len(fields) > 0 {
-		result.Bindings = append(result.Bindings,
-			compile.Binding{
-				Name: f.structure,
-				Type: sys.Record(fields),
-			})
+	if len(members) == 0 {
+		return
 	}
+	result.Bindings = append(result.Bindings,
+		compile.Binding{
+			Name: f.structure,
+			Type: sys.Record(renumber(sys, members)),
+		})
+}
+
+// renumber alpha-renames the members' type variables into one
+// left-to-right sequence over the whole record, so that a
+// structure printed as a record shows contiguous variables ('a,
+// 'b, ...). Each member is independently
+// polymorphic, so a variable shared by two members prints under
+// two different names. Members are numbered in label order — the
+// order the record displays its fields.
+func renumber(sys *types.System, members []member) []types.Field {
+	sort.Slice(members, func(i, j int) bool {
+		return types.LabelLess(members[i].field.Label,
+			members[j].field.Label)
+	})
+	fields := make([]types.Field, len(members))
+	base := 0
+	for i, m := range members {
+		fields[i] = m.field
+		if base > 0 && m.nvars > 0 {
+			args := make([]types.Type, m.nvars)
+			for j := range args {
+				args[j] = sys.Var(base + j)
+			}
+			fields[i].Type = sys.Substitute(m.field.Type, args)
+		}
+		base += m.nvars
+	}
+	return fields
 }
 
 func parseType(sys *types.System, src string,

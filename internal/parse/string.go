@@ -75,3 +75,98 @@ func unquoteIdent(text string) string {
 	s := text[1 : len(text)-1]
 	return strings.ReplaceAll(s, "``", "`")
 }
+
+// QuoteIdent renders a binding name as it appears in printed
+// output: a backtick-quoted identifier (doubling any internal
+// backtick) when the name contains a backtick or a space,
+// otherwise the name unchanged. A reserved word used as a name
+// is not quoted here: the reference output prints "val val" for
+// a binding named "val". Record labels are
+// different: see QuoteLabel.
+func QuoteIdent(id string) string {
+	if strings.Contains(id, "`") {
+		return "`" + strings.ReplaceAll(id, "`", "``") + "`"
+	}
+	if strings.Contains(id, " ") {
+		return "`" + id + "`"
+	}
+	return id
+}
+
+// QuoteLabel renders a record label as printed output. It is like
+// QuoteIdent but also back-tick-quotes a reserved word, as
+// appendId does: a structure with a member named "exists" prints
+// as "{`exists`=fn, ...}". (A binding name of the same spelling
+// prints unquoted; only labels quote reserved words.)
+func QuoteLabel(id string) string {
+	if reservedWords[id] {
+		return "`" + id + "`"
+	}
+	return QuoteIdent(id)
+}
+
+// reservedWords are morel's keywords, which may be used as an
+// identifier only when back-tick quoted.
+var reservedWords = map[string]bool{
+	// lint: sort until '^}' where '^\t"'
+	"and":       true,
+	"andalso":   true,
+	"as":        true,
+	"case":      true,
+	"compute":   true,
+	"current":   true,
+	"datatype":  true,
+	"distinct":  true,
+	"div":       true,
+	"elem":      true,
+	"elements":  true,
+	"else":      true,
+	"end":       true,
+	"eqtype":    true,
+	"except":    true,
+	"exception": true,
+	"exists":    true,
+	"fn":        true,
+	"forall":    true,
+	"from":      true,
+	"full":      true,
+	"fun":       true,
+	"group":     true,
+	"if":        true,
+	"implies":   true,
+	"in":        true,
+	"inst":      true,
+	"intersect": true,
+	"into":      true,
+	"join":      true,
+	"left":      true,
+	"let":       true,
+	"mod":       true,
+	"notelem":   true,
+	"o":         true,
+	"of":        true,
+	"on":        true,
+	"op":        true,
+	"order":     true,
+	"ordinal":   true,
+	"orelse":    true,
+	"over":      true,
+	"raise":     true,
+	"rec":       true,
+	"require":   true,
+	"right":     true,
+	"sig":       true,
+	"signature": true,
+	"skip":      true,
+	"take":      true,
+	"then":      true,
+	"through":   true,
+	"type":      true,
+	"typeof":    true,
+	"union":     true,
+	"unorder":   true,
+	"val":       true,
+	"where":     true,
+	"with":      true,
+	"yield":     true,
+}

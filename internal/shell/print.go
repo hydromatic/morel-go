@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/hydromatic/morel-go/internal/eval"
+	"github.com/hydromatic/morel-go/internal/parse"
 	"github.com/hydromatic/morel-go/internal/pp"
 	"github.com/hydromatic/morel-go/internal/types"
 )
@@ -38,16 +39,16 @@ func (c *Config) prettyBinding(name string, v eval.Val,
 	t types.Type,
 ) string {
 	valueDoc := c.valueDoc(t, v, 1)
-	typeDoc := pp.Text(t.String())
+	typeDoc := c.typeDoc(t)
 	const indent = 2
 	valuePart := pp.Union(
 		pp.Beside(pp.Text(" "), pp.Flatten(valueDoc)),
 		pp.Nest(indent, pp.Beside(pp.HardLine(), valueDoc)))
 	typePart := pp.Union(
-		pp.Beside(pp.Text(" : "), typeDoc),
+		pp.Beside(pp.Text(" : "), pp.Flatten(typeDoc)),
 		pp.Nest(indent, pp.Concat(pp.HardLine(), pp.Text(": "),
 			typeDoc)))
-	doc := pp.Concat(pp.Text("val "+name+" ="), valuePart,
+	doc := pp.Concat(pp.Text("val "+parse.QuoteIdent(name)+" ="), valuePart,
 		typePart)
 	return pp.Render(c.width(), doc)
 }
@@ -84,7 +85,7 @@ func (c *Config) valueDoc(t types.Type, v eval.Val,
 		vals := asVals(v)
 		docs := make([]pp.Doc, len(t.Fields))
 		for i, field := range t.Fields {
-			docs[i] = pp.Beside(pp.Text(field.Label+"="),
+			docs[i] = pp.Beside(pp.Text(parse.QuoteLabel(field.Label)+"="),
 				c.valueDoc(field.Type, vals[i], depth+1))
 		}
 		return c.seqDoc("{", "}", docs)
@@ -306,4 +307,105 @@ func asVals(v eval.Val) []eval.Val {
 		return nil
 	}
 	return vals
+}
+
+// typeDoc lays out a type, wrapping record, tuple, function, and
+// collection (list) types across lines at lineWidth.
+// Primitive, type-variable, and datatype
+// (option, ...) types print flat via their canonical string.
+func (c *Config) typeDoc(t types.Type) pp.Doc {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch t := t.(type) {
+	case *types.Fn:
+		param := c.parenTypeDoc(t.Param, isFn(t.Param))
+		result := c.typeDoc(t.Result)
+		// The type breaks before "->", which leads the
+		// continuation line; an explicit union (not group) keeps
+		// this arrow honest when the result itself can break.
+		return pp.Union(
+			pp.Flatten(pp.Concat(param, pp.Text(" -> "), result)),
+			pp.Align(pp.Nest(1, pp.Concat(param, pp.HardLine(),
+				pp.Text("-> "), result))))
+	case *types.List:
+		return c.collectionTypeDoc(t.Elem, "list")
+	case *types.Record:
+		return c.recordTypeDoc(t)
+	case *types.Tuple:
+		items := make([]pp.Doc, len(t.Args))
+		for i, arg := range t.Args {
+			d := c.parenTypeDoc(arg, isFn(arg) || isTuple(arg))
+			if i == 0 {
+				items[i] = d
+			} else {
+				items[i] = pp.Beside(pp.Text("* "), d)
+			}
+		}
+		return pp.Align(pp.Nest(1, pp.Fill(pp.Text(" "), items)))
+	default:
+		return pp.Text(t.String())
+	}
+}
+
+// recordTypeDoc lays out a record type "{a:t1, b:t2}", filling
+// its fields across lines joined by ", ", with continuation lines
+// indented one column past the first field.
+func (c *Config) recordTypeDoc(t *types.Record) pp.Doc {
+	n := len(t.Fields)
+	items := make([]pp.Doc, n)
+	for i, f := range t.Fields {
+		field := pp.Beside(pp.Text(parse.QuoteLabel(f.Label)+":"),
+			c.typeDoc(f.Type))
+		if i < n-1 {
+			items[i] = pp.Beside(field, pp.Text(","))
+		} else {
+			items[i] = field
+		}
+	}
+	return pp.Beside(pp.Text("{"),
+		pp.Beside(pp.Align(pp.Nest(1, pp.Fill(pp.Text(" "), items))),
+			pp.Text("}")))
+}
+
+// collectionTypeDoc lays out "elem list": the "list" keyword may
+// break onto its own line when the element type leaves no room.
+func (c *Config) collectionTypeDoc(elem types.Type,
+	name string,
+) pp.Doc {
+	elemDoc := c.parenTypeDoc(elem, isFn(elem) || isTuple(elem))
+	return pp.Align(pp.Beside(elemDoc,
+		pp.Group(pp.Beside(pp.Line(), pp.Text(name)))))
+}
+
+// parenTypeDoc wraps a type's layout in parentheses when the
+// surrounding context requires it.
+func (c *Config) parenTypeDoc(t types.Type, paren bool) pp.Doc {
+	d := c.typeDoc(t)
+	if paren {
+		return pp.Beside(pp.Text("("), pp.Beside(d, pp.Text(")")))
+	}
+	return d
+}
+
+func isFn(t types.Type) bool {
+	_, ok := t.(*types.Fn)
+	return ok
+}
+
+func isTuple(t types.Type) bool {
+	_, ok := t.(*types.Tuple)
+	return ok
+}
+
+// prettyType renders a ":t" result "val name : type", wrapping
+// the type at lineWidth: it stays on the "val name" line if it
+// fits flat there, otherwise moves to its own line indented by 2.
+func (c *Config) prettyType(name string, t types.Type) string {
+	const indent = 2
+	typeDoc := c.typeDoc(t)
+	typePart := pp.Union(
+		pp.Beside(pp.Text(" : "), pp.Flatten(typeDoc)),
+		pp.Nest(indent, pp.Concat(pp.HardLine(), pp.Text(": "),
+			typeDoc)))
+	doc := pp.Beside(pp.Text("val "+parse.QuoteIdent(name)), typePart)
+	return pp.Render(c.width(), doc)
 }
