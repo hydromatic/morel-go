@@ -701,6 +701,8 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 		}
 		r.reg(exp, v)
 		return nil
+	case *ast.From:
+		return r.deduceFrom(env, e, v)
 	case *ast.ID:
 		return r.deduceID(env, e, v)
 	case *ast.If:
@@ -952,9 +954,12 @@ func (r *typeResolver) selectorAction(sel *ast.RecordSelector,
 
 // deduceRecord handles a record expression, e.g. "{a=1, b=2}" or
 // "{e with a=1}".
-func (r *typeResolver) deduceRecord(env typeEnv,
-	record *ast.Record, v *unify.Var,
-) error {
+// deduceRecordFields types the fields of a record expression,
+// returning them sorted by label with their deduced terms. It
+// does not handle the "with" clause; the caller does.
+func (r *typeResolver) deduceRecordFields(env typeEnv,
+	record *ast.Record,
+) ([]labelTerm, error) {
 	fields := make([]labelTerm, 0, len(record.Fields))
 	byLabel := map[string]ast.Expr{}
 	for _, f := range record.Fields {
@@ -962,7 +967,7 @@ func (r *typeResolver) deduceRecord(env typeEnv,
 		if label == "" {
 			id, ok := f.Exp.(*ast.ID)
 			if !ok {
-				return &Error{
+				return nil, &Error{
 					Span: record.Span(),
 					Msg:  "cannot derive label for expression",
 				}
@@ -974,7 +979,7 @@ func (r *typeResolver) deduceRecord(env typeEnv,
 			if span == (token.Span{}) {
 				span = f.Exp.Span()
 			}
-			return &Error{
+			return nil, &Error{
 				Span: span,
 				Msg: "duplicate field '" + label +
 					"' in record",
@@ -984,22 +989,34 @@ func (r *typeResolver) deduceRecord(env typeEnv,
 		fields = append(fields, labelTerm{label: label})
 	}
 	sortFields(fields)
-	labelTypes := map[string]unify.Term{}
 	for i := range fields {
 		vArg := r.u.Variable()
 		err := r.deduceExp(env, byLabel[fields[i].label], vArg)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		fields[i].term = vArg
-		labelTypes[fields[i].label] = vArg
+	}
+	return fields, nil
+}
+
+func (r *typeResolver) deduceRecord(env typeEnv,
+	record *ast.Record, v *unify.Var,
+) error {
+	fields, err := r.deduceRecordFields(env, record)
+	if err != nil {
+		return err
+	}
+	labelTypes := map[string]unify.Term{}
+	for _, f := range fields {
+		labelTypes[f.label] = f.term
 	}
 	if record.With == nil {
 		r.regEquiv(record, v, r.recordTerm(fields))
 		return nil
 	}
 	v2 := r.u.Variable()
-	err := r.deduceExp(env, record.With, v2)
+	err = r.deduceExp(env, record.With, v2)
 	if err != nil {
 		return err
 	}
