@@ -39,7 +39,7 @@ func (a *Args) Run(in io.Reader, out io.Writer) error {
 		return runEval(kernel, a.Eval, out)
 	}
 	if len(a.Files) == 0 {
-		return NewRunner(kernel, in, out, "stdIn").Run()
+		return a.runReader(kernel, "stdIn", in, out)
 	}
 	for _, file := range a.Files {
 		err := a.runFile(kernel, file, in, out)
@@ -69,8 +69,6 @@ func runEval(kernel *Kernel, expr string, out io.Writer) error {
 }
 
 // runFile runs one script file (or standard input, for "-").
-// Script format is elaborated in the next task; for now every
-// file runs as a batch, echoing nothing.
 func (a *Args) runFile(kernel *Kernel, file string,
 	in io.Reader, out io.Writer,
 ) error {
@@ -86,5 +84,33 @@ func (a *Args) runFile(kernel *Kernel, file string,
 	} else {
 		name = "stdIn"
 	}
-	return NewRunner(kernel, reader, out, name).Run()
+	return a.runReader(kernel, name, reader, out)
+}
+
+// runReader runs the statements read from reader. In SMLI
+// (idempotent) mode — a ".smli" file, or "--idempotent" — the
+// whole source goes through RunScript, the same code path the
+// test harness uses, and its idempotent-format output (the
+// script with each "> " line refreshed) is written to out. A
+// non-idempotent source runs as a batch, streaming each
+// statement's result as it completes.
+func (a *Args) runReader(kernel *Kernel, name string,
+	reader io.Reader, out io.Writer,
+) error {
+	if !a.Idempotent {
+		return NewRunner(kernel, reader, out, name).Run()
+	}
+	src, err := io.ReadAll(reader)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", name, err)
+	}
+	result, err := RunScript(kernel, name, string(src))
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(out, result)
+	if err != nil {
+		return fmt.Errorf("write: %w", err)
+	}
+	return nil
 }
