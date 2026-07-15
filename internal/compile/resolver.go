@@ -79,11 +79,7 @@ func (r *resolver) toDecl(env *coreEnv, decl ast.Decl) (core.Decl,
 		return r.toRecDecl(env, d)
 	}
 	if len(d.Binds) != 1 {
-		return nil, nil, &Error{
-			Span: decl.Span(),
-			Msg: "cannot convert to core: " +
-				decl.Op().String(),
-		}
+		return r.toParallelDecl(env, d)
 	}
 	bind := d.Binds[0]
 	pat, err := r.toPat(bind.Pat)
@@ -104,6 +100,50 @@ func (r *resolver) toDecl(env *coreEnv, decl ast.Decl) (core.Decl,
 		Span: bind.Span(),
 	}
 	return valDecl, env2, nil
+}
+
+// toParallelDecl converts a non-recursive "and" group ("val x =
+// e1 and y = e2"), which binds its patterns in parallel: each
+// expression sees only the outer environment, not its siblings.
+// It is modelled as a single tuple binding, "val (p1, p2) = (e1,
+// e2)", which the compiler already destructures into the
+// individual names.
+func (r *resolver) toParallelDecl(env *coreEnv, d *ast.ValDecl) (
+	core.Decl, *coreEnv, error,
+) {
+	pats := make([]core.Pat, len(d.Binds))
+	exps := make([]core.Exp, len(d.Binds))
+	patTypes := make([]types.Type, len(d.Binds))
+	expTypes := make([]types.Type, len(d.Binds))
+	for i, bind := range d.Binds {
+		pat, err := r.toPat(bind.Pat)
+		if err != nil {
+			return nil, nil, err
+		}
+		exp, err := r.toExp(env, bind.Exp)
+		if err != nil {
+			return nil, nil, err
+		}
+		pats[i], exps[i] = pat, exp
+		patTypes[i], expTypes[i] = pat.Type(), exp.Type()
+	}
+	patTuple := &core.TuplePat{
+		T:    r.typeMap.sys.Tuple(patTypes...),
+		Args: pats,
+	}
+	expTuple := &core.Tuple{
+		T:    r.typeMap.sys.Tuple(expTypes...),
+		Args: exps,
+	}
+	env2 := env
+	for _, id := range core.PatIDs(patTuple) {
+		env2 = env2.bind(id)
+	}
+	return &core.NonRecValDecl{
+		Pat:  patTuple,
+		Exp:  expTuple,
+		Span: d.Span(),
+	}, env2, nil
 }
 
 // toRecDecl converts a recursive declaration; its names are in
