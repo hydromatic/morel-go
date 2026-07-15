@@ -92,8 +92,8 @@ func (c *Config) valueDoc(t types.Type, v eval.Val,
 	case *types.List:
 		return c.seqDoc("[", "]", c.elementDocs(t.Elem, v, depth))
 	case *types.Named:
-		if t.Name == "bag" && len(t.Args) == 1 {
-			return c.seqDoc("[", "]",
+		if t.Name == "vector" && len(t.Args) == 1 {
+			return c.seqDoc("#[", "]",
 				c.elementDocs(t.Args[0], v, depth))
 		}
 		return c.conDoc(t, v, depth)

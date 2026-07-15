@@ -54,9 +54,10 @@ func deduce(t *testing.T, src string) (*compile.Resolved, error) {
 	option := sys.Named("option", a)
 	sys.DeclareTyCon("NONE", nil, option)
 	sys.DeclareTyCon("SOME", a, option)
-	// The global "bag" alias's type mentions the bag type
-	// constructor, which lib/bag.sig declares in the real kernel.
+	// The global "bag" and "vector" aliases' types mention type
+	// constructors that lib/*.sig declare in the real kernel.
 	sys.DeclareDatatype("bag", 1)
+	sys.DeclareDatatype("vector", 1)
 	bindings := compile.TopBindings(sys)
 	bindings = append(bindings,
 		compile.Binding{Name: "true", Type: sys.Bool},
