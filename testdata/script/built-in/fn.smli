@@ -1,0 +1,59 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Unit tests for the built-in `Fn` structure, defined
+ * by the Standard ML Basis Library.
+ *)
+Sys.set ("lineWidth", 78);
+> val it = () : unit
+Sys.set ("printLength", 999);
+> val it = () : unit
+Sys.set ("stringDepth", ~1);
+> val it = () : unit
+
+Fn.id;
+> val it = fn : 'a -> 'a
+Fn.const;
+> val it = fn : 'a -> 'b -> 'a
+(* In SMLNJ, the previous line is
+> val it = fn : ?.X1 -> string
+*)
+Fn.apply;
+> val it = fn : ('a -> 'b) * 'a -> 'b
+Fn.curry;
+> val it = fn : ('a * 'b -> 'c) -> 'a -> 'b -> 'c
+Fn.uncurry;
+> val it = fn : ('a -> 'b -> 'c) -> 'a * 'b -> 'c
+Fn.flip;
+> val it = fn : ('a * 'b -> 'c) -> 'b * 'a -> 'c
+Fn.repeat;
+> val it = fn : int -> ('a -> 'a) -> 'a -> 'a
+(* Partial application with a negative count should raise immediately,
+ * before the second argument arrives. *)
+Fn.equal;
+> val it = fn : 'a -> 'a -> bool
+(* ^ SMLNJ gives
+> val it = fn : ''a -> ''a -> bool
+*)
+Fn.notEqual;
+> val it = fn : 'a -> 'a -> bool
+(* ^ SMLNJ gives
+> val it = fn : ''a -> ''a -> bool
+*)
+
+(*) End fn.smli

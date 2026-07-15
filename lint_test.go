@@ -30,6 +30,35 @@ import (
 	"testing"
 )
 
+// TestStructureScripts checks that every built-in structure (one
+// per "lib/*.sig" file) has a "testdata/script/built-in/<name>.smli"
+// test script. The
+// companion guarantee — that every ".smli" file is run — holds by
+// construction, since TestScripts walks the directory.
+func TestStructureScripts(t *testing.T) {
+	sigs, err := os.ReadDir("lib")
+	if err != nil {
+		t.Fatalf("read lib: %v", err)
+	}
+	scriptDir := "testdata/script/built-in"
+	var missing []string
+	for _, sig := range sigs {
+		name := sig.Name()
+		if !strings.HasSuffix(name, ".sig") {
+			continue
+		}
+		script := strings.TrimSuffix(name, ".sig") + ".smli"
+		_, err := os.Stat(scriptDir + "/" + script)
+		if err != nil {
+			missing = append(missing, script)
+		}
+	}
+	if len(missing) > 0 {
+		t.Errorf("missing built-in test scripts in %s: %s",
+			scriptDir, strings.Join(missing, ", "))
+	}
+}
+
 // TestLint checks every file tracked by git against the project
 // style rules.
 func TestLint(t *testing.T) {

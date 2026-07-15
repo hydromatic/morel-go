@@ -1,0 +1,104 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Unit tests for the built-in `Bag` structure.
+ *)
+Sys.set ("lineWidth", 78);
+> val it = () : unit
+Sys.set ("printLength", 999);
+> val it = () : unit
+Sys.set ("stringDepth", ~1);
+> val it = () : unit
+
+(*) val null : 'a bag -> bool
+Bag.null;
+> val it = fn : 'a bag -> bool
+
+(*) val length : 'a bag -> int
+Bag.length;
+> val it = fn : 'a bag -> int
+
+(*) val fromList : 'a list -> 'a bag
+Bag.fromList;
+> val it = fn : 'a list -> 'a bag
+
+(*) val toList : 'a bag -> 'a list
+Bag.toList;
+> val it = fn : 'a bag -> 'a list
+
+(*) val hd : 'a bag -> 'a
+Bag.hd;
+> val it = fn : 'a bag -> 'a
+
+(*) val tl : 'a bag -> 'a bag
+Bag.tl;
+> val it = fn : 'a bag -> 'a bag
+
+(*) val take : 'a bag * int -> 'a bag
+Bag.`take`;
+> val it = fn : 'a bag * int -> 'a bag
+
+(*) val drop : 'a bag * int -> 'a bag
+Bag.drop;
+> val it = fn : 'a bag * int -> 'a bag
+
+(*) val concat : 'a bag list -> 'a bag
+Bag.concat;
+> val it = fn : 'a bag list -> 'a bag
+
+(*) val app : ('a -> unit) -> 'a bag -> unit
+Bag.app;
+> val it = fn : ('a -> unit) -> 'a bag -> unit
+
+(*) val map : ('a -> 'b) -> 'a bag -> 'b bag
+Bag.map;
+> val it = fn : ('a -> 'b) -> 'a bag -> 'b bag
+
+(*) val mapPartial : ('a -> 'b option) -> 'a bag -> 'b bag
+Bag.mapPartial;
+> val it = fn : ('a -> 'b option) -> 'a bag -> 'b bag
+
+(*) val find : ('a -> bool) -> 'a bag -> 'a option
+Bag.find;
+> val it = fn : ('a -> bool) -> 'a bag -> 'a option
+
+(*) val filter : ('a -> bool) -> 'a bag -> 'a bag
+Bag.filter;
+> val it = fn : ('a -> bool) -> 'a bag -> 'a bag
+
+(*) val partition : ('a -> bool) -> 'a bag -> 'a bag * 'a bag
+Bag.partition;
+> val it = fn : ('a -> bool) -> 'a bag -> 'a bag * 'a bag
+
+(*) val fold : ('a * 'b -> 'b) -> 'b -> 'a bag -> 'b
+Bag.fold;
+> val it = fn : ('a * 'b -> 'b) -> 'b -> 'a bag -> 'b
+
+(*) val exists : ('a -> bool) -> 'a bag -> bool
+Bag.`exists`;
+> val it = fn : ('a -> bool) -> 'a bag -> bool
+
+(*) val all : ('a -> bool) -> 'a bag -> bool
+Bag.all;
+> val it = fn : ('a -> bool) -> 'a bag -> bool
+
+(*) val tabulate : int * (int -> 'a) -> 'a bag
+Bag.tabulate;
+> val it = fn : int * (int -> 'a) -> 'a bag
+
+(*) End bag.smli
