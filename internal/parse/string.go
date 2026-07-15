@@ -64,7 +64,9 @@ func decodeEscape(b *strings.Builder, r []rune) int {
 	for k := range digits {
 		n = n*base + (r[k] - '0')
 	}
-	b.WriteRune(n)
+	// A morel string is byte-indexed: a "\ddd" escape is one
+	// byte (0..255), not a UTF-8-encoded rune.
+	b.WriteByte(byte(n))
 	return digits - 1
 }
 

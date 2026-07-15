@@ -399,24 +399,15 @@ func callString(f eval.Val, arg string) string {
 	return `val it = "` + escapeString(s) + `" : string`
 }
 
-// escapeString renders a string value's characters as they
-// appear in a string literal.
+// escapeString renders a string value's bytes as they appear in
+// a string literal, escaping each byte the way a character
+// literal escapes it, byte by byte. A string is byte-indexed,
+// so it is iterated by byte,
+// not by rune.
 func escapeString(s string) string {
 	var b strings.Builder
-	for _, r := range s {
-		// lint: sort until '^\t\t}' where '^\t\tcase '
-		switch r {
-		case '"':
-			b.WriteString(`\"`)
-		case '\\':
-			b.WriteString(`\\`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\t':
-			b.WriteString(`\t`)
-		default:
-			b.WriteRune(r)
-		}
+	for i := range len(s) {
+		b.WriteString(eval.CharToString(rune(s[i])))
 	}
 	return b.String()
 }
