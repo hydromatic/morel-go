@@ -104,3 +104,45 @@ func TestRunMissingFile(t *testing.T) {
 		t.Fatal("expected error for missing file")
 	}
 }
+
+func TestRunIdempotent(t *testing.T) {
+	// A ".smli"/idempotent source goes through RunScript: the
+	// script is echoed with each "> " line refreshed.
+	in := "val x = 1;\n> stale\n1 + 2;\n"
+	want := "val x = 1;\n> val x = 1 : int\n" +
+		"1 + 2;\n> val it = 3 : int\n"
+	var out strings.Builder
+	err := shell.ParseArgs([]string{"--idempotent"}).
+		Run(strings.NewReader(in), &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != want {
+		t.Errorf("got %q, want %q", out.String(), want)
+	}
+	// The output is idempotent: running it again is a fixpoint.
+	var out2 strings.Builder
+	err = shell.ParseArgs([]string{"--idempotent"}).
+		Run(strings.NewReader(out.String()), &out2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out2.String() != out.String() {
+		t.Errorf("not idempotent: %q -> %q",
+			out.String(), out2.String())
+	}
+}
+
+func TestRunBatch(t *testing.T) {
+	// A non-idempotent source runs as a batch: results only.
+	in := "val z = 9;\n1 + 1;\n"
+	want := "val z = 9 : int\nval it = 2 : int\n"
+	var out strings.Builder
+	err := shell.ParseArgs(nil).Run(strings.NewReader(in), &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != want {
+		t.Errorf("got %q, want %q", out.String(), want)
+	}
+}
