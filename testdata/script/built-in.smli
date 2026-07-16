@@ -379,6 +379,16 @@ Option.valOf;
 > val it = fn : 'a option -> 'a
 Vector.fromList;
 > val it = fn : 'a list -> 'a vector
+
+
+(* Morel-specific values ------------------------------------------ *)
+(* The following top-level values are Morel extensions, not part of the
+ * Standard ML basis library. Like the standard aliases above, each is an alias
+ * for a value in a structure and resolves to the same value. *)
+
+(* "bag" is a Morel alias for "Bag.fromList". *)
+bag;
+> val it = fn : 'a list -> 'a bag
 Bag.fromList;
 > val it = fn : 'a list -> 'a bag
 Relational.compare;

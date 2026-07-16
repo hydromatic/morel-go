@@ -71,6 +71,30 @@ func Curry3(f func(a, b, c Val) (Val, error)) Fn {
 // registry is validated against lib/*.sig.
 var Builtins = map[string]Val{
 	// lint: sort until '^}' where '^\t"'
+	"Bag.@":          atFn,
+	"Bag.all":        Fn(allFn),
+	"Bag.app":        Fn(appFn),
+	"Bag.concat":     Fn(listConcatFn),
+	"Bag.drop":       Fn(dropFn),
+	"Bag.exists":     Fn(existsFn),
+	"Bag.filter":     Fn(filterFn),
+	"Bag.find":       Fn(findFn),
+	"Bag.fold":       fold(true),
+	"Bag.fromList":   Fn(bagFromListFn),
+	"Bag.getItem":    Fn(getItemFn),
+	"Bag.hd":         hdFn,
+	"Bag.length":     lengthFn,
+	"Bag.map":        mapFn,
+	"Bag.mapPartial": Fn(mapPartialFn),
+	"Bag.nil":        []Val{},
+	"Bag.nth":        Fn(nthFn),
+	"Bag.null":       nullFn,
+	"Bag.only":       Fn(onlyFn),
+	"Bag.partition":  Fn(partitionFn),
+	"Bag.tabulate":   Fn(tabulateFn),
+	"Bag.take":       Fn(takeFn),
+	"Bag.tl":         tlFn,
+	"Bag.toList":     Fn(bagToListFn),
 	"Bool.<": boolOp(func(a, b bool) bool {
 		return !a && b
 	}),
@@ -369,6 +393,7 @@ var Builtins = map[string]Val{
 	"Word.~>>":           Fn(wordAshrFn),
 	"abs":                absFn,
 	"app":                Fn(appFn),
+	"bag":                Fn(bagFromListFn),
 	"ceil":               realToIntFn(math.Ceil),
 	"chr":                chrFn,
 	"concat":             concatFn,
