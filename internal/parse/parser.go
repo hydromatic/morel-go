@@ -207,6 +207,28 @@ var (
 	overOps = map[token.Kind]ast.Op{
 		token.Over: ast.OverOp,
 	}
+	// opNames maps an operator token to the name of the binding it
+	// denotes when written as a value: "op +" is the curried form
+	// of the "+" operator, "List.foldl (op +) 0 xs".
+	opNames = map[token.Kind]string{
+		token.At:    "op @",
+		token.Caret: "op ^",
+		token.Cons:  "op ::",
+		token.Div:   "op div",
+		token.Eq:    "op =",
+		token.Ge:    "op >=",
+		token.Gt:    "op >",
+		token.Le:    "op <=",
+		token.Lt:    "op <",
+		token.Minus: "op -",
+		token.Mod:   "op mod",
+		token.Ne:    "op <>",
+		token.O:     "op o",
+		token.Plus:  "op +",
+		token.Slash: "op /",
+		token.Star:  "op *",
+		token.Tilde: "op ~",
+	}
 )
 
 func (p *Parser) expr() (ast.Expr, error) {
@@ -456,6 +478,8 @@ func (p *Parser) atom() (ast.Expr, error) {
 		return ast.NewRecordSelector(tok.Span, tok.Text[1:]), nil
 	case token.Let:
 		return p.letExpr()
+	case token.Op:
+		return p.opExpr()
 	case token.QuotedIdent:
 		err := p.next()
 		if err != nil {
@@ -466,6 +490,33 @@ func (p *Parser) atom() (ast.Expr, error) {
 	default:
 		return p.literal()
 	}
+}
+
+// opExpr parses "op <operator>", an operator used as a first-class
+// value. "op +" denotes the binding "op +", the curried form of the
+// "+" operator, so it can be passed as an argument. Any other name
+// keeps its "op " prefix too, so "op foo" resolves against — and,
+// when unbound, reports — the name "op foo".
+func (p *Parser) opExpr() (ast.Expr, error) {
+	start := p.tok.Span.Start
+	err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	tok := p.tok
+	span := token.Span{Start: start, End: tok.Span.End}
+	err = p.next()
+	if err != nil {
+		return nil, err
+	}
+	if tok.Kind == token.Ident {
+		return ast.NewID(span, "op "+tok.Text), nil
+	}
+	name, ok := opNames[tok.Kind]
+	if !ok {
+		return nil, p.errorf("expected operator after 'op'")
+	}
+	return ast.NewID(span, name), nil
 }
 
 // ifExpr parses "if e1 then e2 else e3".
