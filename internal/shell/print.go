@@ -27,9 +27,15 @@ import (
 	"github.com/hydromatic/morel-go/internal/types"
 )
 
-// wordType is the name of the word primitive type, as
-// types.Primitive.String returns it.
-const wordType = "word"
+// The primitive type names, as types.Primitive.String returns them.
+const (
+	boolType   = "bool"
+	charType   = "char"
+	intType    = "int"
+	realType   = "real"
+	stringType = "string"
+	wordType   = "word"
+)
 
 // prettyBinding renders "val name = value : type", choosing line
 // breaks with the layout engine. The value stays on the "val
@@ -41,6 +47,11 @@ const wordType = "word"
 func (c *Config) prettyBinding(name string, v eval.Val,
 	t types.Type,
 ) string {
+	if c.props["output"] == outputTabular {
+		if s, ok := c.tabularBinding(name, v, t); ok {
+			return s
+		}
+	}
 	valueDoc := c.valueDoc(t, v, 1)
 	typeDoc := c.typeDoc(t)
 	const indent = 2
@@ -193,19 +204,19 @@ func (c *Config) primitiveString(t *types.Primitive,
 ) string {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch t.String() {
-	case "bool":
+	case boolType:
 		v2, _ := v.(bool)
 		return strconv.FormatBool(v2)
-	case "char":
+	case charType:
 		v2, _ := v.(rune)
 		return `#"` + eval.CharToString(v2) + `"`
-	case "int":
+	case intType:
 		v2, _ := v.(int32)
 		return eval.FormatInt(v2)
-	case "real":
+	case realType:
 		v2, _ := v.(float32)
 		return eval.FormatReal(v2)
-	case "string":
+	case stringType:
 		v2, _ := v.(string)
 		if c.StringDepth >= 0 && len(v2) > c.StringDepth {
 			return `"` + escapeString(v2[:c.StringDepth]) +

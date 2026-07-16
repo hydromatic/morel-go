@@ -754,4 +754,19 @@ Sys.set ("lineWidth", 65);
 Sys.set ("printLength", 20);
 > val it = () : unit
 
+(*) If you want scans later in a query, use the join step.
+val clients =
+  [{cname = "Apple", contact = 7654, city = "BOSTON"},
+   {cname = "Disney", contact = 7499, city = "BOSTON"},
+   {cname = "Ford", contact = 7521, city = "BOSTON"},
+   {cname = "IBM", contact = 7654, city = "BOSTON"}];
+> city   cname  contact
+> ------ ------ -------
+> BOSTON Apple     7654
+> BOSTON Disney    7499
+> BOSTON Ford      7521
+> BOSTON IBM       7654
+>
+> val clients : {city:string, cname:string, contact:int} list
+
 (*) End blog.smli
