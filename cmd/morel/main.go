@@ -16,8 +16,9 @@
 // License.
 
 // Command morel is an interpreter for Morel, a functional query
-// language. It reads statements from standard input and writes
-// their output to standard output.
+// language. With no file arguments it reads statements from
+// standard input; it also evaluates an expression given with
+// "-e", or runs the script files named on the command line.
 package main
 
 import (
@@ -28,12 +29,10 @@ import (
 )
 
 func main() {
-	kernel := shell.NewKernel("stdIn")
-	runner := shell.NewRunner(kernel, os.Stdin, os.Stdout,
-		"stdIn")
-	err := runner.Run()
+	args := shell.ParseArgs(os.Args[1:])
+	err := args.Run(os.Stdin, os.Stdout)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "morel: "+err.Error())
 		os.Exit(1)
 	}
 }
