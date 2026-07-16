@@ -790,8 +790,43 @@ func (r *typeResolver) deduceID(env typeEnv, id *ast.ID,
 		}
 		term = r.typeTerm(conType, map[int]*unify.Var{})
 	}
+	// An operator used as a bare value ("op +", or passed to a
+	// fold) is never applied here, so nothing forces its numeric
+	// type variable; register its preferred default (int for "+",
+	// real for "/") so an otherwise-undetermined "op +" prints as
+	// "int * int -> int".
+	if b, isBuiltin := topBuiltins[id.Name]; isBuiltin &&
+		b.preferred != "" {
+		for _, pv := range termVars(term) {
+			r.preferred = append(r.preferred,
+				preferredType{v: pv, prim: b.preferred})
+		}
+	}
 	r.regEquiv(id, v, term)
 	return nil
+}
+
+// termVars returns the distinct variables in a term, in the order
+// they first appear.
+func termVars(t unify.Term) []*unify.Var {
+	var out []*unify.Var
+	seen := map[*unify.Var]bool{}
+	var walk func(unify.Term)
+	walk = func(t unify.Term) {
+		switch t := t.(type) {
+		case *unify.Var:
+			if !seen[t] {
+				seen[t] = true
+				out = append(out, t)
+			}
+		case *unify.Sequence:
+			for _, s := range t.Terms {
+				walk(s)
+			}
+		}
+	}
+	walk(t)
+	return out
 }
 
 // deduceLiteral handles literal expressions and literal patterns,

@@ -152,7 +152,7 @@ func sampleOf(stmt string) string {
 // attributes (morel#369), word literals (morel#396), and a few
 // negative-syntax tests that morel-java also rejects. Lower this
 // as gaps close; a regression fails the test.
-const maxParseGap = 432
+const maxParseGap = 415
 
 // TestParseCorpus parses every statement of every morel-java
 // script, reporting failures grouped by error.

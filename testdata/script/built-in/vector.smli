@@ -30,10 +30,6 @@ Sys.set ("stringDepth", ~1);
 Vector.fromList;
 > val it = fn : 'a list -> 'a vector
 
-(* supported in sml-nj but not morel:
- #[1,2];
- *)
-
 (*) Vector.tabulate : int * (int -> 'a) -> 'a vector
 Vector.tabulate;
 > val it = fn : int * (int -> 'a) -> 'a vector
@@ -101,5 +97,6 @@ Vector.all;
 (*) Vector.collate : ('a * 'a -> order) -> 'a vector * 'a vector -> order
 Vector.collate;
 > val it = fn : ('a * 'a -> order) -> 'a vector * 'a vector -> order
+
 
 (*) End vector.smli
