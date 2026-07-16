@@ -60,6 +60,10 @@ type Config struct {
 	PrintDepth  int
 	StringDepth int
 
+	// Directory is the working directory, as the "directory"
+	// and "scriptDirectory" properties report it.
+	Directory string
+
 	// sys resolves datatype constructors when printing their
 	// values.
 	sys *types.System
