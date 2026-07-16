@@ -53,10 +53,32 @@ EXACT;
    at least i; if s is already at least i characters long, returns s unchanged. *)
 StringCvt.padLeft;
 > val it = fn : char -> int -> string -> string
+StringCvt.padLeft #" " 5 "ab";
+> val it = "   ab" : string
+StringCvt.padLeft #"0" 4 "42";
+> val it = "0042" : string
+StringCvt.padLeft #" " 3 "abcdef";
+> val it = "abcdef" : string
+StringCvt.padLeft #"x" 3 "ab";
+> val it = "xab" : string
+StringCvt.padLeft #" " 0 "ab";
+> val it = "ab" : string
+StringCvt.padLeft #"*" 5 "";
+> val it = "*****" : string
 
 (* "padRight c i s" returns s padded on the right with c characters to length
    at least i; if s is already at least i characters long, returns s unchanged. *)
 StringCvt.padRight;
 > val it = fn : char -> int -> string -> string
+StringCvt.padRight #" " 5 "ab";
+> val it = "ab   " : string
+StringCvt.padRight #"." 5 "ab";
+> val it = "ab..." : string
+StringCvt.padRight #" " 3 "abcdef";
+> val it = "abcdef" : string
+StringCvt.padRight #" " 0 "ab";
+> val it = "ab" : string
+StringCvt.padRight #"*" 5 "";
+> val it = "*****" : string
 
 (*) End string-cvt.smli

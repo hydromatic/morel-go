@@ -134,6 +134,8 @@ var Builtins = map[string]Fn{
 	"String.concat":         concatFn,
 	"String.size":           sizeFn,
 	"String.str":            strFn,
+	"StringCvt.padLeft":     Curry3(stringCvtPadLeftFn),
+	"StringCvt.padRight":    Curry3(stringCvtPadRightFn),
 	"Sys.parseTree":         parseTree,
 	"abs":                   absFn,
 	"chr":                   chrFn,
