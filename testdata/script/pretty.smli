@@ -52,6 +52,14 @@ Sys.set ("output", "tabular");
 > val it = [{id=1,p=SOME (SOME 7)},{id=2,p=SOME NONE},{id=3,p=NONE}]
 >   : {id:int, p:int option option} list
 
+(* Edge case: empty outer collection still prints headers plus the
+ * dashed separator. *)
+([]: {a:int, b:string} list);
+> a b
+> - -
+>
+> val it : {a:int, b:string} list
+
 (* -------------------------------------------------------------------
  * Tabular mode observes printDepth and stringDepth.
  *)
@@ -61,6 +69,15 @@ Sys.set ("output", "tabular");
 Sys.set ("stringDepth", 4);
 > val it = () : unit
 
+[{id=1, name="alpha"}, {id=2, name="beta"}, {id=3, name="gammaray"}];
+> id name
+> -- -----
+>  1 alph#
+>  2 beta
+>  3 gamm#
+>
+> val it : {id:int, name:string} list
+
 Sys.unset "stringDepth";
 > val it = () : unit
 
@@ -69,12 +86,16 @@ Sys.unset "stringDepth";
 Sys.set ("printDepth", 0);
 > val it = # : unit
 
-[{id=1, name="alpha"}];
-> val it = # : {id:int, name:string} list
-
 (* printDepth=1 leaves elements visible, so tabular renders. *)
 Sys.set ("printDepth", 1);
 > val it = () : unit
+
+[{id=1, name="alpha"}];
+> id name
+> -- -----
+>  1 alpha
+>
+> val it : {id:int, name:string} list
 
 Sys.unset "printDepth";
 > val it = () : unit
@@ -91,6 +112,13 @@ Sys.unset "printLength";
 
 Sys.unset "stringFold";
 > val it = () : unit
+
+[{id=1, name="The Avocado Tofu Salad"}];
+> id name
+> -- ----------------------
+>  1 The Avocado Tofu Salad
+>
+> val it : {id:int, name:string} list
 
 Sys.unset "stringFold";
 > val it = () : unit
