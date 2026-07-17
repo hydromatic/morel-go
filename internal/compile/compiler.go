@@ -20,6 +20,7 @@ package compile
 import (
 	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/eval"
+	"github.com/hydromatic/morel-go/internal/types"
 )
 
 // Bind is one name that a compiled statement binds, and the
@@ -43,11 +44,12 @@ type Compiled struct {
 // Values gives the runtime values of free names: built-ins and
 // the results of earlier statements.
 func Statement(decl core.Decl,
-	values map[string]eval.Val,
+	values map[string]eval.Val, sys *types.System,
 ) (*Compiled, error) {
 	c := &compiler{
 		values: values,
 		slots:  map[*core.IDPat]int{},
+		sys:    sys,
 	}
 	var code eval.Code
 	var ids []*core.IDPat
@@ -96,6 +98,7 @@ type compiler struct {
 	values   map[string]eval.Val
 	slots    map[*core.IDPat]int
 	parent   *compiler
+	sys      *types.System
 	captures []eval.Capture
 	nSlots   int
 }
@@ -139,6 +142,9 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 	case *core.Case:
 		return c.compileCase(e)
 	case *core.Con:
+		if e.Datatype == variantTypeName {
+			return c.compileVariantCon(e)
+		}
 		con := eval.Con{
 			Datatype: e.Datatype,
 			Name:     e.Name,
@@ -204,6 +210,7 @@ func (c *compiler) compileFn(fn *core.Fn) (eval.Code, error) {
 		values: c.values,
 		slots:  map[*core.IDPat]int{},
 		parent: c,
+		sys:    c.sys,
 	}
 	param, err := inner.compilePat(fn.IDPat)
 	if err != nil {

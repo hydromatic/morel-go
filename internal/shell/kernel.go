@@ -259,7 +259,7 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	if err != nil {
 		return k.formatCompileError(err)
 	}
-	compiled, err := compile.Statement(coreDecl, k.values)
+	compiled, err := compile.Statement(coreDecl, k.values, k.sys)
 	if err != nil {
 		return k.formatCompileError(err)
 	}
