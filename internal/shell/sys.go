@@ -162,6 +162,16 @@ func (k *Kernel) sysBuiltins() map[string]eval.Val {
 			return compile.VariantParse(s, k.sys)
 		}),
 		"Time.now": eval.Fn(k.timeNow),
+		"Date.date": eval.Fn(func(arg eval.Val) (eval.Val, error) {
+			rec, _ := arg.([]eval.Val)
+			return eval.DateConstructRecord(rec, k.timeZone())
+		}),
+		"Date.fromTimeLocal": eval.Fn(func(arg eval.Val) (eval.Val, error) {
+			return eval.DateFromTimeLocal(arg, k.timeZone()), nil
+		}),
+		"Date.localOffset": eval.Fn(func(eval.Val) (eval.Val, error) {
+			return eval.DateLocalOffset(k.timeZone(), k.nowTime()), nil
+		}),
 	}
 	m["env"] = m["Sys.env"]
 	m["plan"] = notImplemented("Sys.plan")
@@ -176,12 +186,31 @@ func (k *Kernel) sysBuiltins() map[string]eval.Val {
 // reads the "now" property, an ISO-8601 instant, so tests are
 // deterministic; absent or unparsable, it uses the wall clock.
 func (k *Kernel) timeNow(eval.Val) (eval.Val, error) {
+	return k.nowTime().UnixNano(), nil
+}
+
+// nowTime is the reference instant: the "now" property parsed as an
+// ISO-8601 instant, or the wall clock when absent or unparsable.
+func (k *Kernel) nowTime() time.Time {
 	t, err := time.Parse(time.RFC3339, k.config.props["now"])
 	if err != nil {
-		//nolint:nilerr // fall back to the wall clock
-		return time.Now().UnixNano(), nil
+		return time.Now()
 	}
-	return t.UnixNano(), nil
+	return t
+}
+
+// timeZone is the session's zone from the "timeZone" property, or
+// the local zone when absent or unknown.
+func (k *Kernel) timeZone() *time.Location {
+	name := k.config.props["timeZone"]
+	if name == "" {
+		return time.Local //nolint:gosmopolitan // the session default
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return time.Local //nolint:gosmopolitan // fallback default
+	}
+	return loc
 }
 
 // sysEnv is "Sys.env ()": the environment's bindings as (name,

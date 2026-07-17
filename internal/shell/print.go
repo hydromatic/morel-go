@@ -31,6 +31,7 @@ import (
 const (
 	boolType   = "bool"
 	charType   = "char"
+	dateType   = "date"
 	intType    = "int"
 	realType   = "real"
 	stringType = "string"
@@ -111,6 +112,9 @@ func (c *Config) valueDoc(t types.Type, v eval.Val,
 		}
 		if t.Name == timeType {
 			return pp.Text(eval.FormatTime(v))
+		}
+		if t.Name == dateType {
+			return pp.Text(eval.FormatDate(v))
 		}
 		return c.conDoc(t, v, depth)
 	case *types.Primitive:
