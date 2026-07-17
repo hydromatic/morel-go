@@ -37,6 +37,7 @@ type Con struct {
 const (
 	ExnBind      = "Bind"
 	ExnChr       = "Chr"
+	ExnDate      = "Date"
 	ExnDiv       = "Div"
 	ExnDomain    = "Domain"
 	ExnEmpty     = "Empty"
