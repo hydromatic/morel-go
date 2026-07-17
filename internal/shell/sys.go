@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hydromatic/morel-go/internal/compile"
 	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/eval"
 	"github.com/hydromatic/morel-go/internal/types"
@@ -152,6 +153,13 @@ func (k *Kernel) sysBuiltins() map[string]eval.Val {
 		"Sys.show":    eval.Fn(k.sysShow),
 		"Sys.showAll": eval.Fn(k.sysShowAll),
 		"Sys.unset":   eval.Fn(k.sysUnset),
+		"Variant.print": eval.Fn(func(arg eval.Val) (eval.Val, error) {
+			return compile.VariantPrint(arg, k.sys), nil
+		}),
+		"Variant.parse": eval.Fn(func(arg eval.Val) (eval.Val, error) {
+			s, _ := arg.(string)
+			return compile.VariantParse(s, k.sys)
+		}),
 	}
 	m["env"] = m["Sys.env"]
 	m["plan"] = notImplemented("Sys.plan")

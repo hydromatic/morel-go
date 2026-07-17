@@ -54,6 +54,10 @@ func (c *Config) prettyBinding(name string, v eval.Val,
 	}
 	valueDoc := c.valueDoc(t, v, 1)
 	typeDoc := c.typeDoc(t)
+	if vr, ok := v.(eval.Variant); ok {
+		vt, _ := vr.Type.(types.Type)
+		typeDoc = pp.Beside(c.typeDoc(vt), pp.Text(" variant"))
+	}
 	const indent = 2
 	valuePart := pp.Union(
 		pp.Beside(pp.Text(" "), pp.Flatten(valueDoc)),
@@ -84,6 +88,10 @@ func (c *Config) valueDoc(t types.Type, v eval.Val,
 ) pp.Doc {
 	if c.PrintDepth >= 0 && depth > c.PrintDepth {
 		return pp.Text("#")
+	}
+	if vr, ok := v.(eval.Variant); ok {
+		vt, _ := vr.Type.(types.Type)
+		return c.valueDoc(vt, vr.Value, depth)
 	}
 	// lint: sort until '^\t}' where '^\tcase '
 	switch t := t.(type) {
