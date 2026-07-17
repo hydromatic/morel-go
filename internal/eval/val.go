@@ -43,6 +43,7 @@ const (
 	ExnOverflow  = "Overflow"
 	ExnSize      = "Size"
 	ExnSubscript = "Subscript"
+	ExnUnequal   = "UnequalLengths"
 )
 
 // MorelError is a Morel runtime error: the name of the exception
