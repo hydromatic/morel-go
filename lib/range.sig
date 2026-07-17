@@ -35,18 +35,6 @@ signature RANGE =
 sig
 
   (**
-   * represents a set of values as a normalized list of non-overlapping,
-   * non-adjacent ranges.
-   *)
-  eqtype 'a continuous_set
-
-  (**
-   * represents a set of discrete values as a normalized list of
-   * non-overlapping, non-adjacent ranges.
-   *)
-  eqtype 'a discrete_set
-
-  (**
    * represents a contiguous interval of values of an ordered type.
    *
    * The constructors and their meanings are:
@@ -64,12 +52,24 @@ sig
   datatype 'a range = ALL | AT_LEAST of 'a | AT_MOST of 'a | CLOSED of 'a * 'a | CLOSED_OPEN of 'a * 'a | GREATER_THAN of 'a | LESS_THAN of 'a | OPEN of 'a * 'a | OPEN_CLOSED of 'a * 'a | POINT of 'a
 
   (**
-   * returns `true` if `x` is a member of discrete set `ds`.
+   * represents a set of values as a normalized list of non-overlapping,
+   * non-adjacent ranges.
+   *)
+  datatype 'a continuous_set = CONTINUOUS_SET of 'a range list
+
+  (**
+   * represents a set of discrete values as a normalized list of
+   * non-overlapping, non-adjacent ranges.
+   *)
+  datatype 'a discrete_set = DISCRETE_SET of 'a range list
+
+  (**
+   * returns `true` if `x` is a member of range `r`.
    *
    * The ordering is implicit, derived from the type `α`.
    *)
-  val contains : 'a discrete_set -> 'a -> bool
-      [@@method] [@@prototype "contains ds x"]
+  val contains : 'a range -> 'a -> bool
+      [@@method] [@@prototype "contains r x"]
 
   (**
    * enumerates all values in the discrete set `ds` and returns them as a bag.
@@ -148,16 +148,16 @@ sig
    *)
   val flatten : 'a range list -> 'a list [@@prototype "flatten ranges"]
 
-  (** returns the list of ranges in the discrete set `ds`. *)
-  val ranges : 'a discrete_set -> 'a range list
-      [@@method] [@@prototype "ranges ds"]
+  (** returns the list of ranges in the continuous set `cs`. *)
+  val ranges : 'a continuous_set -> 'a range list
+      [@@method] [@@prototype "ranges cs"]
 
   (**
-   * returns the complement of discrete set `ds`: a discrete set containing all
-   * values of the element type not in `ds`.
+   * returns the complement of continuous set `cs`: a continuous set of all
+   * values of the element type not in `cs`.
    *)
-  val complement : 'a discrete_set -> 'a discrete_set
-      [@@method] [@@prototype "complement ds"]
+  val complement : 'a continuous_set -> 'a continuous_set
+      [@@method] [@@prototype "complement cs"]
 end
 [@@description "Operations on ranges of ordered values."]
 [@@specified "morel"]
