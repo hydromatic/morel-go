@@ -27,6 +27,10 @@ import (
 	"github.com/hydromatic/morel-go/internal/types"
 )
 
+// wordType is the name of the word primitive type, as
+// types.Primitive.String returns it.
+const wordType = "word"
+
 // prettyBinding renders "val name = value : type", choosing line
 // breaks with the layout engine. The value stays on the "val
 // ... =" line only if it fits there entirely flat; otherwise the
@@ -208,6 +212,9 @@ func (c *Config) primitiveString(t *types.Primitive,
 				`#"`
 		}
 		return `"` + escapeString(v2) + `"`
+	case wordType:
+		v2, _ := v.(uint64)
+		return eval.FormatWord(v2)
 	default:
 		return "()"
 	}

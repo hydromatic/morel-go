@@ -28,6 +28,7 @@ var literalPatOps = map[token.Kind]ast.Op{
 	token.ScientificLit: ast.RealLiteralPatOp,
 	token.StringLit:     ast.StringLiteralPatOp,
 	token.CharLit:       ast.CharLiteralPatOp,
+	token.WordLit:       ast.WordLiteralPatOp,
 }
 
 // pat parses a pattern: a cons pattern, optionally layered as

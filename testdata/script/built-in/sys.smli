@@ -65,6 +65,10 @@ val zebra = true;
 val aardvark = 1 + (if zebra then 2 else 3);
 > val aardvark = 3 : int
 
+(*) Word literals are unparsed in hexadecimal (e.g. "0wxAB") in the plan.
+val warthog = 0wxAB + 0w1;
+> val warthog = 0wxAC : word
+
 (*) val set : string * 'a -> unit
 Sys.set;
 > val it = fn : string * 'a -> unit
