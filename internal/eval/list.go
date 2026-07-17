@@ -231,12 +231,14 @@ func compareVals(a, b Val) int {
 		return cmpOrdered(a, asInt(b))
 	case string:
 		return cmpOrdered(a, asString(b))
+	case uint64:
+		return cmpOrdered(a, asWord(b))
 	default:
 		panic(fmt.Sprintf("cannot compare %T", a))
 	}
 }
 
-func cmpOrdered[T int32 | float32 | string](a, b T) int {
+func cmpOrdered[T int32 | float32 | string | uint64](a, b T) int {
 	switch {
 	case a < b:
 		return -1

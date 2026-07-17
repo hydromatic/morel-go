@@ -35,6 +35,7 @@ const (
 	IntLit
 	RealLit
 	ScientificLit
+	WordLit
 	StringLit
 	CharLit
 
@@ -154,6 +155,7 @@ var kindNames = map[Kind]string{
 	IntLit:        "integer literal",
 	RealLit:       "real literal",
 	ScientificLit: "scientific literal",
+	WordLit:       "word literal",
 	StringLit:     "string literal",
 	CharLit:       "char literal",
 	And:           "and",

@@ -887,6 +887,17 @@ func literalValue(kind ast.Op, text string) (any, error) {
 		return text, nil
 	case ast.UnitLiteralOp:
 		return core.Unit{}, nil
+	case ast.WordLiteralOp, ast.WordLiteralPatOp:
+		s := text[2:] // after "0w"
+		base := 10
+		if len(s) > 0 && (s[0] == 'x' || s[0] == 'X') {
+			s, base = s[1:], 16
+		}
+		u, err := strconv.ParseUint(s, base, 64)
+		if err != nil {
+			return nil, &Error{Msg: "invalid literal: " + text}
+		}
+		return u, nil
 	default:
 		return nil, &Error{
 			Msg: "cannot convert literal " + kind.String(),

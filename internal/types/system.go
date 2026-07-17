@@ -36,6 +36,7 @@ type System struct {
 	Real   Type
 	String Type
 	Unit   Type
+	Word   Type
 }
 
 // TyCon describes a datatype constructor: its argument type (nil
@@ -68,6 +69,7 @@ func NewSystem() *System {
 	s.Real = prim("real")
 	s.String = prim("string")
 	s.Unit = prim("unit")
+	s.Word = prim("word")
 	return s
 }
 

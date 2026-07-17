@@ -26,6 +26,7 @@ type Op int
 const (
 	IntLiteralOp Op = iota
 	RealLiteralOp
+	WordLiteralOp
 	StringLiteralOp
 	CharLiteralOp
 	BoolLiteralOp
@@ -75,6 +76,7 @@ const (
 	WildcardPatOp
 	IntLiteralPatOp
 	RealLiteralPatOp
+	WordLiteralPatOp
 	StringLiteralPatOp
 	CharLiteralPatOp
 	TuplePatOp
@@ -133,6 +135,7 @@ const (
 var opNames = map[Op]string{
 	IntLiteralOp:     "int_literal",
 	RealLiteralOp:    "real_literal",
+	WordLiteralOp:    "word_literal",
 	StringLiteralOp:  "string_literal",
 	CharLiteralOp:    "char_literal",
 	BoolLiteralOp:    "bool_literal",
@@ -175,6 +178,7 @@ var opNames = map[Op]string{
 	WildcardPatOp:      "wildcard_pat",
 	IntLiteralPatOp:    "int_literal_pat",
 	RealLiteralPatOp:   "real_literal_pat",
+	WordLiteralPatOp:   "word_literal_pat",
 	StringLiteralPatOp: "string_literal_pat",
 	CharLiteralPatOp:   "char_literal_pat",
 	TuplePatOp:         "tuple_pat",

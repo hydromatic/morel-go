@@ -414,6 +414,7 @@ var literalOps = map[token.Kind]ast.Op{
 	token.IntLit:        ast.IntLiteralOp,
 	token.RealLit:       ast.RealLiteralOp,
 	token.ScientificLit: ast.RealLiteralOp,
+	token.WordLit:       ast.WordLiteralOp,
 	token.StringLit:     ast.StringLiteralOp,
 	token.CharLit:       ast.CharLiteralOp,
 }

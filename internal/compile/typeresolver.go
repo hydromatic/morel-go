@@ -188,18 +188,18 @@ func fieldNames(t types.Type) []string {
 }
 
 // numericOpDomain gives the types for which each overloaded
-// numeric operator is defined (its SML overload class). 'div'
-// and 'mod' are int-only until 'Word' arrives (morel#396); '/'
-// is absent because it is real-only, so a bad operand is a
-// unification conflict, not an excluded class member.
+// numeric operator is defined (its SML overload class). 'div' and
+// 'mod' are integer-and-word; '/' is absent because it is real-only,
+// so a bad operand is a unification conflict, not an excluded class
+// member. 'abs' is int and real only, as a word is unsigned.
 var numericOpDomain = map[string]map[string]bool{
 	"abs":    {intName: true, realName: true},
-	opTimes:  {intName: true, realName: true},
-	opPlus:   {intName: true, realName: true},
-	opMinus:  {intName: true, realName: true},
-	opDiv:    {intName: true},
-	opMod:    {intName: true},
-	opNegate: {intName: true, realName: true},
+	opTimes:  {intName: true, realName: true, wordName: true},
+	opPlus:   {intName: true, realName: true, wordName: true},
+	opMinus:  {intName: true, realName: true, wordName: true},
+	opDiv:    {intName: true, wordName: true},
+	opMod:    {intName: true, wordName: true},
+	opNegate: {intName: true, realName: true, wordName: true},
 }
 
 // checkNumericOperators checks that every application of an
@@ -853,6 +853,8 @@ func (r *typeResolver) deduceLiteral(node ast.Node, kind ast.Op,
 		name = "string"
 	case ast.UnitLiteralOp:
 		name = "unit"
+	case ast.WordLiteralOp, ast.WordLiteralPatOp:
+		name = "word"
 	default:
 		return &Error{
 			Span: node.Span(),

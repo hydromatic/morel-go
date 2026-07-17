@@ -234,6 +234,42 @@ var Builtins = map[string]Val{
 	"StringCvt.padLeft":  Curry3(stringCvtPadLeftFn),
 	"StringCvt.padRight": Curry3(stringCvtPadRightFn),
 	"Sys.parseTree":      parseTree,
+	"Word.*":             word2(func(a, b uint64) uint64 { return a * b }),
+	"Word.+":             word2(func(a, b uint64) uint64 { return a + b }),
+	"Word.-":             word2(func(a, b uint64) uint64 { return a - b }),
+	"Word.<":             wordCmp(func(a, b uint64) bool { return a < b }),
+	"Word.<<":            word2(func(a, b uint64) uint64 { return a << b }),
+	"Word.<=":            wordCmp(func(a, b uint64) bool { return a <= b }),
+	"Word.>":             wordCmp(func(a, b uint64) bool { return a > b }),
+	"Word.>=":            wordCmp(func(a, b uint64) bool { return a >= b }),
+	"Word.>>":            word2(func(a, b uint64) uint64 { return a >> b }),
+	"Word.andb":          word2(func(a, b uint64) uint64 { return a & b }),
+	"Word.compare":       Fn(wordCompareFn),
+	"Word.div":           Fn(wordDivFn),
+	"Word.fmt":           Fn(wordFmtFn),
+	"Word.fromInt":       Fn(wordFromIntFn),
+	"Word.fromLarge":     Fn(identityFn),
+	"Word.fromLargeInt":  Fn(wordFromIntFn),
+	"Word.fromLargeWord": Fn(identityFn),
+	"Word.fromString":    Fn(wordFromStringFn),
+	"Word.max":           word2(func(a, b uint64) uint64 { return max(a, b) }),
+	"Word.min":           word2(func(a, b uint64) uint64 { return min(a, b) }),
+	"Word.mod":           Fn(wordModFn),
+	"Word.notb":          Fn(wordNotbFn),
+	"Word.orb":           word2(func(a, b uint64) uint64 { return a | b }),
+	"Word.toInt":         Fn(wordToIntFn),
+	"Word.toIntX":        Fn(wordToIntXFn),
+	"Word.toLarge":       Fn(identityFn),
+	"Word.toLargeInt":    Fn(wordToIntFn),
+	"Word.toLargeIntX":   Fn(wordToIntXFn),
+	"Word.toLargeWord":   Fn(identityFn),
+	"Word.toLargeWordX":  Fn(identityFn),
+	"Word.toLargeX":      Fn(identityFn),
+	"Word.toString":      Fn(wordToStringFn),
+	"Word.wordSize":      wordSize,
+	"Word.xorb":          word2(func(a, b uint64) uint64 { return a ^ b }),
+	"Word.~":             Fn(wordNegFn),
+	"Word.~>>":           Fn(wordAshrFn),
 	"abs":                absFn,
 	"ceil":               realToIntFn(math.Ceil),
 	"chr":                chrFn,
@@ -249,9 +285,9 @@ var Builtins = map[string]Val{
 	"map":                mapFn,
 	"not":                notFn,
 	"null":               nullFn,
-	"op *":               arith(mulInt, mulReal),
-	"op +":               arith(addInt, addReal),
-	"op -":               arith(subInt, subReal),
+	"op *":               arithW(mulInt, mulReal, mulWord),
+	"op +":               arithW(addInt, addReal, addWord),
+	"op -":               arithW(subInt, subReal, subWord),
 	"op /":               arith(nil, divReal),
 	"op ::":              consFn,
 	"op <":               compareFn(func(c int) bool { return c < 0 }),
@@ -262,8 +298,8 @@ var Builtins = map[string]Val{
 	"op >=":              compareFn(func(c int) bool { return c >= 0 }),
 	"op @":               atFn,
 	"op ^":               caretFn,
-	"op div":             arith(divInt, nil),
-	"op mod":             arith(modInt, nil),
+	"op div":             arithW(divInt, nil, divWord),
+	"op mod":             arithW(modInt, nil, modWord),
 	"op o":               composeFn,
 	"op ~":               negFn,
 	"ord":                ordFn,
@@ -432,6 +468,25 @@ func arith(intFn func(a, b int32) (Val, error),
 	}
 }
 
+// arithW is arith extended to words, for the operators overloaded
+// over int, real, and word (+, -, *, div, mod).
+func arithW(intFn func(a, b int32) (Val, error),
+	realFn func(a, b float32) (Val, error),
+	wordFn func(a, b uint64) (Val, error),
+) Fn {
+	base := arith(intFn, realFn)
+	return func(arg Val) (Val, error) {
+		vals, ok := arg.([]Val)
+		if !ok || len(vals) != 2 {
+			panic(fmt.Sprintf("expected pair, got %T", arg))
+		}
+		if a, isWord := vals[0].(uint64); isWord {
+			return wordFn(a, asWord(vals[1]))
+		}
+		return base(arg)
+	}
+}
+
 // checkIntRange rejects a result outside int32, raising
 // Overflow as SML integer arithmetic does.
 func checkIntRange(i int64) (Val, error) {
@@ -498,19 +553,23 @@ func divReal(a, b float32) (Val, error) {
 	return float32(float64(a) / float64(b)), nil
 }
 
-// negFn is "~ x". It is overloaded on int and real, so it
+// negFn is "~ x". It is overloaded on int, real, and word, so it
 // switches on the runtime type.
 func negFn(arg Val) (Val, error) {
+	// lint: sort until '^\t}' where '^\tcase '
 	switch v := arg.(type) {
+	case float32:
+		return -v, nil
 	case int32:
 		if v == math.MinInt32 {
 			return nil, &MorelError{Exn: ExnOverflow}
 		}
 		return -v, nil
-	case float32:
+	case uint64:
 		return -v, nil
 	default:
-		panic(fmt.Sprintf("expected int or real, got %T", arg))
+		panic(fmt.Sprintf("expected int, real, or word, got %T",
+			arg))
 	}
 }
 

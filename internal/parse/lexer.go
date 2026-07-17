@@ -264,6 +264,23 @@ func (l *Lexer) scanQuotedIdent() (token.Token, error) {
 // scanNumber consumes an integer, real, or scientific literal; a
 // leading "~" has already been consumed.
 func (l *Lexer) scanNumber() token.Token {
+	// A word literal is "0w" then decimal digits, or "0wx"/"0wX"
+	// then hex digits.
+	if l.peek(0) == '0' && l.peek(1) == 'w' {
+		l.advance()
+		l.advance()
+		if l.peek(0) == 'x' || l.peek(0) == 'X' {
+			l.advance()
+			for isHexDigit(l.peek(0)) {
+				l.advance()
+			}
+		} else {
+			for isDigit(l.peek(0)) {
+				l.advance()
+			}
+		}
+		return l.token(token.WordLit)
+	}
 	for isDigit(l.peek(0)) {
 		l.advance()
 	}
@@ -426,6 +443,10 @@ func isLetter(r rune) bool {
 
 func isDigit(r rune) bool {
 	return r >= 0 && unicode.IsDigit(r)
+}
+
+func isHexDigit(r rune) bool {
+	return isDigit(r) || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
 }
 
 func isIdentPart(r rune) bool {
