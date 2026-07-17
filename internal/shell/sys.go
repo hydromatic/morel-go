@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hydromatic/morel-go/internal/compile"
 	"github.com/hydromatic/morel-go/internal/core"
@@ -160,6 +161,7 @@ func (k *Kernel) sysBuiltins() map[string]eval.Val {
 			s, _ := arg.(string)
 			return compile.VariantParse(s, k.sys)
 		}),
+		"Time.now": eval.Fn(k.timeNow),
 	}
 	m["env"] = m["Sys.env"]
 	m["plan"] = notImplemented("Sys.plan")
@@ -168,6 +170,18 @@ func (k *Kernel) sysBuiltins() map[string]eval.Val {
 	m["showAll"] = m["Sys.showAll"]
 	m["unset"] = m["Sys.unset"]
 	return m
+}
+
+// timeNow is "Time.now ()": the current time as nanoseconds. It
+// reads the "now" property, an ISO-8601 instant, so tests are
+// deterministic; absent or unparsable, it uses the wall clock.
+func (k *Kernel) timeNow(eval.Val) (eval.Val, error) {
+	t, err := time.Parse(time.RFC3339, k.config.props["now"])
+	if err != nil {
+		//nolint:nilerr // fall back to the wall clock
+		return time.Now().UnixNano(), nil
+	}
+	return t.UnixNano(), nil
 }
 
 // sysEnv is "Sys.env ()": the environment's bindings as (name,

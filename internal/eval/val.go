@@ -43,6 +43,7 @@ const (
 	ExnOverflow  = "Overflow"
 	ExnSize      = "Size"
 	ExnSubscript = "Subscript"
+	ExnTime      = "Time"
 	ExnUnequal   = "UnequalLengths"
 )
 
