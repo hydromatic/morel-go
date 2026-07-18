@@ -94,16 +94,56 @@ var Builtins = map[string]Val{
 	"Bool.orelse": boolOp(func(a, b bool) bool {
 		return a || b
 	}),
-	"Bool.toString":  boolToStringFn,
-	"Char.chr":       chrFn,
-	"Char.ord":       ordFn,
-	"General.before": beforeFn,
-	"General.ignore": ignoreFn,
-	"General.o":      composeFn,
-	"Int.*":          arith(mulInt, nil),
-	"Int.+":          arith(addInt, nil),
-	"Int.-":          arith(subInt, nil),
-	"Int.<":          compareFn(func(c int) bool { return c < 0 }),
+	"Bool.toString": boolToStringFn,
+	"Char.<":        charOp(func(a, b rune) bool { return a < b }),
+	"Char.<=": charOp(func(a, b rune) bool {
+		return a <= b
+	}),
+	"Char.<>": charOp(func(a, b rune) bool {
+		return a != b
+	}),
+	"Char.=": charOp(func(a, b rune) bool { return a == b }),
+	"Char.>": charOp(func(a, b rune) bool { return a > b }),
+	"Char.>=": charOp(func(a, b rune) bool {
+		return a >= b
+	}),
+	"Char.chr":         chrFn,
+	"Char.compare":     Fn(charCompareFn),
+	"Char.contains":    charContainsFn(true),
+	"Char.fromCString": Fn(charFromCStringFn),
+	"Char.fromInt":     Fn(charFromIntFn),
+	"Char.fromString":  Fn(charFromStringFn),
+	"Char.isAlpha":     charPredicate(isAlphaChar),
+	"Char.isAlphaNum":  charPredicate(isAlphaNumChar),
+	"Char.isAscii":     charPredicate(isAsciiChar),
+	"Char.isCntrl":     charPredicate(isCntrlChar),
+	"Char.isDigit":     charPredicate(isDigitChar),
+	"Char.isGraph":     charPredicate(isGraphChar),
+	"Char.isHexDigit":  charPredicate(isHexDigitChar),
+	"Char.isLower":     charPredicate(isLowerChar),
+	"Char.isOctDigit":  charPredicate(isOctDigitChar),
+	"Char.isPrint":     charPredicate(isPrintChar),
+	"Char.isPunct":     charPredicate(isPunctChar),
+	"Char.isSpace":     charPredicate(isSpaceChar),
+	"Char.isUpper":     charPredicate(isUpperChar),
+	"Char.maxChar":     maxCharVal,
+	"Char.maxOrd":      maxCharVal,
+	"Char.minChar":     minCharVal,
+	"Char.notContains": charContainsFn(false),
+	"Char.ord":         ordFn,
+	"Char.pred":        Fn(charPredFn),
+	"Char.succ":        Fn(charSuccFn),
+	"Char.toCString":   Fn(charToCStringFn),
+	"Char.toLower":     Fn(charToLowerFn),
+	"Char.toString":    Fn(charToStringFn),
+	"Char.toUpper":     Fn(charToUpperFn),
+	"General.before":   beforeFn,
+	"General.ignore":   ignoreFn,
+	"General.o":        composeFn,
+	"Int.*":            arith(mulInt, nil),
+	"Int.+":            arith(addInt, nil),
+	"Int.-":            arith(subInt, nil),
+	"Int.<":            compareFn(func(c int) bool { return c < 0 }),
 	"Int.<=": compareFn(func(c int) bool {
 		return c <= 0
 	}),
@@ -309,6 +349,7 @@ var Builtins = map[string]Val{
 	"chr":                chrFn,
 	"concat":             concatFn,
 	"explode":            explodeFn,
+	"fields":             stringSplit(true),
 	"floor":              realToIntFn(math.Floor),
 	"getOpt":             getOptFn,
 	"hd":                 hdFn,
@@ -342,7 +383,9 @@ var Builtins = map[string]Val{
 	"round":              realToIntFn(math.RoundToEven),
 	"size":               sizeFn,
 	"str":                strFn,
+	"substring":          Fn(stringSubstringFn),
 	"tl":                 tlFn,
+	"tokens":             stringSplit(false),
 	"trunc":              realToIntFn(math.Trunc),
 	"valOf":              valOfFn,
 }
@@ -465,9 +508,8 @@ func absFn(arg Val) (Val, error) {
 // chrFn is "chr i", the character with code i.
 func chrFn(arg Val) (Val, error) {
 	i := asInt(arg)
-	const maxChar = 255
-	if i < 0 || i > maxChar {
-		return nil, &MorelError{Exn: "Chr"}
+	if i < 0 || i > maxCharVal {
+		return nil, &MorelError{Exn: ExnChr}
 	}
 	// rune and int32 are one type; the result is a char only
 	// statically.
