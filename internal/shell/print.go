@@ -198,7 +198,7 @@ func (c *Config) primitiveString(t *types.Primitive,
 		return strconv.FormatBool(v2)
 	case "char":
 		v2, _ := v.(rune)
-		return `#"` + escapeString(string(v2)) + `"`
+		return `#"` + eval.CharToString(v2) + `"`
 	case "int":
 		v2, _ := v.(int32)
 		return eval.FormatInt(v2)

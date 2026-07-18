@@ -294,6 +294,22 @@ String.compare ("abc", "ab");
 (*) val collate : (char * char -> order) -> string * string -> order
 String.collate;
 > val it = fn : (char * char -> order) -> string * string -> order
+let
+  fun charCompareIgnoreCase (c1, c2) =
+      Char.compare (Char.toLower c1, Char.toLower c2)
+in
+  String.collate charCompareIgnoreCase ("Hello", "hello")
+end;
+> val it = EQUAL : order
+String.collate Char.compare ("Hello", "hello");
+> val it = LESS : order
+let
+  fun charCompareIgnoreCase (c1, c2) =
+      Char.compare (Char.toLower c1, Char.toLower c2)
+in
+  String.collate charCompareIgnoreCase ("Apple", "BANANA")
+end;
+> val it = LESS : order
 
 (*) val <  : string * string -> bool
 String.`<`;
