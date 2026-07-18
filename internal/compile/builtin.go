@@ -58,8 +58,10 @@ var topBuiltins = map[string]topBuiltin{
 	"concat":  {"string list -> string", ""},
 	"explode": {"string -> char list", ""},
 	"floor":   {realToInt, ""},
+	"getOpt":  {"'a option * 'a -> 'a", ""},
 	"hd":      {"'a list -> 'a", ""},
 	"implode": {"char list -> string", ""},
+	"isSome":  {"'a option -> bool", ""},
 	"length":  {"'a list -> int", ""},
 	"map":     {"('a -> 'b) -> 'a list -> 'b list", ""},
 	"not":     {"bool -> bool", ""},
@@ -89,6 +91,7 @@ var topBuiltins = map[string]topBuiltin{
 	"str":     {"char -> string", ""},
 	"tl":      {"'a list -> 'a list", ""},
 	"trunc":   {realToInt, ""},
+	"valOf":   {"'a option -> 'a", ""},
 }
 
 // infixOpNames maps an infix operator's Op to the name of its
