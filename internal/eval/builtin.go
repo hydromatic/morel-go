@@ -226,11 +226,45 @@ var Builtins = map[string]Val{
 	"Real.unordered": realPairPredicate(func(a, b float64) bool {
 		return math.IsNaN(a) || math.IsNaN(b)
 	}),
-	"Real.~":             negFn,
+	"Real.~": negFn,
+	"String.<": stringOp(func(a, b string) bool {
+		return a < b
+	}),
+	"String.<=": stringOp(func(a, b string) bool {
+		return a <= b
+	}),
+	"String.<>": stringOp(func(a, b string) bool {
+		return a != b
+	}),
+	"String.=": stringOp(func(a, b string) bool {
+		return a == b
+	}),
+	"String.>": stringOp(func(a, b string) bool {
+		return a > b
+	}),
+	"String.>=": stringOp(func(a, b string) bool {
+		return a >= b
+	}),
 	"String.^":           caretFn,
+	"String.collate":     Fn(stringCollateFn),
+	"String.compare":     Fn(stringCompareFn),
 	"String.concat":      concatFn,
+	"String.concatWith":  Fn(stringConcatWithFn),
+	"String.explode":     explodeFn,
+	"String.extract":     Fn(stringExtractFn),
+	"String.fields":      stringSplit(true),
+	"String.implode":     implodeFn,
+	"String.isPrefix":    Fn(stringIsPrefixFn),
+	"String.isSubstring": Fn(stringIsSubstringFn),
+	"String.isSuffix":    Fn(stringIsSuffixFn),
+	"String.map":         Fn(stringMapFn),
+	"String.maxSize":     stringMaxSize,
 	"String.size":        sizeFn,
 	"String.str":         strFn,
+	"String.sub":         Fn(stringSubFn),
+	"String.substring":   Fn(stringSubstringFn),
+	"String.tokens":      stringSplit(false),
+	"String.translate":   Fn(stringTranslateFn),
 	"StringCvt.padLeft":  Curry3(stringCvtPadLeftFn),
 	"StringCvt.padRight": Curry3(stringCvtPadRightFn),
 	"Sys.parseTree":      parseTree,

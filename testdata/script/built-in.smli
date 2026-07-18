@@ -207,6 +207,10 @@ Char.chr;
 (* "val compare : 'a * 'a -> order" maps to "String.compare" *)
 String.compare;
 > val it = fn : string * string -> order
+String.compare ("abc", "xyz");
+> val it = LESS : order
+String.compare ("abc", "");
+> val it = GREATER : order
 
 (* "val concat : string list -> string" maps to "String.concat" *)
 concat;

@@ -470,6 +470,11 @@ fun wc_mapper line =
 fun wc_reducer (key, values) = List.foldl (op +) 0 values;
 > val wc_reducer = fn : 'a * int list -> int
 
+(*) Check that they work on discrete values
+wc_mapper "a skunk sat on a stump";
+> val it = [("a",1),("skunk",1),("sat",1),("on",1),("a",1),("stump",1)]
+>   : (string * int) list
+
 (*) Bind them to mapReduce, and run
 fun wordCount lines = mapReduce wc_mapper wc_reducer lines;
 > val wordCount = fn : string list -> (string * int) list
