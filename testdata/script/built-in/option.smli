@@ -122,6 +122,11 @@ Option.compose (String.size,
 Option.compose (String.size,
                 (fn s => if s = "" then NONE
                  else SOME (String.substring (s, 0, String.size s))))
+               "a";
+> val it = SOME 1 : int option
+Option.compose (String.size,
+                (fn s => if s = "" then NONE
+                 else SOME (String.substring (s, 0, String.size s))))
                "";
 > val it = NONE : int option
 

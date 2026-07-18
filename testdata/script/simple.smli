@@ -807,6 +807,14 @@ val a = pqr + 1;
 
 fun f n = String.substring ("hello", 1, n);
 > val f = fn : int -> string
+f 2;
+> val it = "el" : string
+f 6;
+> uncaught exception Subscript [subscript out of bounds]
+>   raised at: stdIn:1.11-1.43
+f ~1;
+> uncaught exception Subscript [subscript out of bounds]
+>   raised at: stdIn:1.11-1.43
 
 (*) Word literals: decimal and hexadecimal
 0w255;

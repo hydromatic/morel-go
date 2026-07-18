@@ -1,0 +1,90 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Solves the Wordle word puzzle. It includes the corpus of words and
+ * solutions used by the actual web site, and has a mechanism for
+ * choosing the optimal guess given the information from previous
+ * guesses.
+ *)
+Sys.set ("lineWidth", 78);
+> val it = () : unit
+Sys.set ("printLength", 64);
+> val it = () : unit
+
+(*) Set this to false in tests, true if you want to do some slow/clever stuff.
+val slow = false;
+> val slow = false : bool
+
+fun mask (guess, answer) =
+  let
+    fun mask2 (m, i, [], answer) = m
+      | mask2 (m, i, letter :: rest, answer) =
+          mask2 ((m * 3
+            + (if String.sub (answer, i) = letter then 2
+             else if String.isSubstring (str letter) answer then 1
+             else 0)), i + 1, rest, answer)
+  in
+    mask2 (0, 0, explode guess, answer)
+  end;
+> val mask = fn : string * string -> int
+
+(*) should be 0 (no letters in common)
+mask ("abcde", "troll");
+> val it = 0 : int
+(*) should be 2 (last letter is correct)
+mask ("abcde", "sprue");
+> val it = 2 : int
+(*) should be 1 (last letter exists)
+mask ("abcde", "sprew");
+> val it = 1 : int
+(*) should be 2 (last letter is correct and exists elsewhere)
+mask ("abcde", "spree");
+> val it = 2 : int
+(*) should be 6 (second to last letter is correct)
+mask ("abcde", "spuds");
+> val it = 6 : int
+
+Sys.set ("matchCoverageEnabled", false);
+> val it = () : unit
+fun maskToString m =
+  let
+    fun maskToString2 (m, s, 0) = s
+      | maskToString2 (m, s, k) =
+        maskToString2 (m div 3,
+          (case (m mod 3) of
+              0 => "b"
+            | 1 => "y"
+            | 2 => "g") ^ s,
+          k - 1)
+  in
+    maskToString2 (m, "", 5)
+  end;
+> val maskToString = fn : int -> string
+Sys.unset "matchCoverageEnabled";
+> val it = () : unit
+
+maskToString 0;
+> val it = "bbbbb" : string
+maskToString 1;
+> val it = "bbbby" : string
+maskToString 5;
+> val it = "bbbyg" : string
+maskToString (mask ("abcde", "spuds"));
+> val it = "bbbgb" : string
+
+(*) End wordle.smli

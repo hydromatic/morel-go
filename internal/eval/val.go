@@ -35,11 +35,12 @@ type Con struct {
 
 // Names of the built-in exceptions that the runtime raises.
 const (
-	ExnBind     = "Bind"
-	ExnDiv      = "Div"
-	ExnDomain   = "Domain"
-	ExnOverflow = "Overflow"
-	ExnSize     = "Size"
+	ExnBind      = "Bind"
+	ExnDiv       = "Div"
+	ExnDomain    = "Domain"
+	ExnOverflow  = "Overflow"
+	ExnSubscript = "Subscript"
+	ExnSize      = "Size"
 )
 
 // MorelError is a Morel runtime error: the name of the exception
