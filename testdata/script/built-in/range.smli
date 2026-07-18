@@ -40,6 +40,18 @@ Range.continuousSetOf [CLOSED (5, 10), CLOSED (1, 3), CLOSED (3, 6)];
 Range.discreteSetOf [CLOSED (5, 10), CLOSED (1, 3), CLOSED (3, 6)];
 > val it = DISCRETE_SET [CLOSED (1,10)] : int discrete_set
 
+(*) Range.ranges returns the list of ranges in a continuous_set.
+(Range.continuousSetOf [CLOSED (1, 3), CLOSED (7, 9)]).ranges ();
+> val it = [CLOSED (1,3),CLOSED (7,9)] : int range list
+
+(*) Range.toList enumerates values.
+(Range.discreteSetOf [CLOSED (5, 10)]).toList ();
+> val it = [5,6,7,8,9,10] : int list
+
+(*) Range.toBag enumerates values as a bag.
+(Range.discreteSetOf [CLOSED (1, 3)]).toBag ();
+> val it = [1,2,3] : int bag
+
 (* Range.flatten concatenates ranges in input order, preserving
  * duplicates. *)
 Range.flatten [CLOSED (0, 3), POINT 10, CLOSED (2, 5)];

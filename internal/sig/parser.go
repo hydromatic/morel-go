@@ -26,8 +26,7 @@ import (
 // items between "sig" and "end", with comments and attributes
 // (such as "[@@method]") removed.
 func parseFile(name, src string) (*file, error) {
-	body, err := signatureBody(name, stripAttributes(
-		stripComments(src)))
+	body, err := signatureBody(name, stripComments(src))
 	if err != nil {
 		return nil, err
 	}
@@ -55,13 +54,15 @@ var itemKeywords = map[string]bool{
 const datatypeKeyword = "datatype"
 
 func (f *file) parseItem(item string) error {
+	method := strings.Contains(item, "[@@method]")
+	item = stripAttributes(item)
 	tokens := strings.Fields(item)
 	// lint: sort until '^	}' where '^	case '
 	switch tokens[0] {
 	case "exception", "structure":
 		return nil
 	case "val":
-		return f.parseValSpec(item)
+		return f.parseValSpec(item, method)
 	case datatypeKeyword, "eqtype", "type":
 		return f.parseTypeSpec(tokens[0], item)
 	default:
@@ -70,7 +71,7 @@ func (f *file) parseItem(item string) error {
 }
 
 // parseValSpec reads "val name : type".
-func (f *file) parseValSpec(item string) error {
+func (f *file) parseValSpec(item string, method bool) error {
 	rest := strings.TrimPrefix(item, "val")
 	name, rest, ok := cutToken(rest)
 	if !ok {
@@ -82,8 +83,9 @@ func (f *file) parseValSpec(item string) error {
 		return fmt.Errorf("expected ':' in %q", item)
 	}
 	f.vals = append(f.vals, valSpec{
-		name: unquote(name),
-		typ:  strings.TrimSpace(typ),
+		name:   unquote(name),
+		typ:    strings.TrimSpace(typ),
+		method: method,
 	})
 	return nil
 }

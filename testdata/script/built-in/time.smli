@@ -56,10 +56,16 @@ Time.fromSeconds 1;
 Time.toSeconds (Time.fromSeconds 42);
 > val it = 42 : int
 
+(Time.fromSeconds 42).toSeconds ();
+> val it = 42 : int
+
 Time.fromMilliseconds 1500;
 > val it = 1500000000 : time
 
 Time.toMilliseconds (Time.fromSeconds 2);
+> val it = 2000 : int
+
+(Time.fromSeconds 2).toMilliseconds ();
 > val it = 2000 : int
 
 Time.fromMicroseconds 1000000;
@@ -68,10 +74,16 @@ Time.fromMicroseconds 1000000;
 Time.toMicroseconds (Time.fromSeconds 1);
 > val it = 1000000 : int
 
+(Time.fromSeconds 1).toMicroseconds ();
+> val it = 1000000 : int
+
 Time.fromNanoseconds 1000000000;
 > val it = 1000000000 : time
 
 Time.toNanoseconds (Time.fromSeconds 1);
+> val it = 1000000000 : int
+
+(Time.fromSeconds 1).toNanoseconds ();
 > val it = 1000000000 : int
 
 Time.fromReal 1.5;
@@ -80,7 +92,13 @@ Time.fromReal 1.5;
 Time.toReal (Time.fromReal 2.5);
 > val it = 2.5 : real
 
+(Time.fromReal 2.5).toReal ();
+> val it = 2.5 : real
+
 Time.toString Time.zeroTime;
+> val it = "0.000" : string
+
+Time.zeroTime.toString ();
 > val it = "0.000" : string
 
 Time.fmt 0 Time.zeroTime;
@@ -104,22 +122,46 @@ Time.compare (Time.fromSeconds 2, Time.fromSeconds 1);
 Time.compare (Time.fromSeconds 1, Time.fromSeconds 1);
 > val it = EQUAL : order
 
+(Time.fromSeconds 1).compare (Time.fromSeconds 2);
+> val it = LESS : order
+
+(Time.fromSeconds 2).compare (Time.fromSeconds 1);
+> val it = GREATER : order
+
 Time.`+` (Time.fromSeconds 1, Time.fromSeconds 2);
+> val it = 3000000000 : time
+
+(Time.fromSeconds 1).`+` (Time.fromSeconds 2);
 > val it = 3000000000 : time
 
 Time.`-` (Time.fromSeconds 3, Time.fromSeconds 1);
 > val it = 2000000000 : time
 
+(Time.fromSeconds 3).`-` (Time.fromSeconds 1);
+> val it = 2000000000 : time
+
 Time.`<` (Time.fromSeconds 1, Time.fromSeconds 2);
+> val it = true : bool
+
+(Time.fromSeconds 1).`<` (Time.fromSeconds 2);
 > val it = true : bool
 
 Time.`<=` (Time.fromSeconds 1, Time.fromSeconds 1);
 > val it = true : bool
 
+(Time.fromSeconds 1).`<=` (Time.fromSeconds 1);
+> val it = true : bool
+
 Time.`>` (Time.fromSeconds 2, Time.fromSeconds 1);
 > val it = true : bool
 
+(Time.fromSeconds 2).`>` (Time.fromSeconds 1);
+> val it = true : bool
+
 Time.`>=` (Time.fromSeconds 2, Time.fromSeconds 1);
+> val it = true : bool
+
+(Time.fromSeconds 2).`>=` (Time.fromSeconds 1);
 > val it = true : bool
 
 (*) Negative time (one second before epoch)
