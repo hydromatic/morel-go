@@ -90,31 +90,58 @@ Date.date {year=1970, month=Jan, day=1, hour=25, minute=0, second=0, offset=NONE
 Date.year (Date.fromTimeUniv (Time.zeroTime));
 > val it = 1970 : int
 
+(Date.fromTimeUniv (Time.zeroTime)).year ();
+> val it = 1970 : int
+
 Date.day (Date.fromTimeUniv (Time.zeroTime));
+> val it = 1 : int
+
+(Date.fromTimeUniv (Time.zeroTime)).day ();
 > val it = 1 : int
 
 Date.hour (Date.fromTimeUniv (Time.zeroTime));
 > val it = 0 : int
 
+(Date.fromTimeUniv (Time.zeroTime)).hour ();
+> val it = 0 : int
+
 Date.minute (Date.fromTimeUniv (Time.zeroTime));
+> val it = 0 : int
+
+(Date.fromTimeUniv (Time.zeroTime)).minute ();
 > val it = 0 : int
 
 Date.second (Date.fromTimeUniv (Time.zeroTime));
 > val it = 0 : int
 
+(Date.fromTimeUniv (Time.zeroTime)).second ();
+> val it = 0 : int
+
 Date.yearDay (Date.fromTimeUniv (Time.zeroTime));
+> val it = 0 : int
+
+(Date.fromTimeUniv (Time.zeroTime)).yearDay ();
 > val it = 0 : int
 
 Date.isDst (Date.fromTimeUniv (Time.zeroTime));
 > val it = NONE : bool option
 
+(Date.fromTimeUniv (Time.zeroTime)).isDst ();
+> val it = NONE : bool option
+
 Date.toTime (Date.fromTimeUniv (Time.zeroTime));
+> val it = 0 : time
+
+(Date.fromTimeUniv (Time.zeroTime)).toTime ();
 > val it = 0 : time
 
 Date.compare (Date.fromTimeUniv (Time.zeroTime), Date.fromTimeUniv (Time.zeroTime));
 > val it = EQUAL : order
 
 Date.compare (Date.fromTimeUniv (Time.zeroTime), Date.fromTimeUniv (Time.fromSeconds 1));
+> val it = LESS : order
+
+(Date.fromTimeUniv (Time.zeroTime)).compare (Date.fromTimeUniv (Time.fromSeconds 1));
 > val it = LESS : order
 
 Date.fmt "%Y-%m-%d" (Date.fromTimeUniv (Time.zeroTime));

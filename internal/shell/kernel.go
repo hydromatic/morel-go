@@ -92,6 +92,7 @@ type Kernel struct {
 	name     string
 	sys      *types.System
 	bindings []compile.Binding
+	methods  *compile.MethodRegistry
 	values   map[string]eval.Val
 	// gaps counts the not-yet-implemented errors and panics that
 	// suppression hid, by message — the inventory of what running
@@ -123,6 +124,7 @@ func NewKernel(name string) *Kernel {
 		sys:      sys,
 		bindings: bindings,
 		gaps:     map[string]int{},
+		methods:  compile.NewMethodRegistry(result.Methods, bindings),
 	}
 	values := make(map[string]eval.Val, len(eval.Builtins))
 	maps.Copy(values, eval.Builtins)
@@ -245,6 +247,7 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	case ast.Expr:
 		decl = compile.ItValDecl(node)
 	}
+	k.methods.RewriteDecl(decl)
 	resolved, err := compile.Deduce(k.sys, k.bindings, decl)
 	if err != nil {
 		return k.formatCompileError(err)
@@ -349,6 +352,7 @@ func (k *Kernel) executeTypeOnly(src string) string {
 	case ast.Expr:
 		decl = compile.ItValDecl(node)
 	}
+	k.methods.RewriteDecl(decl)
 	resolved, err := compile.Deduce(k.sys, k.bindings, decl)
 	if err != nil {
 		return k.formatCompileError(err)

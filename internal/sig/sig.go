@@ -37,6 +37,7 @@ import (
 // as "StringCvt.radix").
 type Result struct {
 	Bindings []compile.Binding
+	Methods  []compile.MethodInfo
 	Skipped  []string
 }
 
@@ -105,8 +106,9 @@ type conSpec struct {
 
 // valSpec is a "val name : type" specification.
 type valSpec struct {
-	name string
-	typ  string
+	name   string
+	typ    string
+	method bool
 }
 
 // structureName converts a file name such as "string-cvt.sig" to
@@ -232,6 +234,13 @@ func (f *file) bindVals(sys *types.System, result *Result) {
 			field: types.Field{Label: v.name, Type: t},
 			nvars: len(tyVars),
 		})
+		if v.method {
+			result.Methods = append(result.Methods, compile.MethodInfo{
+				Structure: f.structure,
+				Name:      v.name,
+				Type:      t,
+			})
+		}
 		if f.structure == "General" {
 			result.Bindings = append(result.Bindings,
 				compile.Binding{Name: v.name, Type: t})

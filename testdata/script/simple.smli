@@ -18,6 +18,8 @@
  *)
 Sys.set ("lineWidth", 78);
 > val it = () : unit
+Sys.set ("printDepth", 6);
+> val it = () : unit
 
 (* Literals ------------------------------------------------------- *)
 
@@ -76,6 +78,14 @@ true;
 > val it = true : bool
 [1,2,3];
 > val it = [1,2,3] : int list
+(*) A cons chain is right-associative, so it builds the same list.
+1 :: 2 :: nil;
+> val it = [1,2] : int list
+(*) Equality on tuples and lists is structural.
+(1, 2) = (1, 3);
+> val it = false : bool
+[1, 2] = [1, 2];
+> val it = true : bool
 (1,2);
 > val it = (1,2) : int * int
 (1,(2,"three"),true);
@@ -441,7 +451,7 @@ val it = {a=1,b={a=2,b={a=3,b={a=4,b={a=#,b=#}}}}}
      b:{a:int, b:{a:int, b:{a:int, b:{a:int, b:{a:int, b:{a:int, b:unit}}}}}}}
 *)
 {a=1,b={a=2,b={a=3,b={a=4,b={a=5,b={a=6,b={a=7,b={}}}}}}}};
-> val it = {a=1,b={a=2,b={a=3,b={a=4,b={a=#,b=#}}}}}
+> val it = {a=1,b={a=2,b={a=3,b={a=4,b={a=5,b={a=#,b=#}}}}}}
 >   : {a:int,
 >       b:{a:int,
 >           b:{a:int, b:{a:int, b:{a:int, b:{a:int, b:{a:int, b:unit}}}}}}}
@@ -623,7 +633,22 @@ fun distance (x, y) (x', y') =
 distance (0.0, 1.0) (4.0, 4.0);
 > val it = 5 : real
 
-(*) Composite declarations
+(* A local binding generalizes its own type variables, but not the type
+ * variables of an enclosing function's parameter: here 'x' generalizes
+ * but 'p' (hence 'a) does not. *)
+fn p => let val g = fn x => (x, p) in (g 1, g 2) end;
+> val it = fn : 'a -> (int * 'a) * (int * 'a)
+
+(* The value restriction: a binding whose right-hand side is not a
+ * syntactic value is not generalized. *)
+let
+  val notval = (fn x => x) 1
+in
+  notval
+end;
+> val it = 1 : int
+
+(* Composite declarations ----------------------------------------- *)
 let
   val (x, y) = (1, 2)
 in
@@ -871,6 +896,26 @@ f 6;
 f ~1;
 > uncaught exception Subscript [subscript out of bounds]
 >   raised at: stdIn:1.11-1.43
+
+(*) record fields print in alphabetical order, whatever the input order
+{b=2, a=1};
+> val it = {a=1,b=2} : {a:int, b:int}
+
+(*) bag of unit
+bag [(), ()];
+> val it = [(),()] : unit bag
+
+(*) single-element bag
+bag [42];
+> val it = [42] : int bag
+
+(*) empty bag
+bag ([] : string list);
+> val it = [] : string bag
+
+(*) list of bags
+[bag [1, 2], bag [3, 4]];
+> val it = [[1,2],[3,4]] : int bag list
 
 (*) Word literals: decimal and hexadecimal
 0w255;

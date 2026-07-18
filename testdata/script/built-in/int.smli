@@ -89,6 +89,9 @@ Int.`div` (~14, ~3);
 > val it = 4 : int
 Int.`div` (0, ~3);
 > val it = 0 : int
+(*) The infix operator rounds toward negative infinity, as `div` does.
+~7 div 2;
+> val it = ~4 : int
 Int.fromInt;
 > val it = fn : int -> int
 Int.fromInt 3;
@@ -115,6 +118,11 @@ Int.fromString;
 > val it = fn : string -> int option
 Int.fromString "~345";
 > val it = SOME ~345 : int option
+(*) A numeric prefix is accepted; anything else gives NONE.
+Int.fromString "83a";
+> val it = SOME 83 : int option
+Int.fromString "bad";
+> val it = NONE : int option
 Int.max;
 > val it = fn : int * int -> int
 Int.max (4, 3);
@@ -137,6 +145,9 @@ Int.`mod` (~14, ~3);
 > val it = ~2 : int
 Int.`mod` (0, ~3);
 > val it = 0 : int
+(*) The infix operator takes the sign of the divisor, as `mod` does.
+7 mod ~2;
+> val it = ~1 : int
 Int.quot;
 > val it = fn : int * int -> int
 Int.quot (14, 3);
@@ -196,6 +207,38 @@ Int.toString ~345;
  * users will see the record list in non-tabular notation. *)
 Sys.set ("output", "tabular");
 > val it = () : unit
+List.map (fn (Name, X) =>
+             {Name = Name,
+              X = X,
+              dec = Int.fmt DEC X,
+              hex = Int.fmt HEX X,
+              oct = Int.fmt OCT X,
+              bin = Int.fmt BIN X,
+              toString = Int.toString X})
+  [("0", 0),
+   ("1", 1),
+   ("~1", ~1),
+   ("42", 42),
+   ("~42", ~42),
+   ("255", 255),
+   ("~255", ~255),
+   ("1024", 1024),
+   ("Int.maxInt", valOf Int.maxInt),
+   ("Int.minInt", valOf Int.minInt)];
+> Name       X           bin                               dec         hex       oct          toString
+> ---------- ----------- --------------------------------- ----------- --------- ------------ -----------
+> 0                    0 0                                 0           0         0            0
+> 1                    1 1                                 1           1         1            1
+> ~1                  -1 ~1                                ~1          ~1        ~1           ~1
+> 42                  42 101010                            42          2A        52           42
+> ~42                -42 ~101010                           ~42         ~2A       ~52          ~42
+> 255                255 11111111                          255         FF        377          255
+> ~255              -255 ~11111111                         ~255        ~FF       ~377         ~255
+> 1024              1024 10000000000                       1024        400       2000         1024
+> Int.maxInt  2147483647 1111111111111111111111111111111   2147483647  7FFFFFFF  17777777777  2147483647
+> Int.minInt -2147483648 ~10000000000000000000000000000000 ~2147483648 ~80000000 ~20000000000 ~2147483648
+>
+> val it : {Name:string, X:int, bin:string, dec:string, hex:string, oct:string, toString:string} list
 Sys.unset "output";
 > val it = () : unit
 
