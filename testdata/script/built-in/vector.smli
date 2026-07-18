@@ -56,6 +56,10 @@ Vector.fromList ["a", "", "bc"];
 > val it = #["a","","bc"] : string vector
 Vector.fromList [1,2];
 > val it = #[1,2] : int vector
+Sys.plan ();
+> val it =
+>   "apply(fnValue Vector.fromList, argCode tuple(constant(1), constant(2)))"
+>   : string
 
 (*) "vector" is shorthand for "Vector.fromList"
 vector [1,2];
@@ -72,6 +76,8 @@ vector [1,2];
 *)
 Vector.fromList [];
 > val it = #[] : 'a vector
+Sys.plan ();
+> val it = "apply(fnValue Vector.fromList, argCode tuple)" : string
 
 (*) Vector.maxLen: int
 Vector.maxLen;
@@ -88,6 +94,10 @@ Vector.length;
 > val it = fn : 'a vector -> int
 Vector.length (Vector.fromList [1,2,3]);
 > val it = 3 : int
+Sys.plan ();
+> val it =
+>   "apply(fnValue Vector.length, argCode apply(fnValue Vector.fromList, argCode tuple(constant(1), constant(2), constant(3))))"
+>   : string
 
 (*) Vector.sub : 'a vector * int -> 'a
 Vector.sub;
@@ -100,6 +110,10 @@ Vector.sub (Vector.fromList [3,6,9], ~1);
 Vector.sub (Vector.fromList [3,6,9], 3);
 > uncaught exception Subscript [subscript out of bounds]
 >   raised at: stdIn:1.1-1.40
+Sys.plan ();
+> val it =
+>   "apply2(fnValue Vector.sub, apply(fnValue Vector.fromList, argCode tuple(constant(3), constant(6), constant(9))), constant(3))"
+>   : string
 
 (*) Vector.update : 'a vector * int * 'a -> 'a vector
 Vector.update;
@@ -112,6 +126,10 @@ Vector.update (Vector.fromList ["a","b","c"], ~1, "baz");
 Vector.update (Vector.fromList ["a","b","c"], 3, "baz");
 > uncaught exception Subscript [subscript out of bounds]
 >   raised at: stdIn:1.1-1.56
+Sys.plan ();
+> val it =
+>   "apply3(fnValue Vector.update, apply(fnValue Vector.fromList, argCode tuple(constant(a), constant(b), constant(c))), constant(3), constant(baz))"
+>   : string
 
 (*) Vector.concat : 'a vector list -> 'a vector
 Vector.concat;
@@ -119,6 +137,10 @@ Vector.concat;
 Vector.concat [Vector.fromList ["a","b"],
   Vector.fromList [], Vector.fromList ["c"]];
 > val it = #["a","b","c"] : string vector
+Sys.plan ();
+> val it =
+>   "apply(fnValue Vector.concat, argCode tuple(apply(fnValue Vector.fromList, argCode tuple(constant(a), constant(b))), apply(fnValue Vector.fromList, argCode tuple), apply(fnValue Vector.fromList, argCode tuple(constant(c)))))"
+>   : string
 
 (*) Vector.appi : (int * 'a -> unit) -> 'a vector -> unit
 Vector.appi;
@@ -143,6 +165,10 @@ Vector.map;
 > val it = fn : ('a -> 'b) -> 'a vector -> 'b vector
 Vector.map (fn s => String.sub (s, 0)) (Vector.fromList ["abc", "xyz"]);
 > val it = #[#"a",#"x"] : char vector
+Sys.plan ();
+> val it =
+>   "apply2(fnValue Vector.map, match(s, apply2(fnValue String.sub, stack(offset 1, name s), constant(0))), apply(fnValue Vector.fromList, argCode tuple(constant(abc), constant(xyz))))"
+>   : string
 
 (*) Vector.foldli : (int * 'a * 'b -> 'b) -> 'b -> 'a vector -> 'b
 Vector.foldli;

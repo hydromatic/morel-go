@@ -64,6 +64,8 @@ List.concat [[1, 2], [3], [], [4, 2, 5]];
 > val it = [1,2,3,4,2,5] : int list
 List.concat [[], []];
 > val it = [] : 'a list
+Sys.plan ();
+> val it = "apply(fnValue List.concat, argCode tuple(tuple, tuple))" : string
 
 List.`except` [[1, 2], [2], [3], []];
 > val it = [1] : int list
@@ -75,6 +77,10 @@ List.`except` [["a", "b", "c", "a"], ["c", "b", "c"]];
 > val it = ["a","a"] : string list
 List.`except` [["a", "b"], ["a", "c"], ["a"]];
 > val it = ["b"] : string list
+Sys.plan ();
+> val it =
+>   "apply(fnValue List.except, argCode tuple(tuple(constant(a), constant(b)), tuple(constant(a), constant(c)), tuple(constant(a))))"
+>   : string
 
 List.`intersect` [[1, 2], [2], [0, 2, 4]];
 > val it = [2] : int list
@@ -92,6 +98,10 @@ List.`except` [List.`intersect` [[1, 2, 3], [2, 3, 4]], [1, 3, 5]];
 > val it = [2] : int list
 List.`except` [[1, 2, 3], List.`intersect` [[1, 3, 5], [2, 3, 4]]];
 > val it = [1,2] : int list
+Sys.plan ();
+> val it =
+>   "apply(fnValue List.except, argCode tuple(tuple(constant(1), constant(2), constant(3)), apply(fnValue List.intersect, argCode tuple(tuple(constant(1), constant(3), constant(5)), tuple(constant(2), constant(3), constant(4))))))"
+>   : string
 
 (*) The "compare" function.
 Relational.compare;

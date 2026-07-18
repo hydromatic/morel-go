@@ -94,6 +94,9 @@ type Kernel struct {
 	bindings []compile.Binding
 	methods  *compile.MethodRegistry
 	values   map[string]eval.Val
+	// lastCode is the compiled code of the most recently executed
+	// statement's expression; Sys.plan describes it.
+	lastCode eval.Code
 	// gaps counts the not-yet-implemented errors and panics that
 	// suppression hid, by message — the inventory of what running
 	// the input would need. Gaps reports it.
@@ -268,6 +271,9 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	}
 	frame := eval.NewFrame(compiled.Slots)
 	_, err = compiled.Code.Eval(frame)
+	// Record the statement's code for Sys.plan, after evaluating —
+	// so a Sys.plan call sees the previous statement, as java does.
+	k.lastCode = compiled.Plan
 	if err != nil {
 		var morelErr *eval.MorelError
 		if errors.As(err, &morelErr) {

@@ -18,6 +18,8 @@
 package compile
 
 import (
+	"strings"
+
 	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/eval"
 	"github.com/hydromatic/morel-go/internal/types"
@@ -37,6 +39,10 @@ type Bind struct {
 type Compiled struct {
 	Binds []Bind
 	Code  eval.Code
+	// Plan is the code of the bound expression — the code that
+	// Sys.plan describes. For "val pat = exp" it is exp's code,
+	// without the surrounding binding.
+	Plan  eval.Code
 	Slots int
 }
 
@@ -51,7 +57,7 @@ func Statement(decl core.Decl,
 		slots:  map[*core.IDPat]int{},
 		sys:    sys,
 	}
-	var code eval.Code
+	var code, plan eval.Code
 	var ids []*core.IDPat
 	switch d := decl.(type) {
 	case *core.NonRecValDecl:
@@ -64,6 +70,7 @@ func Statement(decl core.Decl,
 			return nil, err
 		}
 		code = eval.Let(pat, exp, eval.Unit(), d.Span)
+		plan = exp
 		ids = core.PatIDs(d.Pat)
 	case *core.RecValDecl:
 		var err error
@@ -86,6 +93,7 @@ func Statement(decl core.Decl,
 	return &Compiled{
 		Binds: binds,
 		Code:  code,
+		Plan:  plan,
 		Slots: c.nSlots,
 	}, nil
 }
@@ -138,7 +146,8 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 		if err != nil {
 			return nil, err
 		}
-		return eval.Apply(fn, arg, e.Span), nil
+		name, arity, curried := c.builtinFnInfo(e.Fn, fn)
+		return eval.Apply(fn, arg, e.Span, name, arity, curried), nil
 	case *core.Case:
 		return c.compileCase(e)
 	case *core.Con:
@@ -202,6 +211,89 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 	}
 }
 
+// builtinFnInfo returns the qualified name and argument arity of
+// the function in an application, when it is a built-in. The
+// compiled plan names such a function; for anything else it
+// returns "", 0. A built-in is referenced either directly, as a
+// named value whose code is a bare function (an operator such as
+// "op +"), or as a structure member, "Structure.member", which
+// resolves to a field selection over a structure value.
+func (c *compiler) builtinFnInfo(fnExp core.Exp,
+	fnCode eval.Code,
+) (string, int, int) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch fn := fnExp.(type) {
+	case *core.Apply:
+		sel, isSel := fn.Fn.(*core.Selector)
+		id, isID := fn.Arg.(*core.ID)
+		if !isSel || !isID {
+			return "", 0, 0
+		}
+		name := id.Pat.Name + "." + sel.Name
+		if _, ok := c.values[name]; !ok {
+			return "", 0, 0
+		}
+		return planFnName(name), builtinArity(fn.Type()),
+			curriedArity(fn.Type())
+	case *core.ID:
+		if !eval.IsBuiltinFn(fnCode) {
+			return "", 0, 0
+		}
+		return planFnName(fn.Pat.Name), builtinArity(fn.Pat.T),
+			curriedArity(fn.Pat.T)
+	default:
+		return "", 0, 0
+	}
+}
+
+// curriedArity is the number of curried arguments a built-in takes,
+// used to collapse a fully applied curried built-in to apply2/apply3
+// in the plan. It is the number of arrows in the type — except that
+// a built-in whose parameter is a tuple takes it as a single
+// argument (rendered via the tuple form) and its result, if a
+// function, is applied separately, so its arity is 1. This keeps
+// "(f o g) x" from folding the outer application into the compose.
+func curriedArity(t types.Type) int {
+	if fn, isFn := t.(*types.Fn); isFn {
+		if _, isTuple := fn.Param.(*types.Tuple); isTuple {
+			return 1
+		}
+	}
+	n := 0
+	for {
+		fn, isFn := t.(*types.Fn)
+		if !isFn {
+			return n
+		}
+		n++
+		t = fn.Result
+	}
+}
+
+// planFnName is a built-in's name as the compiled plan shows it:
+// an operator (whose name begins "op ") drops the prefix and is
+// shown bare, as "+" or "@".
+func planFnName(name string) string {
+	if rest, ok := strings.CutPrefix(name, "op "); ok {
+		return rest
+	}
+	return name
+}
+
+// builtinArity is the number of arguments a function type takes at
+// once: the size of its parameter tuple, or 1 when the parameter
+// is not a tuple.
+func builtinArity(t types.Type) int {
+	fn, isFn := t.(*types.Fn)
+	if !isFn {
+		return 1
+	}
+	if tup, isTuple := fn.Param.(*types.Tuple); isTuple {
+		return len(tup.Args)
+	}
+	return 1
+}
+
 // compileFn compiles a function body in its own scope, then
 // emits code that creates the closure, capturing whatever the
 // body referenced from enclosing scopes.
@@ -220,8 +312,8 @@ func (c *compiler) compileFn(fn *core.Fn) (eval.Code, error) {
 	if err != nil {
 		return nil, err
 	}
-	return eval.MakeClosure(param, body, inner.captures,
-		inner.nSlots), nil
+	return eval.MakeClosure(param, fn.IDPat.Name, body,
+		inner.captures, inner.nSlots), nil
 }
 
 func (c *compiler) compileCase(caseExp *core.Case) (eval.Code,

@@ -1,0 +1,246 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Tests for inlining and other optimizations.
+ *)
+Sys.set ("stringDepth", ~1);
+> val it = () : unit
+
+(* --- Variable inlining ------------------------------------------ *)
+
+(*) A variable used once is inlined.
+let val x = 1 in x + 2 end;
+> val it = 3 : int
+
+(*) A variable used twice is not inlined if non-atomic.
+let val x = 1 + 1 in x + x end;
+> val it = 4 : int
+
+(*) An atomic variable (bound to a literal) used twice is inlined.
+let val x = 5 in x + x end;
+> val it = 10 : int
+
+(*) A dead variable (not used) is removed.
+let val x = 1 val y = 2 in y end;
+> val it = 2 : int
+
+(* --- Function inlining ------------------------------------------ *)
+
+(*) A function applied once is inlined.
+let val f = fn x => x + 1 in f 5 end;
+> val it = 6 : int
+
+(* --- Singleton case inlining ------------------------------------ *)
+
+(*) A singleton case with id pattern is inlined.
+let val f = fn x => case x of y => y + 2 in f 3 end;
+> val it = 5 : int
+
+(* --- Constant case inlining (issue #330) ------------------------ *)
+
+(*) Case on a constant matching a literal pattern.
+let val x = 2 in case x of 1 => "one" | 2 => "two" | _ => "large" end;
+> val it = "two" : string
+
+(*) Case on a constant matching the first pattern.
+let val x = 1 in case x of 1 => "one" | 2 => "two" | _ => "large" end;
+> val it = "one" : string
+
+(*) Case on a constant matching the wildcard pattern.
+let val x = 99 in case x of 1 => "one" | 2 => "two" | _ => "large" end;
+> val it = "large" : string
+
+(*) Case on a constant with id pattern that binds the value.
+let val x = 5 in case x of y => y + 10 end;
+> val it = 15 : int
+
+(*) If-then-else with constant true condition.
+if true then "yes" else "no";
+> val it = "yes" : string
+
+(*) If-then-else with constant false condition.
+if false then "yes" else "no";
+> val it = "no" : string
+
+(*) Boolean case.
+let val b = true in case b of true => 1 | false => 0 end;
+> val it = 1 : int
+
+(*) String case.
+let val s = "hello" in case s of "hello" => 1 | "world" => 2 | _ => 3 end;
+> val it = 1 : int
+
+(*) Char case.
+let val c = #"a" in case c of #"a" => 1 | #"b" => 2 | _ => 3 end;
+> val it = 1 : int
+
+(*) Real case.
+let val r = 1.0 in case r of 0.0 => 0 | 1.0 => 1 | _ => 2 end;
+> val it = 1 : int
+
+(*) Tuple case.
+let
+  val t = (1, "a")
+in
+  case t of
+     (0, _) => "zero"
+   | (1, s) => "one:" ^ s
+   | _ => "other"
+end;
+> val it = "one:a" : string
+
+(*) Enum case
+let
+  val ordering = LESS
+in
+  case ordering of
+     LESS => "LESS"
+   | GREATER => "GREATER"
+   | _ => "?"
+end;
+> val it = "LESS" : string
+
+(*) Option case (an enum with one argument).
+let
+  val someA = SOME "a"
+in
+  case someA of
+      SOME "0" => "some0"
+    | SOME s => "some:" ^ s
+    | NONE => "none"
+end;
+> val it = "some:a" : string
+
+let
+  val none = NONE
+in
+  case none of
+      SOME "0" => "some0"
+    | SOME s => "some:" ^ s
+    | NONE => "none"
+end;
+> val it = "none" : string
+
+(*) Either case (an enum with two type parameters).
+let
+  val `left` = INL "a"
+in
+  case `left` of INL s => "left:" ^ s | INR s => "right:" ^ s
+end;
+> val it = "left:a" : string
+
+(*) Tree case (an enum with a tuple value)
+let
+  datatype tree = EMPTY | NODE of tree * int * string
+  val v = NODE (NODE (EMPTY, 1, "a"), 2, "b")
+in
+  case v of EMPTY => "empty" | NODE (t, i, s) => s
+end;
+> val it = "b" : string
+
+(* --- Cross-compile-unit inlining (issue #223) ------------------- *)
+
+(*) An atomic integer from a previous compile unit is inlined.
+val x = 42;
+> val x = 42 : int
+x + 1;
+> val it = 43 : int
+
+(*) An atomic string from a previous compile unit is inlined.
+val greeting = "hello";
+> val greeting = "hello" : string
+String.size greeting;
+> val it = 5 : int
+
+(*) An atomic boolean from a previous compile unit is inlined.
+val flag = true;
+> val flag = true : bool
+if flag then 1 else 2;
+> val it = 1 : int
+
+(*) Multiple atomic values from previous compile units are inlined.
+val a = 10;
+> val a = 10 : int
+val b = 20;
+> val b = 20 : int
+a + b;
+> val it = 30 : int
+
+(* --- Cross-compile-unit function inlining (issue #223) ---------- *)
+
+(*) A simple function from a previous compile unit is inlined.
+val inc = fn x => x + 1;
+> val inc = fn : int -> int
+inc 5;
+> val it = 6 : int
+
+(*) A function with multiple operations is inlined and beta-reduced.
+val double = fn n => n * 2;
+> val double = fn : int -> int
+double 7;
+> val it = 14 : int
+
+(*) Composing inlined functions.
+val inc2 = fn x => x + 1;
+> val inc2 = fn : int -> int
+val double2 = fn x => x * 2;
+> val double2 = fn : int -> int
+inc2 (double2 3);
+> val it = 7 : int
+
+fn i => inc2 (double2 i);
+> val it = fn : int -> int
+
+(*) Recursive functions are NOT inlined (would cause infinite expansion).
+val rec factorial = fn n => if n < 2 then 1 else n * factorial (n - 1);
+> val factorial = fn : int -> int
+factorial 5;
+> val it = 120 : int
+
+(*) Polymorphic functions are NOT inlined (require type unification).
+val id = fn x => x;
+> val id = fn : 'a -> 'a
+id 42;
+> val it = 42 : int
+
+(*) Functions that reference other inlinable values are also inlined.
+val offset = 100;
+> val offset = 100 : int
+val addOffset = fn x => x + offset;
+> val addOffset = fn : int -> int
+addOffset 5;
+> val it = 105 : int
+
+(*) Capture
+val n = 1;
+> val n = 1 : int
+val f = fn x => x + n;
+> val f = fn : int -> int
+val n = 2;
+> val n = 2 : int
+(*) Result should be 4 = 3 + 1, because n = 1 when f captured it.
+val i = f 3;
+> val i = 4 : int
+
+(*) Predicate inversion in a graph query
+val edges = [
+ {x = 1, y = 2},
+ {x = 2, y = 3}];
+> val edges = [{x=1,y=2},{x=2,y=3}] : {x:int, y:int} list
+
+(*) End optimize.smli

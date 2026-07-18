@@ -19,6 +19,8 @@ package eval
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/token"
@@ -56,7 +58,7 @@ func (c *constantCode) Eval(*Frame) (Val, error) {
 }
 
 func (c *constantCode) Describe() string {
-	return fmt.Sprintf("constant(%v)", c.v)
+	return "constant(" + PlanString(c.v) + ")"
 }
 
 // GetSlot returns code that reads a variable's slot.
@@ -74,7 +76,11 @@ func (c *getCode) Eval(f *Frame) (Val, error) {
 }
 
 func (c *getCode) Describe() string {
-	return "get(name " + c.name + ")"
+	// The plan describes a local by its distance from the top of
+	// the frame, counting from 1: a function's parameter is at
+	// slot 0, the most recently pushed, so it is offset 1.
+	return "stack(offset " + strconv.Itoa(c.slot+1) +
+		", name " + c.name + ")"
 }
 
 // Closure is a user function value: the pattern that binds its
@@ -111,22 +117,24 @@ type Capture struct {
 
 // MakeClosure returns code that creates a closure, capturing the
 // given slots of the current frame.
-func MakeClosure(param Pat, body Code, captures []Capture,
-	nSlots int,
+func MakeClosure(param Pat, paramName string, body Code,
+	captures []Capture, nSlots int,
 ) Code {
 	return &makeClosureCode{
-		param:    param,
-		body:     body,
-		captures: captures,
-		nSlots:   nSlots,
+		param:     param,
+		paramName: paramName,
+		body:      body,
+		captures:  captures,
+		nSlots:    nSlots,
 	}
 }
 
 type makeClosureCode struct {
-	param    Pat
-	body     Code
-	captures []Capture
-	nSlots   int
+	param     Pat
+	paramName string
+	body      Code
+	captures  []Capture
+	nSlots    int
 }
 
 func (c *makeClosureCode) Eval(f *Frame) (Val, error) {
@@ -146,20 +154,39 @@ func (c *makeClosureCode) Eval(f *Frame) (Val, error) {
 }
 
 func (c *makeClosureCode) Describe() string {
-	return "closure(" + c.body.Describe() + ")"
+	return "match(" + c.paramName + ", " + c.body.Describe() + ")"
 }
 
 // Apply returns code that evaluates a function and an argument
 // and applies one to the other; span is where an exception
-// raised by the application is reported.
-func Apply(fn, arg Code, span token.Span) Code {
-	return &applyCode{fn: fn, arg: arg, span: span}
+// raised by the application is reported. When the function is a
+// built-in, fnName is its qualified name (e.g. "Int.+") and
+// fnArity is the number of arguments it takes (1, 2, or 3), used
+// to render the compiled plan; fnName is empty for any other
+// function.
+func Apply(fn, arg Code, span token.Span, fnName string,
+	fnArity, fnCurried int,
+) Code {
+	return &applyCode{
+		fn:        fn,
+		arg:       arg,
+		span:      span,
+		fnName:    fnName,
+		fnArity:   fnArity,
+		fnCurried: fnCurried,
+	}
 }
 
 type applyCode struct {
-	fn   Code
-	arg  Code
-	span token.Span
+	fn      Code
+	arg     Code
+	fnName  string
+	span    token.Span
+	fnArity int
+	// fnCurried is the built-in's total number of curried
+	// arguments (arrows in its type), used to collapse a fully
+	// applied curried built-in to apply2/apply3 in the plan.
+	fnCurried int
 }
 
 func (c *applyCode) Eval(f *Frame) (Val, error) {
@@ -199,8 +226,62 @@ func ApplyVal(fn, arg Val) (Val, error) {
 }
 
 func (c *applyCode) Describe() string {
-	return "apply(fnValue " + c.fn.Describe() + ", argCode " +
+	// A fully applied curried built-in "F a1 ... aN" is described
+	// as applyN(fnValue F, a1, ..., aN).
+	if name, args := c.curriedSpine(); name != "" {
+		return applyN(name, args)
+	}
+	// A built-in whose argument is a tuple of the arity it expects
+	// is described the same way, with the tuple's elements spread.
+	if c.fnName != "" {
+		if tup, ok := c.arg.(*tupleCode); ok &&
+			len(tup.args) == c.fnArity &&
+			(c.fnArity == 2 || c.fnArity == 3) {
+			return applyN(c.fnName, tup.args)
+		}
+		return "apply(fnValue " + c.fnName + ", argCode " +
+			c.arg.Describe() + ")"
+	}
+	return "apply(fnCode " + c.fn.Describe() + ", argCode " +
 		c.arg.Describe() + ")"
+}
+
+// curriedSpine returns the built-in name and argument codes of a
+// fully applied curried built-in "F a1 ... aN" (2 or 3 args), or
+// "" if this application is not one.
+func (c *applyCode) curriedSpine() (string, []Code) {
+	args := []Code{c.arg}
+	cur := c.fn
+	for {
+		inner, ok := cur.(*applyCode)
+		if !ok {
+			return "", nil
+		}
+		args = append([]Code{inner.arg}, args...)
+		if inner.fnName != "" {
+			if inner.fnCurried == len(args) &&
+				(len(args) == 2 || len(args) == 3) {
+				return inner.fnName, args
+			}
+			return "", nil
+		}
+		cur = inner.fn
+	}
+}
+
+// applyN renders "applyN(fnValue name, arg0, arg1, ...)".
+func applyN(name string, args []Code) string {
+	var b strings.Builder
+	b.WriteString("apply")
+	b.WriteString(strconv.Itoa(len(args)))
+	b.WriteString("(fnValue ")
+	b.WriteString(name)
+	for _, a := range args {
+		b.WriteString(", ")
+		b.WriteString(a.Describe())
+	}
+	b.WriteString(")")
+	return b.String()
 }
 
 // recCell is the placeholder that a recursive binding's slot
@@ -277,7 +358,7 @@ func (c *letCode) Eval(f *Frame) (Val, error) {
 }
 
 func (c *letCode) Describe() string {
-	return "let(" + c.init.Describe() + ", " +
+	return "let1(expCode " + c.init.Describe() + ", resultCode " +
 		c.body.Describe() + ")"
 }
 
@@ -303,7 +384,19 @@ func (c *tupleCode) Eval(f *Frame) (Val, error) {
 }
 
 func (c *tupleCode) Describe() string {
-	return "tuple(...)"
+	if len(c.args) == 0 {
+		return "tuple"
+	}
+	var b strings.Builder
+	b.WriteString("tuple(")
+	for i, a := range c.args {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(a.Describe())
+	}
+	b.WriteString(")")
+	return b.String()
 }
 
 // Unit returns code that yields the unit value.

@@ -62,6 +62,8 @@ String.size "abc";
 > val it = 3 : int
 String.size "";
 > val it = 0 : int
+Sys.plan ();
+> val it = "apply(fnValue String.size, argCode constant())" : string
 
 (*) val sub : string * int -> char
 String.sub;
@@ -79,6 +81,8 @@ String.sub("abc", 3);
 String.sub("abc", ~1);
 > uncaught exception Subscript [subscript out of bounds]
 >   raised at: stdIn:1.1-1.22
+Sys.plan ();
+> val it = "apply2(fnValue String.sub, constant(abc), constant(-1))" : string
 
 (*) val extract: string * int * int option -> string
 String.extract;
@@ -132,6 +136,10 @@ String.substring("hello", 1, ~1);
 String.substring("hello", 1, 5);
 > uncaught exception Subscript [subscript out of bounds]
 >   raised at: stdIn:1.1-1.32
+Sys.plan ();
+> val it =
+>   "apply3(fnValue String.substring, constant(hello), constant(1), constant(5))"
+>   : string
 
 (*) val ^ : string * string -> string
 String.`^`;
@@ -152,6 +160,8 @@ String.concat ["a"];
 > val it = "a" : string
 String.concat [];
 > val it = "" : string
+Sys.plan ();
+> val it = "apply(fnValue String.concat, argCode tuple)" : string
 
 (*) val concatWith : string -> string list -> string
 String.concatWith;
@@ -164,6 +174,8 @@ String.concatWith "," ["", ""];
 > val it = "," : string
 String.concatWith "," [];
 > val it = "" : string
+Sys.plan ();
+> val it = "apply2(fnValue String.concatWith, constant(,), tuple)" : string
 
 (*) val str : char -> string
 String.str;
@@ -178,6 +190,8 @@ String.implode [#"a", #"b", #"c"];
 > val it = "abc" : string
 String.implode [];
 > val it = "" : string
+Sys.plan ();
+> val it = "apply(fnValue String.implode, argCode tuple)" : string
 
 (*) val explode : string -> char list
 String.explode;
@@ -186,6 +200,8 @@ String.explode "abc";
 > val it = [#"a",#"b",#"c"] : char list
 String.explode "";
 > val it = [] : char list
+Sys.plan ();
+> val it = "apply(fnValue String.explode, argCode constant())" : string
 
 (*) val map : (char -> char) -> string -> string
 String.map;
@@ -240,6 +256,8 @@ String.isPrefix "" "hello";
 > val it = true : bool
 String.isPrefix "" "";
 > val it = true : bool
+Sys.plan ();
+> val it = "apply2(fnValue String.isPrefix, constant(), constant())" : string
 
 (*) Partial evaluation
 val p = String.isPrefix "he";
@@ -284,6 +302,8 @@ String.isSuffix "" "hello";
 > val it = true : bool
 String.isSuffix "" "";
 > val it = true : bool
+Sys.plan ();
+> val it = "apply2(fnValue String.isSuffix, constant(), constant())" : string
 
 (*) val compare : string * string -> order
 String.compare;

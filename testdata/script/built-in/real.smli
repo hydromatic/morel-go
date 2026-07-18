@@ -258,6 +258,8 @@ Real.abs Real.negInf;
 > val it = inf : real
 Real.abs nan;
 > val it = nan : real
+Sys.plan ();
+> val it = "apply(fnValue Real.abs, argCode constant(NaN))" : string
 
 (* val min : real * real -> real
    val max : real * real -> real
@@ -312,6 +314,8 @@ Real.sign Real.negInf;
 Real.sign nan;
 > uncaught exception Domain [domain error]
 >   raised at: stdIn:1.1-1.14
+Sys.plan ();
+> val it = "apply(fnValue Real.sign, argCode constant(NaN))" : string
 
 (* "signBit r" returns true if and only if the sign of r (infinities, zeros,
    and NaN, included) is negative. *)
@@ -350,6 +354,9 @@ Real.sameSign (~2.0, nan);
 > val it = false : bool
 Real.sameSign (nan, nan);
 > val it = true : bool
+Sys.plan ();
+> val it = "apply2(fnValue Real.sameSign, constant(NaN), constant(NaN))"
+>   : string
 
 (* "copySign (x, y)" returns x with the sign of y, even if y is NaN. *)
 Real.copySign;
@@ -365,6 +372,9 @@ Real.copySign (~3.5, nan);
 > val it = 3.5 : real
 Real.copySign (2.0, ~0.0);
 > val it = ~2 : real
+Sys.plan ();
+> val it = "apply2(fnValue Real.copySign, constant(2.0), constant(-0.0))"
+>   : string
 
 (* "val compare : real * real -> order" returns LESS, EQUAL, or GREATER
    according to whether its first argument is less than, equal to, or
@@ -587,6 +597,8 @@ Real.toManExp;
 > val it = fn : real -> {exp:int, man:real}
 Real.toManExp 0.0;
 > val it = {exp=~126,man=0} : {exp:int, man:real}
+Sys.plan ();
+> val it = "apply(fnValue Real.toManExp, argCode constant(0.0))" : string
 Real.toManExp ~0.0;
 > val it = {exp=~126,man=~0} : {exp:int, man:real}
 Real.toManExp 0.5;
@@ -693,6 +705,8 @@ Real.split Real.negInf;
 > val it = {frac=~0,whole=~inf} : {frac:real, whole:real}
 Real.split nan;
 > val it = {frac=nan,whole=nan} : {frac:real, whole:real}
+Sys.plan ();
+> val it = "apply(fnValue Real.split, argCode constant(NaN))" : string
 
 (* "realMod r" returns the fractional part of r. "realMod" is equivalent to
    "#frac o split". *)
@@ -714,6 +728,8 @@ Real.realMod Real.negInf;
 > val it = ~0 : real
 Real.realMod nan;
 > val it = nan : real
+Sys.plan ();
+> val it = "apply(fnValue Real.realMod, argCode constant(NaN))" : string
 
 (* "nextAfter (r, t)" returns the next representable real after r in the
    direction of t. Thus, if t is less than r, nextAfter returns the largest
@@ -882,6 +898,8 @@ Real.fromInt 1;
 > val it = 1 : real
 Real.fromInt ~2;
 > val it = ~2 : real
+Sys.plan ();
+> val it = "apply(fnValue Real.fromInt, argCode constant(-2))" : string
 
 (*) real is a synonym for Real.fromInt
 real;
@@ -897,6 +915,8 @@ Real.fromString;
 > val it = fn : string -> real option
 Real.fromString "~0.0";
 > val it = SOME ~0 : real option
+Sys.plan ();
+> val it = "apply(fnValue Real.fromString, argCode constant(~0.0))" : string
 Real.fromString "~23.45e~06";
 > val it = SOME ~2.345E~5 : real option
 (*) sml-nj allows both '-' and '~', both 'E' and 'e', and 0s after 'E'.
@@ -1176,6 +1196,8 @@ Real.toString;
 > val it = fn : real -> string
 Real.toString 0.0;
 > val it = "0" : string
+Sys.plan ();
+> val it = "apply(fnValue Real.toString, argCode constant(0.0))" : string
 Real.toString ~0.0;
 > val it = "~0" : string
 Real.toString 0.01;

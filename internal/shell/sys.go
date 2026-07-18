@@ -145,11 +145,11 @@ func intPropDefault(name string) int {
 }
 
 // sysBuiltins returns the Sys implementations, and their
-// top-level aliases, for NewKernel to inject. Sys.plan stays a
-// placeholder for now.
+// top-level aliases, for NewKernel to inject.
 func (k *Kernel) sysBuiltins() map[string]eval.Val {
 	m := map[string]eval.Val{
 		"Sys.env":     eval.Fn(k.sysEnv),
+		"Sys.plan":    eval.Fn(k.sysPlan),
 		"Sys.set":     eval.Fn(k.sysSet),
 		"Sys.show":    eval.Fn(k.sysShow),
 		"Sys.showAll": eval.Fn(k.sysShowAll),
@@ -174,12 +174,21 @@ func (k *Kernel) sysBuiltins() map[string]eval.Val {
 		}),
 	}
 	m["env"] = m["Sys.env"]
-	m["plan"] = notImplemented("Sys.plan")
+	m["plan"] = m["Sys.plan"]
 	m["set"] = m["Sys.set"]
 	m["show"] = m["Sys.show"]
 	m["showAll"] = m["Sys.showAll"]
 	m["unset"] = m["Sys.unset"]
 	return m
+}
+
+// sysPlan is "Sys.plan ()": the compiled plan of the most
+// recently executed statement, as a string.
+func (k *Kernel) sysPlan(eval.Val) (eval.Val, error) {
+	if k.lastCode == nil {
+		return "", nil
+	}
+	return k.lastCode.Describe(), nil
 }
 
 // timeNow is "Time.now ()": the current time as nanoseconds. It

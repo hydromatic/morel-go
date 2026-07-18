@@ -64,6 +64,8 @@ List.null [];
 > val it = true : bool
 List.null [1];
 > val it = false : bool
+Sys.plan ();
+> val it = "apply(fnValue List.null, argCode tuple(constant(1)))" : string
 
 (*) val length : 'a list -> int
 List.length;
@@ -84,6 +86,8 @@ List.`@` ([], [2]);
 > val it = [2] : int list
 List.`@` ([], []);
 > val it = [] : 'a list
+Sys.plan ();
+> val it = "apply2(fnValue List.@, tuple, tuple)" : string
 
 (op @) ([1], [2, 3]);
 > val it = [1,2,3] : int list
@@ -101,6 +105,8 @@ List.hd [1,2,3];
 List.hd [];
 > uncaught exception Empty
 >   raised at: stdIn:1.1-1.11
+Sys.plan ();
+> val it = "apply(fnValue List.hd, argCode tuple)" : string
 
 (*) val tl : 'a list -> 'a list
 List.tl;
@@ -110,6 +116,8 @@ List.tl [1,2,3];
 List.tl [];
 > uncaught exception Empty
 >   raised at: stdIn:1.1-1.11
+Sys.plan ();
+> val it = "apply(fnValue List.tl, argCode tuple)" : string
 
 (*) val last : 'a list -> 'a
 List.last;
@@ -119,6 +127,8 @@ List.last [1,2,3];
 List.last [];
 > uncaught exception Empty
 >   raised at: stdIn:1.1-1.13
+Sys.plan ();
+> val it = "apply(fnValue List.last, argCode tuple)" : string
 
 (*) val getItem : 'a list -> ('a * 'a list) option
 List.getItem;
@@ -127,6 +137,8 @@ List.getItem [1,2,3];
 > val it = SOME (1,[2,3]) : (int * int list) option
 List.getItem [1];
 > val it = SOME (1,[]) : (int * int list) option
+Sys.plan ();
+> val it = "apply(fnValue List.getItem, argCode tuple(constant(1)))" : string
 
 (*) val nth : 'a list * int -> 'a
 List.nth;
@@ -141,6 +153,10 @@ List.nth ([1,2,3], 3);
 List.nth ([1,2,3], ~1);
 > uncaught exception Subscript [subscript out of bounds]
 >   raised at: stdIn:1.1-1.23
+Sys.plan ();
+> val it =
+>   "apply2(fnValue List.nth, tuple(constant(1), constant(2), constant(3)), constant(-1))"
+>   : string
 
 (*) val only : 'a list -> 'a
 List.only [2];
@@ -167,6 +183,10 @@ List.`take` ([1,2,3], 4);
 List.`take` ([1,2,3], ~1);
 > uncaught exception Subscript [subscript out of bounds]
 >   raised at: stdIn:1.1-1.26
+Sys.plan ();
+> val it =
+>   "apply2(fnValue List.take, tuple(constant(1), constant(2), constant(3)), constant(-1))"
+>   : string
 
 (*) val drop : 'a list * int -> 'a list
 List.drop;
@@ -177,6 +197,10 @@ List.drop ([1,2,3], 1);
 > val it = [2,3] : int list
 List.drop ([1,2,3], 3);
 > val it = [] : int list
+Sys.plan ();
+> val it =
+>   "apply2(fnValue List.drop, tuple(constant(1), constant(2), constant(3)), constant(3))"
+>   : string
 
 (*) val rev : 'a list -> 'a list
 List.rev;
@@ -189,6 +213,8 @@ List.rev [1];
 > val it = [1] : int list
 List.rev [];
 > val it = [] : 'a list
+Sys.plan ();
+> val it = "apply(fnValue List.rev, argCode tuple)" : string
 
 (*) val concat : 'a list list -> 'a list
 List.concat;
@@ -201,6 +227,8 @@ List.concat [[],[],[]];
 > val it = [] : 'a list
 List.concat [];
 > val it = [] : 'a list
+Sys.plan ();
+> val it = "apply(fnValue List.concat, argCode tuple)" : string
 
 (*) val revAppend : 'a list * 'a list -> 'a list
 List.revAppend;
@@ -215,6 +243,8 @@ List.revAppend ([1,2],[]);
 > val it = [2,1] : int list
 List.revAppend ([],[]);
 > val it = [] : 'a list
+Sys.plan ();
+> val it = "apply2(fnValue List.revAppend, tuple, tuple)" : string
 
 (*) val app : ('a -> unit) -> 'a list -> unit
 List.app;

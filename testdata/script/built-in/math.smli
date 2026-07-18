@@ -56,6 +56,8 @@ Math.acos;
 > val it = fn : real -> real
 Math.acos 1.0;
 > val it = 0 : real
+Sys.plan ();
+> val it = "apply(fnValue Math.acos, argCode constant(1.0))" : string
 List.map (fn x => (x, Math.acos x))
   [1.0, 0.0, ~0.0, ~1.0, 0.5, Math.sqrt 0.5, 2.0, Real.posInf, Real.negInf, nan];
 > val it =
@@ -70,6 +72,8 @@ Math.asin;
 > val it = fn : real -> real
 Math.asin 1.0;
 > val it = 1.5707964 : real
+Sys.plan ();
+> val it = "apply(fnValue Math.asin, argCode constant(1.0))" : string
 List.map (fn x => (x, Math.asin x))
   [1.0, 0.0, ~0.0, ~1.0, 0.5, Math.sqrt 0.5, 2.0, Real.posInf, Real.negInf, nan];
 > val it =
@@ -85,6 +89,8 @@ Math.atan;
 > val it = fn : real -> real
 Math.atan 0.0;
 > val it = 0 : real
+Sys.plan ();
+> val it = "apply(fnValue Math.atan, argCode constant(0.0))" : string
 List.map (fn x => (x, Math.atan x))
   [1.0, 0.0, ~0.0, ~1.0, 0.5, Math.sqrt 0.5, 2.0, Real.posInf, Real.negInf, nan];
 > val it =
@@ -125,6 +131,8 @@ Math.atan2;
 > val it = fn : real * real -> real
 Math.atan2 (0.0, 1.0);
 > val it = 0 : real
+Sys.plan ();
+> val it = "apply2(fnValue Math.atan2, constant(0.0), constant(1.0))" : string
 List.map (fn x => (x, Math.atan2 (x, 1.0)))
   [1.0, 0.0, ~1.0, 0.5, Math.sqrt 0.5, 2.0, Real.posInf, Real.negInf, nan];
 > val it =
@@ -161,6 +169,8 @@ Math.cos;
 > val it = fn : real -> real
 Math.cos 0.0;
 > val it = 1 : real
+Sys.plan ();
+> val it = "apply(fnValue Math.cos, argCode constant(0.0))" : string
 List.map (fn x => (x, Math.cos x))
   [0.0, ~0.0, Math.pi, Math.pi * 0.5, ~Math.pi, Math.pi * 5.0, Real.posInf, Real.negInf, nan];
 > val it =
@@ -173,6 +183,8 @@ Math.cosh;
 > val it = fn : real -> real
 Math.cosh 0.0;
 > val it = 1 : real
+Sys.plan ();
+> val it = "apply(fnValue Math.cosh, argCode constant(0.0))" : string
 List.map (fn x => (x, Math.cosh x))
   [0.0, ~0.0, 1.0, Real.posInf, Real.negInf, nan];
 > val it = [(0,1),(~0,1),(1,1.5430807),(inf,inf),(~inf,inf),(nan,nan)]
@@ -188,6 +200,8 @@ Math.exp;
 > val it = fn : real -> real
 Math.exp 0.0;
 > val it = 1 : real
+Sys.plan ();
+> val it = "apply(fnValue Math.exp, argCode constant(0.0))" : string
 List.map (fn x => (x, Math.exp x))
   [0.0, ~0.0, 1.0, ~2.0, Real.posInf, Real.negInf, nan];
 > val it =
@@ -201,6 +215,8 @@ Math.ln;
 > val it = fn : real -> real
 Math.ln 1.0;
 > val it = 0 : real
+Sys.plan ();
+> val it = "apply(fnValue Math.ln, argCode constant(1.0))" : string
 List.map (fn x => (x, Math.ln x))
   [1.0, 2.718, Math.e, 0.0, ~0.0, ~3.0, Real.posInf, Real.negInf, nan];
 > val it =
@@ -218,6 +234,8 @@ Math.log10;
 > val it = fn : real -> real
 Math.log10 1.0;
 > val it = 0 : real
+Sys.plan ();
+> val it = "apply(fnValue Math.log10, argCode constant(1.0))" : string
 List.map (fn x => (x, Math.log10 x))
   [1.0, 10.0, 1000.0, 0.0, ~0.0, ~3.0, Real.posInf, Real.negInf, nan];
 > val it =
@@ -262,6 +280,8 @@ Math.pow (2.0, ~4.0);
 > val it = 0.0625 : real
 Math.pow (100.0, 0.5);
 > val it = 10 : real
+Sys.plan ();
+> val it = "apply2(fnValue Math.pow, constant(100.0), constant(0.5))" : string
 List.map (fn (x, y) => (x, y, Math.pow (x, y)))
   [(0.0, 0.0), (nan, 0.0),
    (2.0, Real.posInf), (~2.0, Real.posInf),
@@ -297,6 +317,8 @@ Math.sin;
 > val it = fn : real -> real
 Math.sin 0.0;
 > val it = 0 : real
+Sys.plan ();
+> val it = "apply(fnValue Math.sin, argCode constant(0.0))" : string
 List.map (fn x => (x, Math.sin x))
   [0.0, ~0.0, Math.pi, Math.pi * 0.5, ~Math.pi, Math.pi * 5.0, Real.posInf, Real.negInf, nan];
 > val it =
@@ -310,6 +332,8 @@ Math.sinh;
 > val it = fn : real -> real
 Math.sinh 0.0;
 > val it = 0 : real
+Sys.plan ();
+> val it = "apply(fnValue Math.sinh, argCode constant(0.0))" : string
 List.map (fn x => (x, Math.sinh x))
   [0.0, ~0.0, 1.0, Real.posInf, Real.negInf, nan];
 > val it = [(0,0),(~0,~0),(1,1.1752012),(inf,inf),(~inf,~inf),(nan,nan)]
@@ -321,6 +345,8 @@ Math.sqrt;
 > val it = fn : real -> real
 Math.sqrt 4.0;
 > val it = 2 : real
+Sys.plan ();
+> val it = "apply(fnValue Math.sqrt, argCode constant(4.0))" : string
 List.map (fn x => (x, Math.sqrt x))
   [4.0, 0.0, ~0.0, ~9.0, Real.posInf, Real.negInf, nan];
 > val it = [(4,2),(0,0),(~0,~0),(~9,nan),(inf,inf),(~inf,nan),(nan,nan)]
@@ -333,6 +359,8 @@ Math.tan;
 > val it = fn : real -> real
 Math.tan 0.0;
 > val it = 0 : real
+Sys.plan ();
+> val it = "apply(fnValue Math.tan, argCode constant(0.0))" : string
 List.map (fn x => (x, Math.tan x))
   [0.0, ~0.0, Math.pi, Math.pi * 0.5, ~Math.pi, Math.pi * 5.0, Real.posInf, Real.negInf, nan];
 > val it =
@@ -346,6 +374,8 @@ Math.tanh;
 > val it = fn : real -> real
 Math.tanh 0.0;
 > val it = 0 : real
+Sys.plan ();
+> val it = "apply(fnValue Math.tanh, argCode constant(0.0))" : string
 List.map (fn x => (x, Math.tanh x))
   [0.0, ~0.0, 1.0, Real.posInf, Real.negInf, nan];
 > val it = [(0,0),(~0,~0),(1,0.7615942),(inf,1),(~inf,~1),(nan,nan)]

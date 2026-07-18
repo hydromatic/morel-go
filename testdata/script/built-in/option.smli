@@ -45,12 +45,17 @@ Option.getOpt (SOME 1, 2);
 > val it = 1 : int
 Option.getOpt (NONE, 2);
 > val it = 2 : int
+Sys.plan ();
+> val it = "apply2(fnValue Option.getOpt, constant([NONE]), constant(2))"
+>   : string
 
 (*) val isSome : 'a option -> bool
 Option.isSome (SOME 1);
 > val it = true : bool
 Option.isSome NONE;
 > val it = false : bool
+Sys.plan ();
+> val it = "apply(fnValue Option.isSome, argCode constant([NONE]))" : string
 
 (*) val valOf : 'a option -> 'a
 Option.valOf (SOME 1);
@@ -71,6 +76,8 @@ Sys.unset "inlinePassCount";
 Option.valOf noneInt;
 > uncaught exception Option
 >   raised at: stdIn:1.1-1.21
+Sys.plan ();
+> val it = "apply(fnValue Option.valOf, argCode constant([NONE]))" : string
 
 (*) val filter : ('a -> bool) -> 'a -> 'a option
 Option.filter (fn x => x mod 2 = 0) 1;
@@ -90,6 +97,8 @@ Option.`join` (SOME noneInt);
 *)
 Option.`join` NONE;
 > val it = NONE : 'a option
+Sys.plan ();
+> val it = "apply(fnValue Option.join, argCode constant([NONE]))" : string
 
 (*) val app : ('a -> unit) -> 'a option -> unit
 Option.app General.ignore (SOME 1);

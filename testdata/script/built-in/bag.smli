@@ -178,6 +178,8 @@ Bag.concat [bag [], bag [], bag []];
 > val it = [] : 'a bag
 Bag.concat [];
 > val it = [] : 'a bag
+Sys.plan ();
+> val it = "apply(fnValue Bag.concat, argCode tuple)" : string
 
 (*) val app : ('a -> unit) -> 'a bag -> unit
 Bag.app;

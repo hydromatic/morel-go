@@ -1,0 +1,104 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Recursive queries and fixed-point algorithms.
+ *)
+Sys.set ("printLength", ~1);
+> val it = () : unit
+
+(*) Coastal states
+val coastal_states = ["WA", "OR", "CA", "TX", "LA", "MS",
+  "AL", "GA", "FL", "SC", "NC", "VA", "MD", "DE", "NJ",
+  "NY", "CT", "RI", "MA", "ME", "NH", "AK", "HI"];
+> val coastal_states =
+>   ["WA","OR","CA","TX","LA","MS","AL","GA","FL","SC","NC","VA","MD","DE","NJ",
+>    "NY","CT","RI","MA","ME","NH","AK","HI"] : string list
+ (*) maine is not 3 steps from itself
+
+(* Finding a square root using the Babylonian method
+ * (An example of a scalar fixed-point query.) *)
+fun approx_sqrt n a = (n / a + a) * 0.5;
+> val approx_sqrt = fn : real -> real -> real
+approx_sqrt 100.0 1.0;
+> val it = 50.5 : real
+
+(* Create a closure for the problem of finding the square root of 100.
+ * Applying the function to its own result, we approach the correct answer. *)
+val as100 = approx_sqrt 100.0;
+> val as100 = fn : real -> real
+as100 100.0;
+> val it = 50.5 : real
+as100 (as100 100.0);
+> val it = 26.240099 : real
+as100 (as100 (as100 100.0));
+> val it = 15.02553 : real
+as100 (as100 (as100 (as100 100.0)));
+> val it = 10.840435 : real
+
+(* A fixed-point operator will carry out the iteration for us,
+ * given any scalar function f and an initial approximation a.
+ * "fixp" stands for "fixed-point over projection". *)
+fun fixp f a =
+  let
+    val a2 = f a
+  in
+    if a2 = a then
+      a
+    else
+      fixp f a2
+  end;
+> val fixp = fn : ('a -> 'a) -> 'a -> 'a
+fixp as100 100.0;
+> val it = 10 : real
+fixp as100 1.0;
+> val it = 10 : real
+fixp as100 0.0;
+> val it = inf : real
+fixp as100 ~1.0;
+> val it = ~10 : real
+
+(* Given a list of strings, 'prefixes' returns a list of their
+ * prefixes that are one character shorter. *)
+val prefixes = List.map (fn s =>
+  if s = "" then s
+  else String.substring(s, 0, String.size s - 1));
+> val prefixes = fn : string list -> string list
+prefixes ["cat", "dog", "", "car", "cart"];
+> val it = ["ca","do","","ca","car"] : string list
+
+(* Floyd-Warshall algorithm (shortest path in weighted graph)
+ * Data from https://en.wikipedia.org/wiki/Floyd%E2%80%93Warshall_algorithm *)
+val edges =
+ [{source="b", target="a", weight=4},
+  {source="a", target="c", weight=~2},
+  {source="b", target="c", weight=3},
+  {source="c", target="d", weight=2},
+  {source="d", target="b", weight=~1}];
+> val edges =
+>   [{source="b",target="a",weight=4},{source="a",target="c",weight=~2},
+>    {source="b",target="c",weight=3},{source="c",target="d",weight=2},
+>    {source="d",target="b",weight=~1}]
+>   : {source:string, target:string, weight:int} list
+
+(* A 3-node graph has no 4-clique. Grounding must not delete a
+ * conjunct whose generator was cached but never scanned; when it did,
+ * this returned rows in which x = y. *)
+val ps = [(1,2),(2,1),(1,3),(3,1),(2,3),(3,2)];
+> val ps = [(1,2),(2,1),(1,3),(3,1),(2,3),(3,2)] : (int * int) list
+
+(*) End fixed-point.smli
