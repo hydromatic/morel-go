@@ -71,7 +71,30 @@ func Curry3(f func(a, b, c Val) (Val, error)) Fn {
 // lib/*.sig, arrives with the standard library.)
 var Builtins = map[string]Fn{
 	// lint: sort until '^}' where '^\t"'
-	"Bool.not":              notFn,
+	"Bool.<": boolOp(func(a, b bool) bool {
+		return !a && b
+	}),
+	"Bool.<>": boolOp(func(a, b bool) bool {
+		return a != b
+	}),
+	"Bool.=": boolOp(func(a, b bool) bool {
+		return a == b
+	}),
+	"Bool.>": boolOp(func(a, b bool) bool {
+		return a && !b
+	}),
+	"Bool.andalso": boolOp(func(a, b bool) bool {
+		return a && b
+	}),
+	"Bool.fromString": boolFromStringFn,
+	"Bool.implies": boolOp(func(a, b bool) bool {
+		return !a || b
+	}),
+	"Bool.not": notFn,
+	"Bool.orelse": boolOp(func(a, b bool) bool {
+		return a || b
+	}),
+	"Bool.toString":         boolToStringFn,
 	"Char.chr":              chrFn,
 	"Char.ord":              ordFn,
 	"General.before":        beforeFn,
@@ -140,6 +163,7 @@ var Builtins = map[string]Fn{
 	"op ^":                  caretFn,
 	"op div":                arith(divInt, nil),
 	"op mod":                arith(modInt, nil),
+	"op o":                  composeFn,
 	"op ~":                  negFn,
 	"ord":                   ordFn,
 	"rev":                   revFn,
@@ -147,6 +171,62 @@ var Builtins = map[string]Fn{
 	"str":                   strFn,
 	"tl":                    tlFn,
 	"valOf":                 valOfFn,
+}
+
+// unitVal is the unit value.
+var unitVal = core.Unit{}
+
+// boolToStringFn is "Bool.toString b".
+func boolToStringFn(arg Val) (Val, error) {
+	if asBool(arg) {
+		return "true", nil
+	}
+	return "false", nil
+}
+
+// boolFromStringFn is "Bool.fromString s".
+func boolFromStringFn(arg Val) (Val, error) {
+	switch asString(arg) {
+	case "false":
+		return someVal(false), nil
+	case "true":
+		return someVal(true), nil
+	default:
+		return noneVal, nil
+	}
+}
+
+// boolOp adapts a binary bool function to a built-in. (As a
+// function value, "Bool.andalso" evaluates both operands; only
+// the infix form short-circuits.)
+func boolOp(f func(a, b bool) bool) Fn {
+	return func(arg Val) (Val, error) {
+		a, b := asPair(arg)
+		return f(asBool(a), asBool(b)), nil
+	}
+}
+
+// composeFn is "f o g".
+func composeFn(arg Val) (Val, error) {
+	f, g := asPair(arg)
+	return Fn(func(a Val) (Val, error) {
+		v, err := ApplyVal(g, a)
+		if err != nil {
+			return nil, err
+		}
+		return ApplyVal(f, v)
+	}), nil
+}
+
+// beforeFn is "a before b": a, discarding b.
+func beforeFn(arg Val) (Val, error) {
+	a, _ := asPair(arg)
+	return a, nil
+}
+
+// ignoreFn is "ignore a".
+func ignoreFn(Val) (Val, error) {
+	return unitVal, nil
 }
 
 // The scalar accessors panic on the wrong type: built-in
@@ -355,30 +435,4 @@ func parseTree(arg Val) (Val, error) {
 		return nil, err
 	}
 	return ast.Dump(n), nil
-}
-
-// unitVal is the unit value.
-var unitVal = core.Unit{}
-
-// beforeFn is "a before b": a, discarding b.
-func beforeFn(arg Val) (Val, error) {
-	a, _ := asPair(arg)
-	return a, nil
-}
-
-// composeFn is "f o g".
-func composeFn(arg Val) (Val, error) {
-	f, g := asPair(arg)
-	return Fn(func(a Val) (Val, error) {
-		v, err := ApplyVal(g, a)
-		if err != nil {
-			return nil, err
-		}
-		return ApplyVal(f, v)
-	}), nil
-}
-
-// ignoreFn is "ignore a".
-func ignoreFn(Val) (Val, error) {
-	return unitVal, nil
 }

@@ -389,6 +389,57 @@ func TestExecuteStructures(t *testing.T) {
 	})
 }
 
+// TestExecuteBasis checks the General, Bool, and Option
+// structures.
+func TestExecuteBasis(t *testing.T) {
+	runSession(t, [][2]string{
+		{"Bool.toString false;", `val it = "false" : string`},
+		{
+			`Bool.fromString "true";`,
+			"val it = SOME true : bool option",
+		},
+		{
+			`Bool.fromString "banana";`,
+			"val it = NONE : bool option",
+		},
+		{"General.ignore 42;", "val it = () : unit"},
+		{"ignore 42;", "val it = () : unit"},
+		{
+			"(fn x => x + 1) o (fn x => x * 2);",
+			"val it = fn : int -> int",
+		},
+		{"it 5;", "val it = 11 : int"},
+		{"valOf (SOME 3);", "val it = 3 : int"},
+		{"valOf NONE;", "uncaught exception Option\n" +
+			"  raised at: stdIn:1.1-1.11"},
+		{"isSome (SOME 1);", "val it = true : bool"},
+		{"isSome NONE;", "val it = false : bool"},
+		{"getOpt (NONE, 7);", "val it = 7 : int"},
+		{"getOpt (SOME 1, 7);", "val it = 1 : int"},
+		{
+			"Option.map (fn x => x + 1) (SOME 4);",
+			"val it = SOME 5 : int option",
+		},
+		{
+			"Option.map (fn x => x + 1) NONE;",
+			"val it = NONE : int option",
+		},
+		{
+			"Option.filter (fn x => x > 0) 5;",
+			"val it = SOME 5 : int option",
+		},
+		{
+			"Option.filter (fn x => x > 0) (~5);",
+			"val it = NONE : int option",
+		},
+		{
+			"Option.mapPartial (fn x => if x > 0" +
+				" then SOME x else NONE) (SOME 3);",
+			"val it = SOME 3 : int option",
+		},
+	})
+}
+
 // TestExecuteCrossStatement stress-tests values that flow across
 // statement boundaries — the class of bugs that plagued
 // morel-rust. Every expected output was probed against the java
@@ -577,42 +628,5 @@ func TestExecuteItOnlyOnSuccess(t *testing.T) {
 		// arrive later), so 'it' keeps its value.
 		{"from i in [1] yield i;", ""},
 		{"it;", "val it = 7 : int"},
-	})
-}
-
-// TestExecuteBasis checks the General, Bool, and Option
-// structures.
-func TestExecuteBasis(t *testing.T) {
-	runSession(t, [][2]string{
-		{"General.ignore 42;", "val it = () : unit"},
-		{"ignore 42;", "val it = () : unit"},
-		{"valOf (SOME 3);", "val it = 3 : int"},
-		{"valOf NONE;", "uncaught exception Option\n" +
-			"  raised at: stdIn:1.1-1.11"},
-		{"isSome (SOME 1);", "val it = true : bool"},
-		{"isSome NONE;", "val it = false : bool"},
-		{"getOpt (NONE, 7);", "val it = 7 : int"},
-		{"getOpt (SOME 1, 7);", "val it = 1 : int"},
-		{
-			"Option.map (fn x => x + 1) (SOME 4);",
-			"val it = SOME 5 : int option",
-		},
-		{
-			"Option.map (fn x => x + 1) NONE;",
-			"val it = NONE : int option",
-		},
-		{
-			"Option.filter (fn x => x > 0) 5;",
-			"val it = SOME 5 : int option",
-		},
-		{
-			"Option.filter (fn x => x > 0) (~5);",
-			"val it = NONE : int option",
-		},
-		{
-			"Option.mapPartial (fn x => if x > 0" +
-				" then SOME x else NONE) (SOME 3);",
-			"val it = SOME 3 : int option",
-		},
 	})
 }
