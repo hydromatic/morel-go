@@ -26,6 +26,28 @@ Sys.set ("printLength", 999);
 Sys.set ("stringDepth", ~1);
 > val it = () : unit
 
+Either;
+> val it =
+>   {app=fn,appLeft=fn,appRight=fn,asLeft=fn,asRight=fn,fold=fn,isLeft=fn,
+>    isRight=fn,map=fn,mapLeft=fn,mapRight=fn,partition=fn,proj=fn}
+>   : {app:('a -> unit) * ('b -> unit) -> ('a,'b) either -> unit,
+>       appLeft:('c -> unit) -> ('c,'d) either -> unit,
+>       appRight:('e -> unit) -> ('f,'e) either -> unit,
+>       asLeft:('g,'h) either -> 'g option,
+>       asRight:('i,'j) either -> 'j option,
+>       fold:('k * 'l -> 'l) * ('m * 'l -> 'l) -> 'l -> ('k,'m) either -> 'l,
+>       isLeft:('n,'o) either -> bool, isRight:('p,'q) either -> bool,
+>       map:('r -> 's) * ('t -> 'u) -> ('r,'t) either -> ('s,'u) either,
+>       mapLeft:('v -> 'w) -> ('v,'x) either -> ('w,'x) either,
+>       mapRight:('y -> 'z) -> ('ba,'y) either -> ('ba,'z) either,
+>       partition:('bb,'bc) either list -> 'bb list * 'bc list,
+>       proj:('bd,'bd) either -> 'bd}
+
+val yes: (bool, int) either = INL true;
+> val yes = INL true : (bool,int) either
+val ten: (bool, int) either = INR 10;
+> val ten = INR 10 : (bool,int) either
+
 Either.isLeft;
 > val it = fn : ('a,'b) either -> bool
 Either.isRight;

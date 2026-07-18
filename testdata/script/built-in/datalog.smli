@@ -25,4 +25,9 @@ Sys.set ("printLength", 999);
 Sys.set ("stringDepth", ~1);
 > val it = () : unit
 
+Datalog;
+> val it = {execute=fn,translate=fn,validate=fn}
+>   : {execute:string -> variant, translate:string -> string option,
+>       validate:string -> string}
+
 (*) End datalog.smli

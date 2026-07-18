@@ -1,0 +1,443 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *)
+Sys.set ("lineWidth", 78);
+> val it = () : unit
+Sys.set ("printLength", 999);
+> val it = () : unit
+Sys.set ("stringDepth", ~1);
+> val it = () : unit
+
+(*) Set properties for deterministic Date/Time tests.
+Sys.set ("timeZone", "UTC");
+> val it = () : unit
+Sys.set ("now", "2024-01-01T00:00:00Z");
+> val it = () : unit
+
+(* Until we have a real "print" function, we use "ignore" to
+   suppress the output of expressions. *)
+fun print x = ignore x;
+> val print = fn : 'a -> unit
+
+(* Operators ------------------------------------------------------ *)
+
+2 + 3;
+> val it = 5 : int
+2 + 3 * 4;
+> val it = 14 : int
+14 div 3;
+> val it = 4 : int
+14 div ~3;
+> val it = ~5 : int
+
+fn x => x + 1;
+> val it = fn : int -> int
+
+(* Datatypes ------------------------------------------------------ *)
+
+(*
+ * The "option" datatype, declared as follows:
+ *   datatype 'a option = NONE | SOME
+ *)
+SOME 1;
+> val it = SOME 1 : int option
+NONE;
+> val it = NONE : 'a option
+NONE = NONE;
+> val it = true : bool
+NONE = SOME 1;
+> val it = false : bool
+SOME "a" = NONE;
+> val it = false : bool
+SOME (SOME true);
+> val it = SOME (SOME true) : bool option option
+SOME (SOME [1,2,3]);
+> val it = SOME (SOME [1,2,3]) : int list option option
+SOME (SOME {a=1, b=true});
+> val it = SOME (SOME {a=1,b=true}) : {a:int, b:bool} option option
+
+(*
+ * The "descending" datatype, declared as follows:
+ *   datatype 'a descending = DESC of 'a;
+ *)
+DESC;
+> val it = fn : 'a -> 'a descending
+DESC 1;
+> val it = DESC 1 : int descending
+DESC (DESC "a");
+> val it = DESC (DESC "a") : string descending descending
+
+(* Top-level environment ---------------------------------------------
+ * Standard ML makes a number of types, exceptions and values available
+ * at the top level, without qualification. For example, "hd" can be used
+ * as shorthand for "List.hd". The following are the top-level types,
+ * exceptions and values, per the Standard ML Basis.
+ *)
+
+(* Types ---------------------------------------------------------- *)
+(* "eqtype unit" maps to "General" *)
+();
+> val it = () : unit
+(* "eqtype int" maps to "Int" *)
+0;
+> val it = 0 : int
+(* "type real" maps to "Real" *)
+1.5;
+> val it = 1.5 : real
+(* "eqtype char" maps to "Char" *)
+#"a";
+> val it = #"a" : char
+(* "eqtype string" maps to "String" *)
+"x";
+> val it = "x" : string
+(* "eqtype 'a ref" is primitive *)
+(*) TODO 'a ref
+(* "datatype bool = false | true" is primitive *)
+true;
+> val it = true : bool
+(* "datatype 'a option = NONE | SOME of 'a" maps to "Option" *)
+NONE;
+> val it = NONE : 'a option
+(* "datatype order = LESS | EQUAL | GREATER" maps to "General" *)
+LESS;
+> val it = LESS : order
+(* "datatype 'a list = nil | :: of ('a * 'a list)" is primitive *)
+[];
+> val it = [] : 'a list
+
+(* Values --------------------------------------------------------- *)
+
+(* "val ! : 'a ref -> 'a" maps to "General.!" *)
+(*) TODO !;
+
+(* "val := : 'a ref * 'a -> unit" maps to "General.:=" *)
+(*) TODO :=;
+
+(* "val ~ : int -> int" maps to "Int.~"; overloaded for real *)
+op ~;
+> val it = fn : int -> int
+Int.`~`;
+> val it = fn : int -> int
+~ 5;
+> val it = ~5 : int
+~ 3.5;
+> val it = ~3.5 : real
+
+(* "val + : int * int -> int" maps to "Int.+" *)
+op +;
+> val it = fn : int * int -> int
+Int.`+`;
+> val it = fn : int * int -> int
+
+(* "val - : int * int -> int" maps to "Int.-" *)
+op -;
+> val it = fn : int * int -> int
+Int.`-`;
+> val it = fn : int * int -> int
+
+(* "val * : int * int -> int" maps to "Int.*" *)
+op *;
+> val it = fn : int * int -> int
+Int.`*`;
+> val it = fn : int * int -> int
+
+(* "val @ : ('a list * 'a list) -> 'a list" maps to "List.@" *)
+op @;
+> val it = fn : 'a list * 'a list -> 'a list
+List.`@`;
+> val it = fn : 'a list * 'a list -> 'a list
+
+(* "val ^ : string * string -> string" maps to "String.^" *)
+op ^;
+> val it = fn : string * string -> string
+String.`^`;
+> val it = fn : string * string -> string
+Int.abs;
+> val it = fn : int -> int
+abs ~3;
+> val it = 3 : int
+abs ~3.5;
+> val it = 3.5 : real
+List.app;
+> val it = fn : ('a -> unit) -> 'a list -> unit
+General.before;
+> val it = fn : 'a * unit -> 'a
+Real.ceil;
+> val it = fn : real -> int
+
+(* "val chr : int -> char" maps to "Char.chr" *)
+chr;
+> val it = fn : int -> char
+Char.chr;
+> val it = fn : int -> char
+
+(* "val compare : 'a * 'a -> order" maps to "String.compare" *)
+String.compare;
+> val it = fn : string * string -> order
+
+(* "val concat : string list -> string" maps to "String.concat" *)
+concat;
+> val it = fn : string list -> string
+String.concat;
+> val it = fn : string list -> string
+General.exnMessage;
+> val it = fn : exn -> string
+General.exnName;
+> val it = fn : exn -> string
+
+(* "val explode : string -> char list" maps to "String.explode" *)
+explode;
+> val it = fn : string -> char list
+String.explode;
+> val it = fn : string -> char list
+Real.floor;
+> val it = fn : real -> int
+List.foldl;
+> val it = fn : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
+List.foldr;
+> val it = fn : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
+Option.getOpt;
+> val it = fn : 'a option * 'a -> 'a
+
+(* "val hd : 'a list -> 'a" maps to "List.hd" *)
+hd;
+> val it = fn : 'a list -> 'a
+List.hd;
+> val it = fn : 'a list -> 'a
+
+(* "val ignore : 'a -> unit" maps to "General.ignore" *)
+ignore;
+> val it = fn : 'a -> unit
+General.ignore;
+> val it = fn : 'a -> unit
+
+(* "val implode : char list -> string" maps to "String.implode" *)
+implode;
+> val it = fn : char list -> string
+String.implode;
+> val it = fn : char list -> string
+Option.isSome;
+> val it = fn : 'a option -> bool
+
+(* "val length : 'a list -> int" maps to "List.length" *)
+length;
+> val it = fn : 'a list -> int
+List.length;
+> val it = fn : 'a list -> int
+
+(* "val map : ('a -> 'b) -> 'a list -> 'b list" maps to "List.map" *)
+map;
+> val it = fn : ('a -> 'b) -> 'a list -> 'b list
+List.map;
+> val it = fn : ('a -> 'b) -> 'a list -> 'b list
+
+(* "val not : bool -> bool" maps to "Bool.not" *)
+not;
+> val it = fn : bool -> bool
+Bool.not;
+> val it = fn : bool -> bool
+
+(* "val null : 'a list -> bool" maps to "List.null" *)
+null;
+> val it = fn : 'a list -> bool
+List.null;
+> val it = fn : 'a list -> bool
+General.`o`;
+> val it = fn : ('a -> 'b) * ('c -> 'a) -> 'c -> 'b
+
+(* "val ord : char -> int" maps to "Char.ord" *)
+ord;
+> val it = fn : char -> int
+Char.ord;
+> val it = fn : char -> int
+Real.fromInt;
+> val it = fn : int -> real
+
+(* "val ref : 'a -> 'a ref" maps to "primitive" *)
+(*) TODO ref;
+
+(* "val rev : 'a list -> 'a list" maps to "List.rev" *)
+rev;
+> val it = fn : 'a list -> 'a list
+List.rev;
+> val it = fn : 'a list -> 'a list
+Real.round;
+> val it = fn : real -> int
+
+(* "val size : string -> int" maps to "String.size" *)
+size;
+> val it = fn : string -> int
+String.size;
+> val it = fn : string -> int
+
+(* "val str : char -> string" maps to "String.str" *)
+str;
+> val it = fn : char -> string
+String.str;
+> val it = fn : char -> string
+String.substring;
+> val it = fn : string * int * int -> string
+
+(* "val tl : 'a list -> 'a list" maps to "List.tl" *)
+tl;
+> val it = fn : 'a list -> 'a list
+List.tl;
+> val it = fn : 'a list -> 'a list
+Real.trunc;
+> val it = fn : real -> int
+Interact.use;
+> val it = fn : string -> unit
+Option.valOf;
+> val it = fn : 'a option -> 'a
+Vector.fromList;
+> val it = fn : 'a list -> 'a vector
+Bag.fromList;
+> val it = fn : 'a list -> 'a bag
+Relational.compare;
+> val it = fn : 'a * 'a -> order
+Relational.count;
+> val it = fn : 'a bag -> int
+Relational.empty;
+> val it = fn : 'a bag -> bool
+String.fields;
+> val it = fn : (char -> bool) -> string -> string list
+Relational.iterate;
+> val it = fn : 'a bag -> ('a bag * 'a bag -> 'a bag) -> 'a bag
+Relational.max;
+> val it = fn : 'a bag -> 'a
+Relational.min;
+> val it = fn : 'a bag -> 'a
+Relational.nonEmpty;
+> val it = fn : 'a bag -> bool
+Relational.only;
+> val it = fn : 'a bag -> 'a
+String.tokens;
+> val it = fn : (char -> bool) -> string -> string list
+Interact.useSilently;
+> val it = fn : string -> unit
+
+(* Overloaded operators ------------------------------------------- *)
+(* Standard ML overloads twelve operators. Each is shown with its default
+ * signature, then applied to a value of each type for which it is defined.
+ * Word arithmetic ("+", "-", "*", "div", "mod", "~") wraps modulo
+ * 2^wordSize, and word division and comparison are unsigned. *)
+
+(* "op +" : numeric (int, real, word); default "int * int -> int". *)
+op +;
+> val it = fn : int * int -> int
+1 + 2;
+> val it = 3 : int
+1.0 + 2.0;
+> val it = 3 : real
+
+(* "op -" : numeric (int, real, word). *)
+op -;
+> val it = fn : int * int -> int
+3 - 1;
+> val it = 2 : int
+3.0 - 1.0;
+> val it = 2 : real
+
+(* "op *" : numeric (int, real, word). *)
+op *;
+> val it = fn : int * int -> int
+2 * 3;
+> val it = 6 : int
+2.0 * 3.0;
+> val it = 6 : real
+
+(* "op div" : wordint (int, word). Word division is unsigned. *)
+op div;
+> val it = fn : int * int -> int
+7 div 2;
+> val it = 3 : int
+
+(* "op mod" : wordint (int, word). *)
+op mod;
+> val it = fn : int * int -> int
+7 mod 2;
+> val it = 1 : int
+
+(* "op /" : real only; applying to int is a type error. *)
+op /;
+> val it = fn : real * real -> real
+3.0 / 2.0;
+> val it = 1.5 : real
+
+(* "op ~" : num (int, real, word). For word, '~' is the 2's complement. *)
+op ~;
+> val it = fn : int -> int
+~ 5;
+> val it = ~5 : int
+~ 5.0;
+> val it = ~5 : real
+abs ~5;
+> val it = 5 : int
+abs ~5.0;
+> val it = 5 : real
+
+(* "op <" : numtext (int, real, string, char, word). Word is unsigned, so a
+ * word with the high bit set is large. *)
+op <;
+> val it = fn : 'a * 'a -> bool
+1 < 2;
+> val it = true : bool
+1.0 < 2.0;
+> val it = true : bool
+"a" < "b";
+> val it = true : bool
+#"a" < #"b";
+> val it = true : bool
+
+(* "op >" : numtext (int, real, string, char, word). *)
+op >;
+> val it = fn : 'a * 'a -> bool
+2 > 1;
+> val it = true : bool
+2.0 > 1.0;
+> val it = true : bool
+"b" > "a";
+> val it = true : bool
+#"b" > #"a";
+> val it = true : bool
+
+(* "op <=" : numtext (int, real, string, char, word). *)
+op <=;
+> val it = fn : 'a * 'a -> bool
+2 <= 2;
+> val it = true : bool
+2.0 <= 2.0;
+> val it = true : bool
+"a" <= "a";
+> val it = true : bool
+#"a" <= #"a";
+> val it = true : bool
+
+(* "op >=" : numtext (int, real, string, char, word). *)
+op >=;
+> val it = fn : 'a * 'a -> bool
+2 >= 3;
+> val it = false : bool
+2.0 >= 3.0;
+> val it = false : bool
+"a" >= "b";
+> val it = false : bool
+#"a" >= #"b";
+> val it = false : bool
+
+(*) End built-in.smli

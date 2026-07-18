@@ -30,4 +30,19 @@ Sys.set ("timeZone", "UTC");
 Sys.set ("now", "2024-01-01T00:00:00Z");
 > val it = () : unit
 
+Date;
+> val it =
+>   {compare=fn,date=fn,day=fn,fmt=fn,fromString=fn,fromTimeLocal=fn,
+>    fromTimeUniv=fn,hour=fn,isDst=fn,localOffset=fn,minute=fn,month=fn,
+>    second=fn,toString=fn,toTime=fn,weekDay=fn,year=fn,yearDay=fn}
+>   : {compare:date * date -> order,
+>       date:{day:int, hour:int, minute:int, month:month, offset:time option,
+>              second:int, year:int}
+>             -> date, day:date -> int, fmt:string -> date -> string,
+>       fromString:string -> date option, fromTimeLocal:time -> date,
+>       fromTimeUniv:time -> date, hour:date -> int, isDst:date -> bool option,
+>       localOffset:unit -> time, minute:date -> int, month:date -> month,
+>       second:date -> int, toString:date -> string, toTime:date -> time,
+>       weekDay:date -> weekday, year:date -> int, yearDay:date -> int}
+
 (*) End date.smli

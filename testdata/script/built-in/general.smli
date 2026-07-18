@@ -26,6 +26,11 @@ Sys.set ("printLength", 999);
 Sys.set ("stringDepth", ~1);
 > val it = () : unit
 
+General;
+> val it = {before=fn,exnMessage=fn,exnName=fn,ignore=fn,`o`=fn}
+>   : {before:'a * unit -> 'a, exnMessage:exn -> string, exnName:exn -> string,
+>       ignore:'b -> unit, `o`:('c -> 'd) * ('e -> 'c) -> 'e -> 'd}
+
 (*) val exnMessage : exn -> string
 General.exnMessage;
 > val it = fn : exn -> string
@@ -33,5 +38,29 @@ General.exnMessage;
 (*) val exnName : exn -> string
 General.exnName;
 > val it = fn : exn -> string
+
+(*) op o - function composition
+General.`o`;
+> val it = fn : ('a -> 'b) * ('c -> 'a) -> 'c -> 'b
+String.size;
+> val it = fn : string -> int
+Char.chr;
+> val it = fn : int -> char
+General.`o` (Char.chr, String.size);
+> val it = fn : string -> char
+General.`o` (Char.chr, String.size) "012345678901234567890123456789012";
+> val it = #"!" : char
+
+val plusOne = fn x => x + 1;
+> val plusOne = fn : int -> int
+val timesTwo = fn x => x * 2;
+> val timesTwo = fn : int -> int
+val plusThree = fn x => x + 3;
+> val plusThree = fn : int -> int
+
+General.ignore;
+> val it = fn : 'a -> unit
+General.ignore (1 + 2);
+> val it = () : unit
 
 (*) End general.smli

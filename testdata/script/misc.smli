@@ -1,0 +1,141 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Miscellaneous stuff - often test cases for bugs
+ *)
+
+(* -------------------------------------------------------------------
+ * [MOREL-251] Add function `Sys.clearEnv ()`
+ *
+ * This test needs an empty environment, so must be the first
+ * test in the script.
+ *)
+
+(*) Number of values in initial environment.
+
+(*) Define 3 variables.
+val (x,y,z) = (1,2,3);
+> val x = 1 : int
+> val y = 2 : int
+> val z = 3 : int
+
+(*) Overwrite one value, add another.
+val (w,z) = ("four","five");
+> val w = "four" : string
+> val z = "five" : string
+
+(* -------------------------------------------------------------------
+ * Setting properties whose values are enums
+ *)
+Sys.set ("output", "classic");
+> val it = () : unit
+Sys.set ("output", "CLASSIC");
+> val it = () : unit
+Sys.set ("output", "ClasSic");
+> val it = () : unit
+Sys.set ("optionalInt", 12);
+> val it = () : unit
+
+(*) Setting the "output" property is case-insensitive
+Sys.set ("output", "classic");
+> val it = () : unit
+Sys.set ("output", "CLASSIC");
+> val it = () : unit
+Sys.set ("output", "ClasSic");
+> val it = () : unit
+Sys.set ("output", "tabular");
+> val it = () : unit
+Sys.set ("output", "classic");
+> val it = () : unit
+
+(* -------------------------------------------------------------------
+ * [MOREL-250] Inliner generates invalid plan if dead code
+ * occurs in a nested let.
+ *)
+let
+  val bind = fn x => [x]
+in
+  let
+    val three = 1 + 2
+  in
+    bind "a"
+  end
+end;
+> val it = ["a"] : string list
+
+(* -------------------------------------------------------------------
+ * Floating point is not associative.
+ *)
+let
+  val x = 1e30
+  val y = ~1e30
+  val z = 1.0
+in
+  ((x + y) + z, x + (y + z))
+end;
+> val it = (1,0) : real * real
+op +;
+> val it = fn : int * int -> int
+op *;
+> val it = fn : int * int -> int
+op ~;
+> val it = fn : int -> int
+op div;
+> val it = fn : int * int -> int
+op /;
+> val it = fn : real * real -> real
+op x;
+> stdIn:1.1-1.5 Error: unbound variable or constructor: op x
+>   raised at: stdIn:1.1-1.5
+(op *) (8,3);
+> val it = 24 : int
+(op +) (3,4);
+> val it = 7 : int
+(op /) (6.0, 4.0);
+> val it = 1.5 : real
+(op ^) ("foo","bar");
+> val it = "foobar" : string
+(op ::) (1,[2,3,4]);
+> val it = [1,2,3,4] : int list
+(op @) ([1,2],[3,4]);
+> val it = [1,2,3,4] : int list
+val x = abc;
+> stdIn:1.9-1.12 Error: unbound variable or constructor: abc
+>   raised at: stdIn:1.9-1.12
+
+(*) Nested block comments ([MOREL-306])
+(* outer (* inner *) still outer *) 1 + 2;
+> val it = 3 : int
+
+(* -------------------------------------------------------------------
+ * [MOREL-342] Conditional inclusion of built-in structures
+ *)
+
+(*) By default, the Test structure is excluded.
+Test.foo 1;
+> stdIn:1.1-1.5 Error: unbound variable or constructor: Test
+>   raised at: stdIn:1.1-1.5
+
+(*) After setting excludeStructures to "", Test is visible.
+Sys.set ("excludeStructures", "");
+> val it = () : unit
+Test.foo 1;
+> stdIn:1.1-1.5 Error: unbound variable or constructor: Test
+>   raised at: stdIn:1.1-1.5
+
+(*) End misc.smli

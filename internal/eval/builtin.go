@@ -23,6 +23,7 @@ import (
 	"math"
 
 	"github.com/hydromatic/morel-go/internal/ast"
+	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/parse"
 )
 
@@ -70,65 +71,69 @@ func Curry3(f func(a, b, c Val) (Val, error)) Fn {
 // lib/*.sig, arrives with the standard library.)
 var Builtins = map[string]Fn{
 	// lint: sort until '^}' where '^\t"'
-	"Bool.not":      notFn,
-	"Char.chr":      chrFn,
-	"Char.ord":      ordFn,
-	"Int.*":         arith(mulInt, nil),
-	"Int.+":         arith(addInt, nil),
-	"Int.-":         arith(subInt, nil),
-	"Int.abs":       absFn,
-	"Int.div":       arith(divInt, nil),
-	"Int.mod":       arith(modInt, nil),
-	"Int.~":         negFn,
-	"List.@":        atFn,
-	"List.hd":       hdFn,
-	"List.length":   lengthFn,
-	"List.map":      mapFn,
-	"List.null":     nullFn,
-	"List.rev":      revFn,
-	"List.tl":       tlFn,
-	"Real.*":        arith(nil, mulReal),
-	"Real.+":        arith(nil, addReal),
-	"Real.-":        arith(nil, subReal),
-	"Real./":        arith(nil, divReal),
-	"Real.abs":      absFn,
-	"Real.~":        negFn,
-	"String.^":      caretFn,
-	"String.concat": concatFn,
-	"String.size":   sizeFn,
-	"String.str":    strFn,
-	"Sys.parseTree": parseTree,
-	"abs":           absFn,
-	"chr":           chrFn,
-	"concat":        concatFn,
-	"explode":       explodeFn,
-	"hd":            hdFn,
-	"implode":       implodeFn,
-	"length":        lengthFn,
-	"map":           mapFn,
-	"not":           notFn,
-	"null":          nullFn,
-	"op *":          arith(mulInt, mulReal),
-	"op +":          arith(addInt, addReal),
-	"op -":          arith(subInt, subReal),
-	"op /":          arith(nil, divReal),
-	"op ::":         consFn,
-	"op <":          compareFn(func(c int) bool { return c < 0 }),
-	"op <=":         compareFn(func(c int) bool { return c <= 0 }),
-	"op <>":         equalFn(true),
-	"op =":          equalFn(false),
-	"op >":          compareFn(func(c int) bool { return c > 0 }),
-	"op >=":         compareFn(func(c int) bool { return c >= 0 }),
-	"op @":          atFn,
-	"op ^":          caretFn,
-	"op div":        arith(divInt, nil),
-	"op mod":        arith(modInt, nil),
-	"op ~":          negFn,
-	"ord":           ordFn,
-	"rev":           revFn,
-	"size":          sizeFn,
-	"str":           strFn,
-	"tl":            tlFn,
+	"Bool.not":       notFn,
+	"Char.chr":       chrFn,
+	"Char.ord":       ordFn,
+	"General.before": beforeFn,
+	"General.ignore": ignoreFn,
+	"General.o":      composeFn,
+	"Int.*":          arith(mulInt, nil),
+	"Int.+":          arith(addInt, nil),
+	"Int.-":          arith(subInt, nil),
+	"Int.abs":        absFn,
+	"Int.div":        arith(divInt, nil),
+	"Int.mod":        arith(modInt, nil),
+	"Int.~":          negFn,
+	"List.@":         atFn,
+	"List.hd":        hdFn,
+	"List.length":    lengthFn,
+	"List.map":       mapFn,
+	"List.null":      nullFn,
+	"List.rev":       revFn,
+	"List.tl":        tlFn,
+	"Real.*":         arith(nil, mulReal),
+	"Real.+":         arith(nil, addReal),
+	"Real.-":         arith(nil, subReal),
+	"Real./":         arith(nil, divReal),
+	"Real.abs":       absFn,
+	"Real.~":         negFn,
+	"String.^":       caretFn,
+	"String.concat":  concatFn,
+	"String.size":    sizeFn,
+	"String.str":     strFn,
+	"Sys.parseTree":  parseTree,
+	"abs":            absFn,
+	"chr":            chrFn,
+	"concat":         concatFn,
+	"explode":        explodeFn,
+	"hd":             hdFn,
+	"ignore":         ignoreFn,
+	"implode":        implodeFn,
+	"length":         lengthFn,
+	"map":            mapFn,
+	"not":            notFn,
+	"null":           nullFn,
+	"op *":           arith(mulInt, mulReal),
+	"op +":           arith(addInt, addReal),
+	"op -":           arith(subInt, subReal),
+	"op /":           arith(nil, divReal),
+	"op ::":          consFn,
+	"op <":           compareFn(func(c int) bool { return c < 0 }),
+	"op <=":          compareFn(func(c int) bool { return c <= 0 }),
+	"op <>":          equalFn(true),
+	"op =":           equalFn(false),
+	"op >":           compareFn(func(c int) bool { return c > 0 }),
+	"op >=":          compareFn(func(c int) bool { return c >= 0 }),
+	"op @":           atFn,
+	"op ^":           caretFn,
+	"op div":         arith(divInt, nil),
+	"op mod":         arith(modInt, nil),
+	"op ~":           negFn,
+	"ord":            ordFn,
+	"rev":            revFn,
+	"size":           sizeFn,
+	"str":            strFn,
+	"tl":             tlFn,
 }
 
 // The scalar accessors panic on the wrong type: built-in
@@ -337,4 +342,30 @@ func parseTree(arg Val) (Val, error) {
 		return nil, err
 	}
 	return ast.Dump(n), nil
+}
+
+// unitVal is the unit value.
+var unitVal = core.Unit{}
+
+// beforeFn is "a before b": a, discarding b.
+func beforeFn(arg Val) (Val, error) {
+	a, _ := asPair(arg)
+	return a, nil
+}
+
+// composeFn is "f o g".
+func composeFn(arg Val) (Val, error) {
+	f, g := asPair(arg)
+	return Fn(func(a Val) (Val, error) {
+		v, err := ApplyVal(g, a)
+		if err != nil {
+			return nil, err
+		}
+		return ApplyVal(f, v)
+	}), nil
+}
+
+// ignoreFn is "ignore a".
+func ignoreFn(Val) (Val, error) {
+	return unitVal, nil
 }

@@ -19,6 +19,8 @@
  * Pattern matching
  *)
 
+(*) Warning: match nonexhaustive
+
 (*) OK
 fun f 1 = 0
   | f _ = 1;

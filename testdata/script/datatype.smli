@@ -139,6 +139,10 @@ Z;
 > val it = Z : bar
 datatype 'a my_option = MY_NONE | MY_SOME of 'a;
 > datatype 'a my_option = MY_NONE | MY_SOME of 'a
+fn (x: (int) list) => 1;
+> val it = fn : int list -> int
+fn (x: (int, string) either) => 1;
+> val it = fn : (int,string) either -> int
 
 (*) A recursive type, without generics
 datatype inttree = Empty | Node of inttree * int * inttree;
