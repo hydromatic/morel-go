@@ -579,3 +579,12 @@ func TestExecuteItOnlyOnSuccess(t *testing.T) {
 		{"it;", "val it = 7 : int"},
 	})
 }
+
+// TestExecuteBasis checks the General, Bool, and Option
+// structures.
+func TestExecuteBasis(t *testing.T) {
+	runSession(t, [][2]string{
+		{"General.ignore 42;", "val it = () : unit"},
+		{"ignore 42;", "val it = () : unit"},
+	})
+}

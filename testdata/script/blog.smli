@@ -1,0 +1,748 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * This script contains Morel fragments that are used in Morel's
+ * web site, documentation, and blog posts. Just, you know, to keep
+ * us honest.
+ *)
+Sys.set ("printDepth", ~1);
+> val it = () : unit
+Sys.set ("lineWidth", 78);
+> val it = () : unit
+Sys.set ("stringDepth", ~1);
+> val it = () : unit
+
+(* --- README.md -------------------------------------------------- *)
+
+(*) Auxiliary declarations
+val e = {deptno = 10, name = "Fred"};
+> val e = {deptno=10,name="Fred"} : {deptno:int, name:string}
+val d = 10;
+> val d = 10 : int
+val filter = List.filter;
+> val filter = fn : ('a -> bool) -> 'a list -> 'a list
+
+"Hello, world!";
+> val it = "Hello, world!" : string
+(*) is shorthand for
+{deptno = #deptno e, name = e.name, d = d};
+> val it = {d=10,deptno=10,name="Fred"} : {d:int, deptno:int, name:string}
+
+(* In a sense, from is syntactic sugar. For example, given emps and
+ * depts, relations defined as lists of records as follows *)
+val emps =
+  [{id = 100, name = "Fred", deptno = 10},
+   {id = 101, name = "Velma", deptno = 20},
+   {id = 102, name = "Shaggy", deptno = 30},
+   {id = 103, name = "Scooby", deptno = 30}];
+> val emps =
+>   [{deptno=10,id=100,name="Fred"},{deptno=20,id=101,name="Velma"},
+>    {deptno=30,id=102,name="Shaggy"},{deptno=30,id=103,name="Scooby"}]
+>   : {deptno:int, id:int, name:string} list
+val depts =
+  [{deptno = 10, name = "Sales"},
+   {deptno = 20, name = "Marketing"},
+   {deptno = 30, name = "Engineering"},
+   {deptno = 40, name = "Support"}];
+> val depts =
+>   [{deptno=10,name="Sales"},{deptno=20,name="Marketing"},
+>    {deptno=30,name="Engineering"},{deptno=40,name="Support"}]
+>   : {deptno:int, name:string} list
+(* As in any ML expression, you can define functions within a from
+ * expression, and those functions can operate on lists. Thus we can
+ * implement equivalents of SQL's IN and EXISTS operators: *)
+(* FIXME
+let
+  fun in_ e [] = false
+    | in_ e (h :: t) = e = h orelse (in_ e t)
+in
+  from e in emps
+  where in_ e.deptno (from d in depts
+                where d.name = "Engineering"
+                yield d.deptno)
+  yield e.name
+end;
+*)
+(* FIXME
+let
+  fun exists [] = false
+    | exists hd :: tl = true
+in
+  from e in emps
+  where exists (from d in depts
+                where d.deptno = e.deptno
+                andalso d.name = "Engineering")
+  yield e.name
+end;
+*)
+
+(* --- Screen cast ------------------------------------------------ *)
+
+(* Now we're in morel's shell, for interactive commands.
+ * First of all, we need to talk about comments. *)
+
+(* This is a block comment, which can span multiple lines... *)
+
+(*) ... and this is a single-line comment.
+
+(* Now, the basics.
+ * Everything in ML is an expression. *)
+"a string literal";
+> val it = "a string literal" : string
+1 + 2;
+> val it = 3 : int
+
+(* The Morel shell deduces the type of each expression,
+ * and assigns it to a variable called "it".
+ * We can use "it" in the next expression... *)
+it + 4;
+> val it = 7 : int
+
+(* We just saw string and int expressions.
+ * There are also boolean, list, record and tuple types: *)
+1 = 2;
+> val it = false : bool
+[1, 2, 3];
+> val it = [1,2,3] : int list
+{id = 10, name = "Alex"};
+> val it = {id=10,name="Alex"} : {id:int, name:string}
+(1, true, "yes");
+> val it = (1,true,"yes") : int * bool * string
+
+(*) You can assign values to variables.
+val x = 7;
+> val x = 7 : int
+val y =  x mod 3;
+> val y = 1 : int
+
+(* Functions are expressions, too.
+ * "fn" makes a lambda expression. *)
+val plusOne = fn x => x + 1;
+> val plusOne = fn : int -> int
+plusOne 2;
+> val it = 3 : int
+
+(* Functions are widely used, so they have a shorthand.
+ * "fun" is short for "val ... = fn". *)
+fun plusOne x = x + 1;
+> val plusOne = fn : int -> int
+plusOne 1000;
+> val it = 1001 : int
+
+(*) Functions can have multiple arguments, separated by spaces.
+fun plus x y = x + y;
+> val plus = fn : int -> int -> int
+plus 3 4;
+> val it = 7 : int
+
+(* If we supply too few arguments, we get a closure that captures
+ * the argument value and can be applied later. *)
+val plusTen = plus 10;
+> val plusTen = fn : int -> int
+plusTen 2;
+> val it = 12 : int
+
+(*) Functions can be recursive.
+fun fact n = if n = 1 then 1 else n * fact (n - 1);
+> val fact = fn : int -> int
+fact 1;
+> val it = 1 : int
+fact 5;
+> val it = 120 : int
+
+(* A higher-order function is a function that operates on other
+ * functions. Here are a couple. *)
+
+(*) "map" applies another function to each element of a list
+let
+  fun map f [] = []
+    | map f (head :: tail) = (f head) :: (map f tail)
+  fun double n = n * 2
+in
+  map double [1, 2, 3, 4]
+end;
+> val it = [2,4,6,8] : int list
+
+(* "filter" keeps only those elements of a list for which
+ * a predicate evaluates to true. *)
+let
+  fun filter p [] = []
+    | filter p (head :: tail) =
+      if (p head) then
+        (head :: (filter p tail))
+      else
+        (filter p tail)
+  fun even n = n mod 2 = 0
+in
+  filter even [1, 2, 3, 4]
+end;
+> val it = [2,4] : int list
+
+(* You may notice that "map" and "filter" are very similar to the
+ * "select" and "where" clauses of a SQL statement.
+ *
+ * This is no surprise: relational algebra, which underlies SQL, is
+ * basically a collection of higher-order functions applied to
+ * lists of records (relations).
+ *
+ * Can we extend ML syntax to make it easier to write relational
+ * algebra expressions? You bet! *)
+
+(* Let's start by defining "emps" and "depts" relations as lists of
+ * records. *)
+val emps =
+  [{id = 100, name = "Fred", deptno = 10},
+   {id = 101, name = "Velma", deptno = 20},
+   {id = 102, name = "Shaggy", deptno = 30},
+   {id = 103, name = "Scooby", deptno = 30}];
+> val emps =
+>   [{deptno=10,id=100,name="Fred"},{deptno=20,id=101,name="Velma"},
+>    {deptno=30,id=102,name="Shaggy"},{deptno=30,id=103,name="Scooby"}]
+>   : {deptno:int, id:int, name:string} list
+val depts =
+  [{deptno = 10, name = "Sales"},
+   {deptno = 20, name = "HR"},
+   {deptno = 30, name = "Engineering"},
+   {deptno = 40, name = "Support"}];
+> val depts =
+>   [{deptno=10,name="Sales"},{deptno=20,name="HR"},
+>    {deptno=30,name="Engineering"},{deptno=40,name="Support"}]
+>   : {deptno:int, name:string} list
+
+(* That's all, folks!
+ * To recap, Morel has:
+ *  * expressions of int, string, boolean, float, char, list,
+ *    tuple and record types;
+ *  * lambda expressions and recursive functions;
+ *  * algebraic datatypes and pattern-matching;
+ *  * polymorphism and powerful type-inference;
+ *  * relational expressions (an extension to Standard ML).
+ *
+ * Follow our progress at https://github.com/hydromatic/morel.
+ * This is only release 0.1, so there's more to come! *)
+
+(* --- 2020/02/25: Morel: A functional language for data ---------- *)
+
+(*) Auxiliary declarations
+val hr = {
+  emps = [
+    {id = 100, deptno = 10, name = "SCOTT"}],
+  depts = [
+    {deptno = 10, name = "SALES"}]};
+> val hr =
+>   {depts=[{deptno=10,name="SALES"}],emps=[{deptno=10,id=100,name="SCOTT"}]}
+>   : {depts:{deptno:int, name:string} list,
+>       emps:{deptno:int, id:int, name:string} list}
+
+(* --- 2020/03/03: Morel: The basic language ---------------------- *)
+
+(* As a functional language, everything in Morel is an expression.
+The basic types are `bool`, `int`, `float`, `string` and `char`.  Here
+are literals in each. *)
+false;
+> val it = false : bool
+10;
+> val it = 10 : int
+~4.5;
+> val it = ~4.5 : real
+"morel";
+> val it = "morel" : string
+#"a";
+> val it = #"a" : char
+();
+> val it = () : unit
+
+(* As you'd expect, there are built-in operators for each data
+type. Here are a few examples: *)
+true andalso false;
+> val it = false : bool
+true orelse false;
+> val it = true : bool
+not false;
+> val it = true : bool
+1 + 2;
+> val it = 3 : int
+~(5 - 2);
+> val it = ~3 : int
+10 mod 3;
+> val it = 1 : int
+"mo" ^ "rel";
+> val it = "morel" : string
+
+(* You can assign values to variables. *)
+val x = 7;
+> val x = 7 : int
+val y = x mod 3;
+> val y = 1 : int
+x + y;
+> val it = 8 : int
+
+(* The shell deduces the type of each expression,
+   and assigns it to a variable called `it`.
+   We can use `it` in the next expression. *)
+"morel";
+> val it = "morel" : string
+String.size it;
+> val it = 5 : int
+it + 4;
+> val it = 9 : int
+
+(* A let expression binds one or more values and evaluates an expression *)
+let
+  val x = 3
+  val y = 2
+in
+  x + y
+end;
+> val it = 5 : int
+
+(* In addition to primitive types, there are list, record and tuple
+   types. *)
+[1, 2, 3];
+> val it = [1,2,3] : int list
+{id = 10, name = "Scooby"};
+> val it = {id=10,name="Scooby"} : {id:int, name:string}
+(1, true, "yes");
+> val it = (1,true,"yes") : int * bool * string
+
+(* Tuples are actually just records with fields named "1", "2",
+   etc.: *)
+(1, true, "yes");
+> val it = (1,true,"yes") : int * bool * string
+{1 = 1, 2 = true, 3 = "yes"};
+> val it = (1,true,"yes") : int * bool * string
+(1, true, "yes") = {1 = 1, 2 = true, 3 = "yes"};
+> val it = true : bool
+
+(* The empty record and empty tuple are equal, and are the only value
+   of the type unit. *)
+{};
+> val it = () : unit
+();
+> val it = () : unit
+
+(* Functions are expressions, too.  `fn` makes a lambda expression.
+   After we have bound the lambda value to `plusOne`, we can use
+   `plusOne` as a function. *)
+val plusOne = fn x => x + 1;
+> val plusOne = fn : int -> int
+plusOne 2;
+> val it = 3 : int
+
+(* Functions declarations are common, so the `fun` keyword provides a
+   shorthand. *)
+fun plusOne x = x + 1;
+> val plusOne = fn : int -> int
+plusOne 2;
+> val it = 3 : int
+
+(* Functions can have multiple arguments, separated by spaces. *)
+fun plus x y = x + y;
+> val plus = fn : int -> int -> int
+plus 3 4;
+> val it = 7 : int
+
+(* If we supply too few arguments, we get a closure that captures the
+   argument value and can be applied later. *)
+val plusTen = plus 10;
+> val plusTen = fn : int -> int
+plusTen 2;
+> val it = 12 : int
+
+(* Functions can be recursive. *)
+fun factorial n =
+  if n = 1 then
+    1
+  else
+     n * factorial (n - 1);
+> val factorial = fn : int -> int
+factorial 1;
+> val it = 1 : int
+factorial 5;
+> val it = 120 : int
+
+(* A higher-order function is a function that operates on other
+   functions. Here are a couple of examples.
+
+   The map function applies a given function `f` to each element of a
+   list, returning a list. *)
+fun map f [] = []
+  | map f (head :: tail) = (f head) :: (map f tail);
+> val map = fn : ('a -> 'b) -> 'a list -> 'b list
+fun double n = n * 2;
+> val double = fn : int -> int
+map double [1, 2, 3, 4];
+> val it = [2,4,6,8] : int list
+
+(* The filter function keeps only those elements of a list for which a
+   predicate `p` evaluates to true. *)
+fun filter p [] = []
+  | filter p (head :: tail) =
+    if (p head) then
+      (head :: (filter p tail))
+    else
+      (filter p tail);
+> val filter = fn : ('a -> bool) -> 'a list -> 'a list
+fun even n = n mod 2 = 0;
+> val even = fn : int -> bool
+filter even [1, 2, 3, 4];
+> val it = [2,4] : int list
+
+(* Let's start by defining emps and depts relations as lists of
+   records. *)
+
+val emps =
+  [{id = 100, name = "Fred", deptno = 10},
+   {id = 101, name = "Velma", deptno = 20},
+   {id = 102, name = "Shaggy", deptno = 30},
+   {id = 103, name = "Scooby", deptno = 30}];
+> val emps =
+>   [{deptno=10,id=100,name="Fred"},{deptno=20,id=101,name="Velma"},
+>    {deptno=30,id=102,name="Shaggy"},{deptno=30,id=103,name="Scooby"}]
+>   : {deptno:int, id:int, name:string} list
+val depts =
+  [{deptno = 10, name = "Sales"},
+   {deptno = 20, name = "HR"},
+   {deptno = 30, name = "Engineering"},
+   {deptno = 40, name = "Support"}];
+> val depts =
+>   [{deptno=10,name="Sales"},{deptno=20,name="HR"},
+>    {deptno=30,name="Engineering"},{deptno=40,name="Support"}]
+>   : {deptno:int, name:string} list
+
+(* There is no difference between a query, a table and a list-valued
+   expression, so we could have instead written just `emps`. *)
+emps;
+> val it =
+>   [{deptno=10,id=100,name="Fred"},{deptno=20,id=101,name="Velma"},
+>    {deptno=30,id=102,name="Shaggy"},{deptno=30,id=103,name="Scooby"}]
+>   : {deptno:int, id:int, name:string} list
+
+(* --- 2020/03/03: Morel: The basic language ---------------------- *)
+
+(*) WordCount in Standard ML
+fun mapReduce mapper reducer list =
+  let
+    fun update (key, value, []) = [(key, [value])]
+      | update (key, value, ((key2, values) :: tail)) =
+          if key = key2 then
+            (key, (value :: values)) :: tail
+          else
+            (key2, values) :: (update (key, value, tail))
+    fun dedup ([], dict) = dict
+      | dedup ((key, value) :: tail, dict) =
+          dedup (tail, update (key, value, dict))
+    fun flatMap f list = List.foldl (op @) [] (List.map f list)
+    val keyValueList = flatMap mapper list
+    val keyValuesList = dedup (keyValueList, [])
+  in
+    List.map (fn (key, values) => (key, reducer (key, values))) keyValuesList
+  end;
+> val mapReduce = fn
+>   : ('a -> ('b * 'c) list)
+>      -> ('b * 'c list -> 'd) -> 'a list -> ('b * 'd) list
+
+fun wc_mapper line =
+  let
+    fun split0 [] word words = word :: words
+      | split0 (#" " :: s) word words = split0 s "" (word :: words)
+      | split0 (c :: s) word words = split0 s (word ^ (String.str c)) words
+    fun split s = List.rev (split0 (String.explode s) "" [])
+  in
+    List.map (fn w => (w, 1)) (split line)
+  end;
+> val wc_mapper = fn : string -> (string * int) list
+fun wc_reducer (key, values) = List.foldl (op +) 0 values;
+> val wc_reducer = fn : 'a * int list -> int
+
+(*) Bind them to mapReduce, and run
+fun wordCount lines = mapReduce wc_mapper wc_reducer lines;
+> val wordCount = fn : string list -> (string * int) list
+
+(*) WordCount in Morel
+val lines = ["a skunk sat on a stump",
+  "and thunk the stump stunk",
+  "but the stump thunk the skunk stunk"];
+> val lines =
+>   ["a skunk sat on a stump","and thunk the stump stunk",
+>    "but the stump thunk the skunk stunk"] : string list
+fun split s =
+  let
+    fun split0 [] word words = word :: words
+      | split0 (#" " :: s) word words = split0 s "" (word :: words)
+      | split0 (c :: s) word words = split0 s (word ^ (String.str c)) words
+  in
+    List.rev (split0 (String.explode s) "" [])
+  end;
+> val split = fn : string -> string list
+
+(* --- StrangeLoop 2021 talk -------------------------------------- *)
+
+(*) Standard ML: values
+"Hello, world!";
+> val it = "Hello, world!" : string
+1 + 2;
+> val it = 3 : int
+~1.5;
+> val it = ~1.5 : real
+[1, 1, 2, 3, 5];
+> val it = [1,1,2,3,5] : int list
+fn i => i mod 2 = 1;
+> val it = fn : int -> bool
+(1, "a");
+> val it = (1,"a") : int * string
+{name = "Fred", empno = 100};
+> val it = {empno=100,name="Fred"} : {empno:int, name:string}
+
+(*) Standard ML: types
+true;
+> val it = true : bool
+#"a";
+> val it = #"a" : char
+~1;
+> val it = ~1 : int
+3.14;
+> val it = 3.14 : real
+"foo";
+> val it = "foo" : string
+();
+> val it = () : unit
+String.size;
+> val it = fn : string -> int
+fn (x, y) => x + y * y;
+> val it = fn : int * int -> int
+(10, "Fred");
+> val it = (10,"Fred") : int * string
+{empno=10, name="Fred"};
+> val it = {empno=10,name="Fred"} : {empno:int, name:string}
+[1, 2, 3];
+> val it = [1,2,3] : int list
+[(true, fn i => i + 1)];
+> val it = [(true,fn)] : (bool * (int -> int)) list
+List.length;
+> val it = fn : 'a list -> int
+
+(*) Standard ML: variables and functions
+val x = 1;
+> val x = 1 : int
+val isOdd = fn i => i mod 2 = 1;
+> val isOdd = fn : int -> bool
+fun isOdd i = i mod 2 = 0;
+> val isOdd = fn : int -> bool
+isOdd x;
+> val it = false : bool
+let
+  val x = 6
+  fun isOdd i = i mod 2 = 1
+in
+  isOdd x
+end;
+> val it = false : bool
+
+(*) Algebraic data types, case, and recursion
+(* TODO fix bug in parameterized datatype, and remove intTree below
+datatype 'a tree =
+    EMPTY
+  | LEAF of 'a
+  | NODE of ('a * 'a tree * 'a tree);
+*)
+datatype intTree =
+    EMPTY
+  | LEAF of int
+  | NODE of (int * intTree * intTree);
+> datatype intTree = EMPTY | LEAF of int | NODE of int * intTree * intTree
+fun sumTree EMPTY = 0
+  | sumTree (LEAF i) = i
+  | sumTree (NODE (i, l, r)) =
+        i + sumTree l + sumTree r;
+> val sumTree = fn : intTree -> int
+val rec sumTree = fn t =>
+  case t of EMPTY => 0
+    | LEAF i => i
+    | NODE (i, l, r) => i + sumTree l + sumTree r;
+> val sumTree = fn : intTree -> int
+
+(*) Relations and higher-order functions
+val emps = [
+  {id = 100, name = "Fred", deptno = 10},
+  {id = 101, name = "Velma", deptno = 20},
+  {id = 102, name = "Shaggy", deptno = 30},
+  {id = 103, name = "Scooby", deptno = 30}];
+> val emps =
+>   [{deptno=10,id=100,name="Fred"},{deptno=20,id=101,name="Velma"},
+>    {deptno=30,id=102,name="Shaggy"},{deptno=30,id=103,name="Scooby"}]
+>   : {deptno:int, id:int, name:string} list
+
+(*) Implementing Join using higher-order functions
+val depts = [
+  {deptno = 10, name = "Sales"},
+  {deptno = 20, name = "Marketing"},
+  {deptno = 30, name = "R&D"}];
+> val depts =
+>   [{deptno=10,name="Sales"},{deptno=20,name="Marketing"},
+>    {deptno=30,name="R&D"}] : {deptno:int, name:string} list
+fun flatMap f xs = List.concat (List.map f xs);
+> val flatMap = fn : ('a -> 'b list) -> 'a list -> 'b list
+
+(*) Integration with Apache Calcite - relational algebra
+Sys.set ("hybrid", true);
+> val it = () : unit
+
+(*) Functional programming <=> relational programming
+fun squareList [] = []
+  | squareList (x :: xs) = x * x :: squareList xs;
+> val squareList = fn : int list -> int list
+squareList [1, 2, 3];
+> val it = [1,4,9] : int list
+fun squareList xs = List.map (fn x => x * 2) xs;
+> val squareList = fn : int list -> int list
+squareList [1, 2, 3];
+> val it = [2,4,6] : int list
+fun wc_mapper line =
+  List.map (fn w => (w, 1)) (split line);
+> val wc_mapper = fn : string -> (string * int) list
+fun wc_reducer (key, values) =
+  List.foldl (fn (x, y) => x + y) 0 values;
+> val wc_reducer = fn : 'a * int list -> int
+
+(* --- More than Query -------------------------------------------- *)
+(* Talk "More than Query", at Data Council, 2025/04/23. *)
+Sys.set ("hybrid", false);
+> val it = () : unit
+
+(*) Solving Wordle
+fun mask (guess, answer) =
+  let
+    fun mask2 (m, i, [], answer) = m
+      | mask2 (m, i, letter :: rest, answer) =
+          mask2 ((m * 3
+          + (if String.sub(answer, i) = letter
+               then 2
+             else if String.isSubstring(str letter) answer
+               then 1
+             else 0)), i + 1, rest, answer)
+  in
+    mask2 (0, 0, explode guess, answer)
+  end;
+> val mask = fn : string * string -> int
+fun maskToString m =
+  let
+    fun maskToString2 (m, s, 0) = s
+      | maskToString2 (m, s, k) =
+        maskToString2 (m div 3,
+          List.nth(["b", "y", "g"], m mod 3) ^ s,
+          k - 1)
+  in
+    maskToString2 (m, "", 5)
+  end;
+> val maskToString = fn : int -> string
+
+(*) Functional programming  –  values, types, operators
+1 + 2;
+> val it = 3 : int
+"Hello, " ^ "world!";
+> val it = "Hello, world!" : string
+val integers = [1, 2, 3, 4, 5, 6, 7, 8];
+> val integers = [1,2,3,4,5,6,7,8] : int list
+fun filter f [] = []
+  | filter f (first :: rest) =
+      if (f first)
+        then first :: (filter f rest)
+        else filter f rest;
+> val filter = fn : ('a -> bool) -> 'a list -> 'a list
+filter (fn i => i mod 2 = 0) integers;
+> val it = [2,4,6,8] : int list
+
+(*) Alternatives to SQL
+val db =
+  {emps = [{name = "Fred", deptno = 2, sal = 1000, comm = 100}]};
+> val db = {emps=[{comm=100,deptno=2,name="Fred",sal=1000}]}
+>   : {emps:{comm:int, deptno:int, name:string, sal:int} list}
+
+(*) Pipe syntax
+val produceSales = [
+  {item = "bananas", category = "fruit", sales = 100},
+  {item = "apples", category = "fruit", sales = 200},
+  {item = "almonds", category = "nut", sales = 150},
+  {item = "peanuts", category = "nut", sales = 120},
+  {item = "carrots", category = "vegetable", sales = 80}];
+> val produceSales =
+>   [{category="fruit",item="bananas",sales=100},
+>    {category="fruit",item="apples",sales=200},
+>    {category="nut",item="almonds",sales=150},
+>    {category="nut",item="peanuts",sales=120},
+>    {category="vegetable",item="carrots",sales=80}]
+>   : {category:string, item:string, sales:int} list
+val primes = [2, 3, 5, 7, 11];
+> val primes = [2,3,5,7,11] : int list
+val bands = [["john", "paul", "george", "ringo"], ["simon", "garfunkel"]];
+> val bands = [["john","paul","george","ringo"],["simon","garfunkel"]]
+>   : string list list
+
+(*) Empty summary table.
+val summary = [] : {c:int, deptno:int, sum_sal:real} list;
+> val summary = [] : {c:int, deptno:int, sum_sal:real} list
+
+(* Commit. *)
+(*) TODO commit {scott with summary = summary2};
+
+val parents = [
+  ("earendil", "elrond"),
+  ("elrond", "arwen"),
+  ("elrond", "elladan"),
+  ("elrond", "elrohir")];
+> val parents =
+>   [("earendil","elrond"),("elrond","arwen"),("elrond","elladan"),
+>    ("elrond","elrohir")] : (string * string) list
+
+(* --- GCD and LCM ------------------------------------------------ *)
+
+(* "INTERSECT ALL, EXCEPT ALL, and the arithmetic of fractions",
+   posted on 2025/06/03. *)
+fun factorize n =
+  let
+    fun factorize' n d =
+      if n < d then [] else
+      if n mod d = 0 then d :: (factorize' (n div d) d)
+      else factorize' n (d + 1)
+  in
+    factorize' n 2
+  end;
+> val factorize = fn : int -> int list
+
+fun product [] = 1
+  | product (x :: xs) = x * product xs;
+> val product = fn : int list -> int
+product [2, 3, 2];
+> val it = 12 : int
+
+factorize 120;
+> val it = [2,2,2,3,5] : int list
+product (factorize 120);
+> val it = 120 : int
+
+(* --- Query.md --------------------------------------------------- *)
+
+Sys.set ("output", "tabular");
+> val it = () : unit
+Sys.set ("lineWidth", 65);
+> val it = () : unit
+Sys.set ("printLength", 20);
+> val it = () : unit
+
+(*) End blog.smli

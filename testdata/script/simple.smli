@@ -92,6 +92,12 @@ true;
 > val it = {1="a"} : {1:string}
 ("a");
 > val it = "a" : string
+{1=1,2=2,3=3,4=4,5=5,6=6,7=7,8=8,9=9,10=10,11=11,a="a",a1="a1",a2="a2",a10="a10"};
+> val it =
+>   {1=1,2=2,3=3,4=4,5=5,6=6,7=7,8=8,9=9,10=10,11=11,a="a",a1="a1",a10="a10",
+>    a2="a2"}
+>   : {1:int, 2:int, 3:int, 4:int, 5:int, 6:int, 7:int, 8:int, 9:int, 10:int,
+>       11:int, a:string, a1:string, a10:string, a2:string}
 {1=1,2=2,3=3,4=4,5=5,6=6,7=7,8=8,9=9,10=10,11=11};
 > val it = (1,2,3,4,5,6,7,8,9,10,11)
 >   : int * int * int * int * int * int * int * int * int * int * int
@@ -126,6 +132,23 @@ String.size "\v";
 String.size "\^@";
 > val it = 1 : int
 
+(* Identifiers ---------------------------------------------------- *)
+
+val x = 1
+and x' = 2
+and x'' = 3
+and x'y = 4
+and ABC123 = 5
+and Abc_123 = 6
+and Abc_ = 7;
+> val x = 1 : int
+> val x' = 2 : int
+> val x'' = 3 : int
+> val x'y = 4 : int
+> val ABC123 = 5 : int
+> val Abc_123 = 6 : int
+> val Abc_ = 7 : int
+
 fun foo x
   x'
   x''
@@ -135,8 +158,41 @@ fun foo x
   Abc_
   `a b` = 1;
 > val foo = fn : 'a -> 'b -> 'c -> 'd -> 'e -> 'f -> 'g -> 'h -> int
+
+{x = 1,
+ x' = 2,
+ x'' = 3,
+ x'y = 4,
+ ABC123 = 5,
+ Abc_123 = 6,
+ Abc_ = 7,
+ `A bc` = 8};
+> val it = {`A bc`=8,ABC123=5,Abc_=7,Abc_123=6,x=1,x'=2,x''=3,x'y=4}
+>   : {`A bc`:int, ABC123:int, Abc_:int, Abc_123:int, x:int, x':int, x'':int,
+>       x'y:int}
+
+(*) Quoted identifiers
+val `identifier with space` = 1;
+> val `identifier with space` = 1 : int
+val `identifier with ``backtick`` and period.` = 2;
+> val `identifier with ``backtick`` and period.` = 2 : int
 val `val` = "yes, you can use keywords as identifiers";
 > val val = "yes, you can use keywords as identifiers" : string
+
+(*) Quoted type name
+val x: `int` = 1;
+> val x = 1 : int
+val x: `order` = LESS;
+> val x = LESS : order
+fun f (x: `order` list) = List.length x;
+> val f = fn : order list -> int
+fun f (x: {a:`order`, b:bool, c:`order`}) = if x.b then x.a else x.c;
+> val f = fn : {a:order, b:bool, c:order} -> order
+fun compareInt (x: int, y: int) : `order` =
+  if x < y then LESS
+  else if x > y then GREATER
+  else EQUAL;
+> val compareInt = fn : int * int -> order
 
 (* Comments ------------------------------------------------------- *)
 
@@ -310,6 +366,23 @@ strTimes "" 12 [];
 > val it =
 >   ["aaaaaaaaaaa","aaaaaaaaaa","aaaaaaaaa","aaaaaaaa","aaaaaaa","aaaaaa",
 >    "aaaaa","aaaa","aaa","aa","a",""] : string list
+{a=1,b=2,c=3,d=4,e=5,f=6,g=7,h=8,i=9,j=10,k=11,l=12,m=13,n=14,o_=15,p=16};
+> val it =
+>   {a=1,b=2,c=3,d=4,e=5,f=6,g=7,h=8,i=9,j=10,k=11,l=12,m=13,n=14,o_=15,p=16}
+>   : {a:int, b:int, c:int, d:int, e:int, f:int, g:int, h:int, i:int, j:int,
+>       k:int, l:int, m:int, n:int, o_:int, p:int}
+(*
+sml prints the following, but we cannot split types yet:
+
+val it = {a=1,b={a=2,b={a=3,b={a=4,b={a=#,b=#}}}}}
+  : {a:int,
+     b:{a:int, b:{a:int, b:{a:int, b:{a:int, b:{a:int, b:{a:int, b:unit}}}}}}}
+*)
+{a=1,b={a=2,b={a=3,b={a=4,b={a=5,b={a=6,b={a=7,b={}}}}}}}};
+> val it = {a=1,b={a=2,b={a=3,b={a=4,b={a=#,b=#}}}}}
+>   : {a:int,
+>       b:{a:int,
+>           b:{a:int, b:{a:int, b:{a:int, b:{a:int, b:{a:int, b:unit}}}}}}}
 
 (*) Bug: Fails due to lack of parentheses
 (*
@@ -648,12 +721,52 @@ tup .1;
 > val it = () : unit
 {};
 > val it = () : unit
+().1;
+> stdIn:1.1-1.3 Error: reference to field 1 of non-record type unit
+>   raised at: stdIn:1.1-1.3
+{}.1;
+> stdIn:1.1-1.3 Error: reference to field 1 of non-record type unit
+>   raised at: stdIn:1.1-1.3
 
 (*) Singleton record with numeric field name (not a tuple)
 {1 = "hello"};
 > val it = {1="hello"} : {1:string}
 {1 = "hello"}.1;
 > val it = "hello" : string
+{1 = "hello"}.2;
+> stdIn:1.15 Error: no field '2' in type '{1:string}'
+>   raised at: stdIn:1.15
+
+(*) Space disambiguates: '3 . 1' applies '.1' to integer 3 (type error)
+3 . 1;
+> stdIn:1.1 Error: reference to field 1 of non-record type int
+>   raised at: stdIn:1.1
+
+(*) Error: field does not exist
+(1, 2, 3).4;
+> stdIn:1.11 Error: no field '4' in type 'int * int * int'
+>   raised at: stdIn:1.11
+
+(* Field of a non-record value whose type is not yet known (e.g. a 'let'-bound
+ * variable) is a type error, not an internal exception. *)
+let val n = 5 in n.x end;
+> stdIn:1.18 Error: reference to field x of non-record type int
+>   raised at: stdIn:1.18
+
+(* Arithmetic operators are not defined for non-numeric types; the error is a
+ * positioned type error, not an internal exception. *)
+true + true;
+> stdIn:1.1-1.12 Error: operator '+' is not defined for type 'bool'
+>   raised at: stdIn:1.1-1.12
+"a" + "b";
+> stdIn:1.1-1.10 Error: operator '+' is not defined for type 'string'
+>   raised at: stdIn:1.1-1.10
+~true;
+> stdIn:1.2-1.6 Error: operator '~' is not defined for type 'bool'
+>   raised at: stdIn:1.2-1.6
+abs true;
+> stdIn:1.1-1.9 Error: operator 'abs' is not defined for type 'bool'
+>   raised at: stdIn:1.1-1.9
 
 (* Errors --------------------------------------------------------- *)
 
@@ -662,6 +775,9 @@ tup .1;
 "a string literal to reset the line counter after the comment";
 > val it = "a string literal to reset the line counter after the comment"
 >   : string
+val a = p + 1;
+> stdIn:1.9 Error: unbound variable or constructor: p
+>   raised at: stdIn:1.9
 val a = pq + 1;
 > stdIn:1.9-1.11 Error: unbound variable or constructor: pq
 >   raised at: stdIn:1.9-1.11

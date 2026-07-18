@@ -26,6 +26,11 @@ Sys.set ("printLength", 999);
 Sys.set ("stringDepth", ~1);
 > val it = () : unit
 
+StringCvt;
+> val it = {padLeft=fn,padRight=fn}
+>   : {padLeft:char -> int -> string -> string,
+>       padRight:char -> int -> string -> string}
+
 (*) The constructors of `radix` and `realfmt` are at the top level.
 BIN;
 > val it = BIN : radix

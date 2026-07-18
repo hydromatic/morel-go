@@ -42,5 +42,20 @@ Sys.parseTree "1 + 2";
 > val it = "(plus (int_literal 1) (int_literal 2))" : string
 Sys.parseTree "f x";
 > val it = "(apply (id f) (id x))" : string
+1 + 2;
+> val it = 3 : int
+val zebra = true;
+> val zebra = true : bool
+val aardvark = 1 + (if zebra then 2 else 3);
+> val aardvark = 3 : int
+Sys.set ("hybrid", false);
+> val it = () : unit
+val x = 1 + 2;
+> val x = 3 : int
+Sys.set ("hybrid", true);
+> val it = () : unit
+
+Sys.set ("optionalInt", ~5);
+> val it = () : unit
 
 (*) End sys.smli

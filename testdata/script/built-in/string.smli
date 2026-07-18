@@ -34,6 +34,18 @@ String.size "abc";
 String.size "";
 > val it = 0 : int
 
+(*) val sub : string * int -> char
+String.sub;
+> val it = fn : string * int -> char
+
+(*) val extract: string * int * int option -> string
+String.extract;
+> val it = fn : string * int * int option -> string
+
+(*) val substring : string * int * int -> string
+String.substring;
+> val it = fn : string * int * int -> string
+
 (*) val ^ : string * string -> string
 String.`^`;
 > val it = fn : string * string -> string
@@ -54,11 +66,67 @@ String.concat ["a"];
 String.concat [];
 > val it = "" : string
 
+(*) val concatWith : string -> string list -> string
+String.concatWith;
+> val it = fn : string -> string list -> string
+
 (*) val str : char -> string
 String.str;
 > val it = fn : char -> string
 String.str #"a";
 > val it = "a" : string
+
+(*) val implode : char list -> string
+String.implode;
+> val it = fn : char list -> string
+
+(*) val explode : string -> char list
+String.explode;
+> val it = fn : string -> char list
+
+(*) val map : (char -> char) -> string -> string
+String.map;
+> val it = fn : (char -> char) -> string -> string
+
+(*) val translate : (char -> string) -> string -> string
+String.translate;
+> val it = fn : (char -> string) -> string -> string
+
+(*) val tokens : (char -> bool) -> string -> string list
+String.tokens;
+> val it = fn : (char -> bool) -> string -> string list
+
+(*) val fields : (char -> bool) -> string -> string list
+String.fields;
+> val it = fn : (char -> bool) -> string -> string list
+
+(*) val isPrefix    : string -> string -> bool
+String.isPrefix;
+> val it = fn : string -> string -> bool
+
+(*) val isSubstring : string -> string -> bool
+String.isSubstring;
+> val it = fn : string -> string -> bool
+
+(*) val isSuffix    : string -> string -> bool
+String.isSuffix;
+> val it = fn : string -> string -> bool
+
+(*) val compare : string * string -> order
+String.compare;
+> val it = fn : string * string -> order
+
+(*) val collate : (char * char -> order) -> string * string -> order
+String.collate;
+> val it = fn : (char * char -> order) -> string * string -> order
+
+(*) val <  : string * string -> bool
+String.`<`;
+> val it = fn : string * string -> bool
+"abc" < "ab";
+> val it = false : bool
+"ab" < "ab";
+> val it = false : bool
 
 (*) val <= : string * string -> bool
 String.`<=`;

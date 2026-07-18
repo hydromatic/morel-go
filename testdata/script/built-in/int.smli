@@ -26,4 +26,83 @@ Sys.set ("printLength", 999);
 Sys.set ("stringDepth", ~1);
 > val it = () : unit
 
+(* The arithmetic and comparison operators are also available as members of
+ * the Int structure. *)
+Int.`+` (1, 2);
+> val it = 3 : int
+Int.`-` (5, 3);
+> val it = 2 : int
+Int.`*` (5, 3);
+> val it = 15 : int
+Int.`~` 2;
+> val it = ~2 : int
+Int.`~` ~3;
+> val it = 3 : int
+
+Int.abs;
+> val it = fn : int -> int
+Int.abs 5;
+> val it = 5 : int
+Int.abs ~3;
+> val it = 3 : int
+Int.compare;
+> val it = fn : int * int -> order
+Int.`div`;
+> val it = fn : int * int -> int
+Int.`div` (14, 3);
+> val it = 4 : int
+Int.`div` (~14, 3);
+> val it = ~5 : int
+Int.`div` (14, ~3);
+> val it = ~5 : int
+Int.`div` (~14, ~3);
+> val it = 4 : int
+Int.`div` (0, ~3);
+> val it = 0 : int
+Int.fromInt;
+> val it = fn : int -> int
+Int.fmt;
+> val it = fn : radix -> int -> string
+Int.fromLarge;
+> val it = fn : int -> int
+Int.fromString;
+> val it = fn : string -> int option
+Int.max;
+> val it = fn : int * int -> int
+Int.min;
+> val it = fn : int * int -> int
+Int.`mod`;
+> val it = fn : int * int -> int
+Int.`mod` (14, 3);
+> val it = 2 : int
+Int.`mod` (~14, 3);
+> val it = 1 : int
+Int.`mod` (14, ~3);
+> val it = ~1 : int
+Int.`mod` (~14, ~3);
+> val it = ~2 : int
+Int.`mod` (0, ~3);
+> val it = 0 : int
+Int.quot;
+> val it = fn : int * int -> int
+Int.rem;
+> val it = fn : int * int -> int
+Int.sameSign;
+> val it = fn : int * int -> bool
+Int.sign;
+> val it = fn : int -> int
+Int.toInt;
+> val it = fn : int -> int
+Int.toLarge;
+> val it = fn : int -> int
+Int.toString;
+> val it = fn : int -> string
+
+(* Side-by-side comparison of how each Int.fmt radix renders a range of
+ * values. To run in SML, prepend `open StringCvt;` (Morel exposes the
+ * radix constructors at the top level). `Sys.set` is Morel-only; SML
+ * users will see the record list in non-tabular notation. *)
+Sys.set ("output", "tabular");
+> val it = () : unit
+
 (*) End int.smli

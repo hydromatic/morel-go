@@ -35,14 +35,36 @@ DESC "a";
 DESC (DESC "a");
 > val it = DESC (DESC "a") : string descending descending
 
+val emps = [
+  {empno=7839, ename="KING", mgr=0},
+  {empno=7566, ename="JONES", mgr=7839},
+  {empno=7698, ename="BLAKE", mgr=7839},
+  {empno=7782, ename="CLARK", mgr=7839},
+  {empno=7788, ename="SCOTT", mgr=7566},
+  {empno=7902, ename="FORD", mgr=7566},
+  {empno=7499, ename="ALLEN", mgr=7698},
+  {empno=7521, ename="WARD", mgr=7698},
+  {empno=7654, ename="MARTIN", mgr=7698},
+  {empno=7844, ename="TURNER", mgr=7698},
+  {empno=7900, ename="JAMES", mgr=7698},
+  {empno=7934, ename="MILLER", mgr=7782},
+  {empno=7876, ename="ADAMS", mgr=7788},
+  {empno=7369, ename="SMITH", mgr=7902}];
+> val emps =
+>   [{empno=7839,ename="KING",mgr=0},{empno=7566,ename="JONES",mgr=7839},
+>    {empno=7698,ename="BLAKE",mgr=7839},{empno=7782,ename="CLARK",mgr=7839},
+>    {empno=7788,ename="SCOTT",mgr=7566},{empno=7902,ename="FORD",mgr=7566},
+>    {empno=7499,ename="ALLEN",mgr=7698},{empno=7521,ename="WARD",mgr=7698},
+>    {empno=7654,ename="MARTIN",mgr=7698},{empno=7844,ename="TURNER",mgr=7698},
+>    {empno=7900,ename="JAMES",mgr=7698},{empno=7934,ename="MILLER",mgr=7782},
+>    {empno=7876,ename="ADAMS",mgr=7788},{empno=7369,ename="SMITH",mgr=7902}]
+>   : {empno:int, ename:string, mgr:int} list
+
 (*) The "compare" function.
 Relational.compare;
 > val it = fn : 'a * 'a -> order
-(*) Option compares with NONE less than any value.
 Relational.compare (SOME 1, SOME "a");
 > stdIn:1.1-1.38 Error: Cannot deduce type: conflict: int vs string
 >   raised at: stdIn:1.1-1.38
-(* 'word' compares as unsigned: a word with the high bit set is the largest
-   value, and 'order'/'order DESC' sort accordingly. *)
 
 (*) End relational.smli

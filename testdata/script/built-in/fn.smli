@@ -26,13 +26,21 @@ Sys.set ("printLength", 999);
 Sys.set ("stringDepth", ~1);
 > val it = () : unit
 
+Fn;
+> val it =
+>   {apply=fn,const=fn,curry=fn,equal=fn,flip=fn,id=fn,notEqual=fn,`o`=fn,
+>    repeat=fn,uncurry=fn}
+>   : {apply:('a -> 'b) * 'a -> 'b, const:'c -> 'd -> 'c,
+>       curry:('e * 'f -> 'g) -> 'e -> 'f -> 'g, equal:'h -> 'h -> bool,
+>       flip:('i * 'j -> 'k) -> 'j * 'i -> 'k, id:'l -> 'l,
+>       notEqual:'m -> 'm -> bool, `o`:('n -> 'o) * ('p -> 'n) -> 'p -> 'o,
+>       repeat:int -> ('q -> 'q) -> 'q -> 'q,
+>       uncurry:('r -> 's -> 't) -> 'r * 's -> 't}
+
 Fn.id;
 > val it = fn : 'a -> 'a
 Fn.const;
 > val it = fn : 'a -> 'b -> 'a
-(* In SMLNJ, the previous line is
-> val it = fn : ?.X1 -> string
-*)
 Fn.apply;
 > val it = fn : ('a -> 'b) * 'a -> 'b
 Fn.curry;
@@ -43,17 +51,9 @@ Fn.flip;
 > val it = fn : ('a * 'b -> 'c) -> 'b * 'a -> 'c
 Fn.repeat;
 > val it = fn : int -> ('a -> 'a) -> 'a -> 'a
-(* Partial application with a negative count should raise immediately,
- * before the second argument arrives. *)
 Fn.equal;
 > val it = fn : 'a -> 'a -> bool
-(* ^ SMLNJ gives
-> val it = fn : ''a -> ''a -> bool
-*)
 Fn.notEqual;
 > val it = fn : 'a -> 'a -> bool
-(* ^ SMLNJ gives
-> val it = fn : ''a -> ''a -> bool
-*)
 
 (*) End fn.smli

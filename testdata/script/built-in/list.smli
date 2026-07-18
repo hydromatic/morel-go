@@ -54,6 +54,9 @@ List.`@` ([], [2]);
 List.`@` ([], []);
 > val it = [] : 'a list
 
+(op @) ([1], [2, 3]);
+> val it = [1,2,3] : int list
+
 [1] @ [2, 3];
 > val it = [1,2,3] : int list
 [] @ [];
@@ -77,6 +80,26 @@ List.tl [];
 > uncaught exception Empty
 >   raised at: stdIn:1.1-1.11
 
+(*) val last : 'a list -> 'a
+List.last;
+> val it = fn : 'a list -> 'a
+
+(*) val getItem : 'a list -> ('a * 'a list) option
+List.getItem;
+> val it = fn : 'a list -> ('a * 'a list) option
+
+(*) val nth : 'a list * int -> 'a
+List.nth;
+> val it = fn : 'a list * int -> 'a
+
+(*) val take : 'a list * int -> 'a list
+List.`take`;
+> val it = fn : 'a list * int -> 'a list
+
+(*) val drop : 'a list * int -> 'a list
+List.drop;
+> val it = fn : 'a list * int -> 'a list
+
 (*) val rev : 'a list -> 'a list
 List.rev;
 > val it = fn : 'a list -> 'a list
@@ -88,6 +111,22 @@ List.rev [1];
 > val it = [1] : int list
 List.rev [];
 > val it = [] : 'a list
+
+(*) val concat : 'a list list -> 'a list
+List.concat;
+> val it = fn : 'a list list -> 'a list
+
+(*) val revAppend : 'a list * 'a list -> 'a list
+List.revAppend;
+> val it = fn : 'a list * 'a list -> 'a list
+
+(*) val app : ('a -> unit) -> 'a list -> unit
+List.app;
+> val it = fn : ('a -> unit) -> 'a list -> unit
+
+(*) val mapi : (int * 'a -> 'b) -> 'a list -> 'b list
+List.mapi;
+> val it = fn : (int * 'a -> 'b) -> 'a list -> 'b list
 
 (*) val map : ('a -> 'b) -> 'a list -> 'b list
 List.map;
@@ -102,5 +141,45 @@ map;
 > val it = fn : ('a -> 'b) -> 'a list -> 'b list
 map (fn x => x) [];
 > val it = [] : 'a list
+
+(*) val mapPartial : ('a -> 'b option) -> 'a list -> 'b list
+List.mapPartial;
+> val it = fn : ('a -> 'b option) -> 'a list -> 'b list
+
+(*) val find : ('a -> bool) -> 'a list -> 'a option
+List.find;
+> val it = fn : ('a -> bool) -> 'a list -> 'a option
+
+(*) val filter : ('a -> bool) -> 'a list -> 'a list
+List.filter;
+> val it = fn : ('a -> bool) -> 'a list -> 'a list
+
+(*) val partition : ('a -> bool) -> 'a list -> 'a list * 'a list
+List.partition;
+> val it = fn : ('a -> bool) -> 'a list -> 'a list * 'a list
+
+(*) val foldl : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
+List.foldl;
+> val it = fn : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
+
+(*) val foldr : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
+List.foldr;
+> val it = fn : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
+
+(*) val exists : ('a -> bool) -> 'a list -> bool
+List.`exists`;
+> val it = fn : ('a -> bool) -> 'a list -> bool
+
+(*) val all : ('a -> bool) -> 'a list -> bool
+List.all;
+> val it = fn : ('a -> bool) -> 'a list -> bool
+
+(*) val tabulate : int * (int -> 'a) -> 'a list
+List.tabulate;
+> val it = fn : int * (int -> 'a) -> 'a list
+
+(*) val collate : ('a * 'a -> order) -> 'a list * 'a list -> order
+List.collate;
+> val it = fn : ('a * 'a -> order) -> 'a list * 'a list -> order
 
 (*) End list.smli

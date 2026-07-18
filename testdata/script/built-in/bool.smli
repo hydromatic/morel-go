@@ -26,4 +26,26 @@ Sys.set ("printLength", 999);
 Sys.set ("stringDepth", ~1);
 > val it = () : unit
 
+Bool;
+> val it =
+>   {<=fn,<>=fn,==fn,>=fn,`andalso`=fn,fromString=fn,`implies`=fn,not=fn,
+>    `orelse`=fn,toString=fn}
+>   : {<:bool * bool -> bool, <>:bool * bool -> bool, =:bool * bool -> bool,
+>       >:bool * bool -> bool, `andalso`:bool * bool -> bool,
+>       fromString:string -> bool option, `implies`:bool * bool -> bool,
+>       not:bool -> bool, `orelse`:bool * bool -> bool,
+>       toString:bool -> string}
+Bool.fromString;
+> val it = fn : string -> bool option
+Bool.not;
+> val it = fn : bool -> bool
+Bool.not true;
+> val it = false : bool
+Bool.not false;
+> val it = true : bool
+Bool.`implies`;
+> val it = fn : bool * bool -> bool
+Bool.toString;
+> val it = fn : bool -> string
+
 (*) End bool.smli

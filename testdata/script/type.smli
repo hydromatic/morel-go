@@ -1,0 +1,671 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *)
+
+(*) Record and tuple are equivalent.
+{1 = "a", 2 = true};
+> val it = ("a",true) : string * bool
+("a", true);
+> val it = ("a",true) : string * bool
+("a", true) = {1 = "a", 2 = true};
+> val it = true : bool
+{1 = "a", 2 = true} = ("a", true);
+> val it = true : bool
+("a", true) = {2 = true, 1 = "a"};
+> val it = true : bool
+("a", true) = {2 = true, 1 = "b"};
+> val it = false : bool
+("a", false) = {1 = "a", 2 = true};
+> val it = false : bool
+
+(*) Empty record and empty tuple are equivalent, and of type 'unit'.
+{};
+> val it = () : unit
+();
+> val it = () : unit
+
+(*) Nested tuple
+(1,true,7);
+> val it = (1,true,7) : int * bool * int
+((1,true),7);
+> val it = ((1,true),7) : (int * bool) * int
+(1,(true,7));
+> val it = (1,(true,7)) : int * (bool * int)
+fn (x: (int * bool) * int) => true;
+> val it = fn : (int * bool) * int -> bool
+fn (x: int * (bool * int)) => true;
+> val it = fn : int * (bool * int) -> bool
+fn (x: int * bool * int) => true;
+> val it = fn : int * bool * int -> bool
+
+(*) Expressions with type annotations
+1: int;
+> val it = 1 : int
+(2, true): int * bool;
+> val it = (2,true) : int * bool
+[(2, true)]: (int * bool) list;
+> val it = [(2,true)] : (int * bool) list
+(2, [true]): int * (bool list);
+> val it = (2,[true]) : int * bool list
+(* Multi-arg type constructors do not parenthesise tuple-typed arguments
+ * (the outer '(', ',', ')' already disambiguates them); single-arg
+ * constructors do. *)
+INL (1, true);
+> val it = INL (1,true) : (int * bool,'a) either
+INR ((1, true), 7);
+> val it = INR ((1,true),7) : ('a,(int * bool) * int) either
+INR (1, (true, 7));
+> val it = INR (1,(true,7)) : ('a,int * (bool * int)) either
+
+(* Tuple types and function types interact correctly: '*' binds tighter
+ * than '->' in both source syntax and printed form. A tuple as a
+ * function arg or result needs no parens; a function as a tuple element
+ * does. *)
+fun f (x: int * bool) = 1;
+> val f = fn : int * bool -> int
+fn x: int * bool => x;
+> val it = fn : int * bool -> int * bool
+fn x: int -> int * bool => 1;
+> val it = fn : (int -> int * bool) -> int
+fn x: (int -> int) * bool => 1;
+> val it = fn : (int -> int) * bool -> int
+
+[]: int list;
+> val it = [] : int list
+[]: {a: int, b: string} list;
+> val it = [] : {a:int, b:string} list
+(1: int) + (2: int);
+> val it = 3 : int
+1 + (2: int);
+> val it = 3 : int
+(1: int) + 2;
+> val it = 3 : int
+String.size "abc": int;
+> val it = 3 : int
+String.size ("abc": string);
+> val it = 3 : int
+String.size ("abc": string): int;
+> val it = 3 : int
+
+(*) Patterns with type annotations
+val x: int = 1;
+> val x = 1 : int
+val y: bool = true;
+> val y = true : bool
+val (y: bool) = true;
+> val y = true : bool
+val p: int * bool = (1, true);
+> val p = (1,true) : int * bool
+val (p: int * bool) = (1, true);
+> val p = (1,true) : int * bool
+val empty: int list = [];
+> val empty = [] : int list
+val empty2: {a: int, b: string} list = [];
+> val empty2 = [] : {a:int, b:string} list
+
+(*) Function declarations with type annotations
+fun f (x: int, y) = x + y;
+> val f = fn : int * int -> int
+fun f (x, y: int) = x + y;
+> val f = fn : int * int -> int
+fun f3 (e: {name: string, deptno:int}) = e.deptno;
+> val f3 = fn : {deptno:int, name:string} -> int
+fun hello (name: string, code: int): string = "hello!";
+> val hello = fn : string * int -> string
+fun hello2 (name: string) (code : int): string = "hello!";
+> val hello2 = fn : string -> int -> string
+val hello3: string * int -> string =
+  fn (name, code) => "hello!";
+> val hello3 = fn : string * int -> string
+fun l1 [] = 0 | l1 ((h: string) :: t) = 1 + (l1 t);
+> val l1 = fn : string list -> int
+fun l2 [] = 0 | l2 (h :: (t: bool list)) = 1 + (l2 t);
+> val l2 = fn : bool list -> int
+fun l1a (p: string list) = List.length p;
+> val l1a = fn : string list -> int
+fun l1b (p: string list): int = List.length p;
+> val l1b = fn : string list -> int
+fun l2b (p: bool list) = List.length p;
+> val l2b = fn : bool list -> int
+fun l3b (p: {b: int, a: string} list) = List.length p;
+> val l3b = fn : {a:string, b:int} list -> int
+fun countOption (NONE: string option) = 0
+  | countOption (SOME x) = 1;
+> val countOption = fn : string option -> int
+fun countOption0 (NONE) = 0
+  | countOption0 (SOME x) = if x = "" then 1 else 2;
+> val countOption0 = fn : string option -> int
+fun countOption00 (SOME x) = 1
+  | countOption00 (NONE: string option) = 0;
+> val countOption00 = fn : string option -> int
+fun countOption1 (NONE) = 0
+  | countOption1 (SOME x) = if x then 1 else 2;
+> val countOption1 = fn : bool option -> int
+fun countOption2 NONE: int = 0
+  | countOption2 (SOME x) = 1;
+> val countOption2 = fn : 'a option -> int
+
+val m = 5;
+> val m = 5 : int
+
+(* Operand precedence is 9, so a dotted operand needs no parentheses, but an
+   application or infix operator does. *)
+val r = {a = 1, b = true};
+> val r = {a=1,b=true} : {a:int, b:bool}
+
+(* Function with unit arg ----------------------------------------- *)
+fun one () = 1;
+> val one = fn : unit -> int
+one ();
+> val it = 1 : int
+one {};
+> val it = 1 : int
+let
+  fun one () = 1
+in
+  one ()
+end;
+> val it = 1 : int
+
+(* A function with a type that is tricky to unparse correctly:
+ *   'a list -> ('a * 'a list) option *)
+fun g [] = NONE
+  | g (h :: t) = SOME (h, t);
+> val g = fn : 'a list -> ('a * 'a list) option
+
+(* Ditto:
+ *   'a list -> ('a * 'a list option) option *)
+fun g [] = NONE
+  | g (h :: t) = SOME (h, SOME t);
+> val g = fn : 'a list -> ('a * 'a list option) option
+
+(* Ditto:
+ *   'a list -> ('a option * 'a list option) option *)
+fun g [] = NONE
+  | g (h :: t) = SOME (SOME h, SOME t);
+> val g = fn : 'a list -> ('a option * 'a list option) option
+
+(*) Pattern-match on record
+fun f {a = c, b} = b + c;
+> val f = fn : {a:int, b:int} -> int
+f {a = 5, b = 6};
+> val it = 11 : int
+
+fun f2 {a = 1, b} = b * 2
+  | f2 {a, b} = b * 3;
+> val f2 = fn : {a:int, b:int} -> int
+f2 {a = 1, b = 6};
+> val it = 12 : int
+f2 {a = 2, b = 6};
+> val it = 18 : int
+
+Sys.set ("matchCoverageEnabled", false);
+> val it = () : unit
+fun f3 {a = 1, b} = b * 2;
+> val f3 = fn : {a:int, b:int} -> int
+f3 {a = 1, b = 6};
+> val it = 12 : int
+
+(* The following correctly throws
+ *   unbound variable or constructor: a
+ * Disabled because error stacks made tests brittle.
+ * fun f4 {a = 1, b} = a + b; *)
+
+(*) Variable with polymorphic type
+val x = map;
+> val x = fn : ('a -> 'b) -> 'a list -> 'b list
+x explode ["ab", "c"];
+> val it = [[#"a",#"b"],[#"c"]] : char list list
+
+(*) Has polymorphic type
+val rec len = fn x =>
+    case x of head :: tail => 1 + (len tail)
+            | [] => 0;
+> val len = fn : 'a list -> int
+
+len [];
+> val it = 0 : int
+len [1];
+> val it = 1 : int
+len [1,2];
+> val it = 2 : int
+
+map len (map explode ["ab", "", "cde"]);
+> val it = [2,0,3] : int list
+map (fn s => len (explode s)) ["ab", "", "cde"];
+> val it = [2,0,3] : int list
+
+(* Polymorphic type constraints ----------------------------------- *)
+
+(*) id_list returns its argument but that argument must be a list
+fun id_list (x: 'a list) = x;
+> val id_list = fn : 'a list -> 'a list
+id_list [1,2];
+> val it = [1,2] : int list
+id_list ["a","b"];
+> val it = ["a","b"] : string list
+
+(*) Same, without parentheses around the argument.
+fun id_list x: 'a list = x;
+> val id_list = fn : 'a list -> 'a list
+id_list [1,2];
+> val it = [1,2] : int list
+
+(*) Constraint after parentheses is on the return type.
+fun two_list (x, y): 'a list = [x, y];
+> val two_list = fn : 'a * 'a -> 'a list
+two_list ("a", "b");
+> val it = ["a","b"] : string list
+
+(*) ...even there is only one argument.
+fun one_list (x): 'a list = [x];
+> val one_list = fn : 'a -> 'a list
+one_list "a";
+> val it = ["a"] : string list
+one_list ("a", "b");
+> val it = [("a","b")] : (string * string) list
+
+(*) Four type parameters collapse to two
+fun four_list (a: 'a, b: 'b, c: 'c, d: 'd) = [(a, true, b), (c, d, b)];
+> val four_list = fn : 'a * 'b * 'a * bool -> ('a * bool * 'b) list
+four_list (1, "a", 2, false);
+> val it = [(1,true,"a"),(2,false,"a")] : (int * bool * string) list
+
+(*) first_pair returns the first item, but requires types to be the same
+fun first_pair (list: ('a * 'a) list) = hd list;
+> val first_pair = fn : ('a * 'a) list -> 'a * 'a
+first_pair [(1,2),(3,4)];
+> val it = (1,2) : int * int
+first_pair [("a","b"),("c","d")];
+> val it = ("a","b") : string * string
+first_pair [("a",true),("c",false)];
+> stdIn:1.1-1.36 Error: Cannot deduce type: conflict: string vs bool
+>   raised at: stdIn:1.1-1.36
+
+(* Type resolution involving record selectors --------------------- *)
+val emps =
+  [{id = 100, name = "Fred", deptno = 10},
+   {id = 101, name = "Velma", deptno = 20},
+   {id = 102, name = "Shaggy", deptno = 30},
+   {id = 103, name = "Scooby", deptno = 30}];
+> val emps =
+>   [{deptno=10,id=100,name="Fred"},{deptno=20,id=101,name="Velma"},
+>    {deptno=30,id=102,name="Shaggy"},{deptno=30,id=103,name="Scooby"}]
+>   : {deptno:int, id:int, name:string} list
+map #deptno emps;
+> val it = [10,20,30,30] : int list
+map #2 [(1,2),(3,1)];
+> val it = [2,1] : int list
+
+(* Should give
+ *  Error: duplicate variable in pattern(s): e *)
+(*
+fun in_ e [] = false
+  | in_ e e :: tl = true
+  | in_ e hd :: tl = in_ e tl
+*)
+
+(* Should give
+ * Error: operator and operand don't agree [tycon mismatch]
+ *     operator domain: 'Z list list
+ *     operand:         (({id:'X; 'Y} -> 'X) * ([+ ty] * [+ ty] -> [+ ty])) list
+ *     in expression:
+ *       aggregate (((fn <pat> => <exp>),sum) :: nil) *)
+(*
+let
+  fun foldl f start [] = start
+    | foldl f start (hd :: tl) = foldl f (f (start, hd)) tl;
+  fun map f [] = []
+    | map f (hd :: tl) = (f hd) :: (map f tl);
+  fun computeAgg (extractor, folder) list =
+      foldl folder (map extractor list);
+  fun aggregate aggFns list =
+      map (computeAgg list) aggFns;
+  fun sum (x, y) = x + y;
+in
+  aggregate [(#id, sum)] emps
+end;
+*)
+
+(*) Lambda applied to datatype
+fn LESS => ~1
+ | EQUAL => 0
+ | GREATER => 1;
+> val it = fn : order -> int
+
+(*) Lambda with record argument
+fn {a, b} => if b then a else a + 1;
+> val it = fn : {a:int, b:bool} -> int
+
+(* Record containing polymorphic functions:
+ *  val it = {a=fn,b=fn}
+ * : {a:'a list -> ('a * 'a list) option, b:'b list -> ('b * 'b list) option} *)
+{a = fn x => case x of [] => NONE | (h :: t) => SOME (h, t),
+ b = fn x => case x of [] => NONE | (h :: t) => SOME (h, t)};
+> val it = {a=fn,b=fn}
+>   : {a:'a list -> ('a * 'a list) option, b:'b list -> ('b * 'b list) option}
+
+(*) Similar, expressed via 'fun'.
+(* sml/nj gives:
+stdIn:1.2-1.66 Warning: type vars not generalized because of
+   value restriction are instantiated to dummy types (X1,X2,...)
+val it = {a=1,b=fn} : {a:int, b:?.X1 list -> (?.X1 * ?.X1 list) option}
+*)
+let
+  fun g [] = NONE
+    | g (h :: t) = SOME (h, t)
+in
+  {a=1, b=g}
+end;
+> val it = {a=1,b=fn} : {a:int, b:'a list -> ('a * 'a list) option}
+
+(*) as above
+{a = 1, b = let fun g [] = NONE | g (h :: t) = SOME (h, t) in g end};
+> val it = {a=1,b=fn} : {a:int, b:'a list -> ('a * 'a list) option}
+
+(*) List of monotype
+[SOME true, NONE];
+> val it = [SOME true,NONE] : bool option list
+[SOME [1, 2], NONE];
+> val it = [SOME [1,2],NONE] : int list option list
+[NONE, SOME [{a=1,b=true}], NONE];
+> val it = [NONE,SOME [{a=1,b=true}],NONE] : {a:int, b:bool} list option list
+
+(*) List of polymorphic type.
+[INR(true,1)];
+> val it = [INR (true,1)] : ('a,bool * int) either list
+[INR(true,1),INL "x"];
+> val it = [INR (true,1),INL "x"] : (string,bool * int) either list
+
+(* If a function type is spread over several lines, put '->' at the start of
+ * the next line. *)
+val f : ('a -> (int * int) list) -> ('a -> (int * int) list) -> 'a -> (int * int) list = fn a => fn b => fn c => [];
+> val f = fn
+>   : ('a -> (int * int) list)
+>      -> ('a -> (int * int) list) -> 'a -> (int * int) list
+
+(* Function with tuple type and lots of type variables returns record type.
+ * Note that after 'z, type variables are 'ba, 'bb, etc.
+ * Also note that 'o' needs to be quoted. *)
+fun r0 (a, b, c, d, e, f, g, h, i, j, k, l, m, n, `o`, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac) = {a=a,b=b,c=c};
+> val r0 = fn
+>   : 'a * 'b * 'c * 'd * 'e * 'f * 'g * 'h * 'i * 'j * 'k * 'l * 'm * 'n * 'o
+>      * 'p * 'q * 'r * 's * 't * 'u * 'v * 'w * 'x * 'y * 'z * 'ba * 'bb * 'bc
+>      -> {a:'a, b:'b, c:'c}
+
+(*) Highly curried function with lots of type variables returns record type.
+fun r0 a b c d e f g h i j k l m n p q r s = {a=a,b=b,c=c};
+> val r0 = fn
+>   : 'a
+>      -> 'b
+>          -> 'c
+>              -> 'd
+>                  -> 'e
+>                      -> 'f
+>                          -> 'g
+>                              -> 'h
+>                                  -> 'i
+>                                      -> 'j
+>                                          -> 'k
+>                                              -> 'l
+>                                                  -> 'm
+>                                                      -> 'n
+>                                                          -> 'o
+>                                                              -> 'p
+>                                                                  -> 'q
+>                                                                      -> 'r
+>                                                                          -> {a:'a,
+>                                                                               b:'b,
+>                                                                               c:'c}
+
+(* When printing a type, 'forall' is omitted. Sometimes that eliminates
+ * type variables. The following tests make sure that type variables are
+ * contiguous and numbered left-to-right. *)
+[[], []];
+> val it = [[],[]] : 'a list list
+let val r = {a=[], b=[]} in r.b end;
+> val it = [] : 'a list
+fun f (a, b, c) = {x=c, y=a};
+> val f = fn : 'a * 'b * 'c -> {x:'c, y:'a}
+
+(* When printing a type, 'forall' is omitted. Sometimes that eliminates
+ * type variables. The following tests make sure that type variables are
+ * contiguous and numbered left-to-right. *)
+[[], []];
+> val it = [[],[]] : 'a list list
+let val r = {a=[], b=[]} in r.b end;
+> val it = [] : 'a list
+fun f (a, b, c) = {x=c, y=a};
+> val f = fn : 'a * 'b * 'c -> {x:'c, y:'a}
+
+(* [MOREL-247] Cannot translate an expression that contains type annotations. *)
+fun divides (n: int, d: int): bool =
+  n mod d = 0;
+> val divides = fn : int * int -> bool
+divides (10, 4): bool;
+> val it = false : bool
+
+(* An expression whose type is complicated to infer. *)
+fun f1 x = x;
+> val f1 = fn : 'a -> 'a
+fun f2 x = f1 (f1 x);
+> val f2 = fn : 'a -> 'a
+fun f3 x = f2 (f2 x);
+> val f3 = fn : 'a -> 'a
+fun f4 x = f3 (f3 x);
+> val f4 = fn : 'a -> 'a
+fun f5 x = f4 (f4 x);
+> val f5 = fn : 'a -> 'a
+fun f6 x = f5 (f5 x);
+> val f6 = fn : 'a -> 'a
+fun f7 x = f6 (f6 x);
+> val f7 = fn : 'a -> 'a
+fun f8 x = f7 (f7 x);
+> val f8 = fn : 'a -> 'a
+fun f9 x = f8 (f8 x);
+> val f9 = fn : 'a -> 'a
+fun f10 x = f9 (f9 x);
+> val f10 = fn : 'a -> 'a
+fun g y =
+  let
+    val a = f10 (fn z => z)
+    val b = f10 (fn z => (z, z))
+    val c = f10 (fn z => if true then z else y)
+    val d = f10 (fn z => f10 z)
+  in
+    (a, b, c, d)
+  end;
+> val g = fn : 'a -> ('b -> 'b) * ('c -> 'c * 'c) * ('a -> 'a) * ('d -> 'd)
+
+(* Should be able to derive type, but cannot. A bug.
+   Moving 'fun f1' outside the 'let' solves the problem.
+fun g2 y =
+  let
+    fun f1 x = x
+    val a = f1 (fn w => w)
+    val b = f1 (fn z => (z, z))
+  in
+    (a, b)
+  end;
+> val g2 = fn : 'a -> ('b -> 'b) * ('c -> 'c * 'c)
+*)
+
+(* Identity function, and chain functions that apply the identity
+   function multiple times. *)
+fun id x = x;
+> val id = fn : 'a -> 'a
+fun chain0 f = f;
+> val chain0 = fn : 'a -> 'a
+fun chain1 f = fn x => f (id x);
+> val chain1 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain2 f = fn x => f (id (id x));
+> val chain2 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain3 f = fn x => f (id (id (id x)));
+> val chain3 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain4 f = fn x => f (id (id (id (id x))));
+> val chain4 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain5 f = fn x => f (id (id (id (id (id x)))));
+> val chain5 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain6 f = fn x => f (id (id (id (id (id (id x))))));
+> val chain6 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain7 f = fn x => f (id (id (id (id (id (id (id x)))))));
+> val chain7 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain8 f = fn x => f (id (id (id (id (id (id (id (id x))))))));
+> val chain8 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain9 f = fn x => f (id (id (id (id (id (id (id (id (id x)))))))));
+> val chain9 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain10 f = fn x => f (id (id (id (id (id (id (id (id (id (id x))))))))));
+> val chain10 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain11 f = fn x => f (id (id (id (id (id (id (id (id (id (id (id x)))))))))));
+> val chain11 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain12 f = fn x => f (id (id (id (id (id (id (id (id (id (id (id (id x))))))))))));
+> val chain12 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain13 f = fn x => f (id (id (id (id (id (id (id (id (id (id (id (id (id x)))))))))))));
+> val chain13 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain14 f = fn x => f (id (id (id (id (id (id (id (id (id (id (id (id (id (id x))))))))))))));
+> val chain14 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain15 f = fn x => f (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id x)))))))))))))));
+> val chain15 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain16 f = fn x => f (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id x))))))))))))))));
+> val chain16 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain17 f = fn x => f (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id x)))))))))))))))));
+> val chain17 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain18 f = fn x => f (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id x))))))))))))))))));
+> val chain18 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain19 f = fn x => f (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id x)))))))))))))))))));
+> val chain19 = fn : ('a -> 'b) -> 'a -> 'b
+fun chain20 f = fn x => f (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id (id x))))))))))))))))))));
+> val chain20 = fn : ('a -> 'b) -> 'a -> 'b
+
+(* Helper functions for creating more complex type constraints. *)
+fun apply f x = f x;
+> val apply = fn : ('a -> 'b) -> 'a -> 'b
+fun compose f g x = f (g x);
+> val compose = fn : ('a -> 'b) -> ('c -> 'a) -> 'c -> 'b
+fun flip f x y = f y x;
+> val flip = fn : ('a -> 'b -> 'c) -> 'b -> 'a -> 'c
+fun fst (x, _) = x;
+> val fst = fn : 'a * 'b -> 'a
+fun snd (_, y) = y;
+> val snd = fn : 'a * 'b -> 'b
+datatype 'a tree = LEAF of 'a | NODE of 'a tree * 'a * 'a tree;
+> datatype 'a tree = LEAF of 'a | NODE of 'a tree * 'a * 'a tree
+
+(* Cross-chain dependencies for even more complexity. *)
+fun cross_chain () =
+  let
+    val h0 = chain0 (chain10 (fn x => x))
+    val h1 = chain1 (chain9 (fn x => (x, x)))
+    val h2 = chain2 (chain8 (fn x => [x]))
+    val h3 = chain3 (chain7 (fn x => SOME x))
+    val h4 = chain4 (chain6 (fn x => (x, x, x)))
+    val h5 = chain5 (chain5 (fn x => fn y => (x, y)))
+    val h6 = chain6 (chain4 (fn x => {field = x}))
+    val h7 = chain7 (chain3 (fn x => if true then x else x))
+    val h8 = chain8 (chain2 (fn x => apply (fn y => (x, y)) x))
+    val h9 = chain9 (chain1 (fn x => apply (fn y => apply (fn z => (x, y, z)) y) x))
+    val h10 = chain10 (chain0 (fn x => LEAF x))
+  in
+    (h0, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)
+  end;
+> val cross_chain = fn
+>   : unit
+>      -> ('a -> 'a) * ('b -> 'b * 'b) * ('c -> 'c list) * ('d -> 'd option)
+>          * ('e -> 'e * 'e * 'e) * ('f -> 'g -> 'f * 'g) * ('h -> {field:'h})
+>          * ('i -> 'i) * ('j -> 'j * 'j) * ('k -> 'k * 'k * 'k)
+>          * ('l -> 'l tree)
+
+let
+  val v01 = 1
+  val v02 = 2
+  val v03 = 3
+  val v04 = v02 * v02
+  val v05 = 5
+  val v06 = v02 * v03
+in
+  v01 + v02 + v03 + v04 + v05 + v06
+end;
+> val it = 21 : int
+
+
+(* Factorize a number. *)
+fun factorize n =
+  let
+    fun isDivisible (n, d) =
+      n mod d = 0
+
+    fun findSmallestDivisor (n, start) =
+      if start * start > n then n
+      else if isDivisible (n, start) then start
+      else findSmallestDivisor (n, start + 1)
+
+    fun smallestFactor n =
+      if n <= 1 then n
+      else findSmallestDivisor (n, 2);
+  in
+    if n <= 1 then [n]
+    else
+      let
+        val factor = smallestFactor n
+      in
+        if factor = n then [n]
+        else factor :: factorize (n div factor)
+      end
+    end;
+> val factorize = fn : int -> int list
+
+factorize 60;
+> val it = [2,2,3,5] : int list
+factorize 84;
+> val it = [2,2,3,7] : int list
+factorize 101;
+> val it = [101] : int list
+
+Sys.set ("stringDepth", 1000000);
+> val it = () : unit
+
+(* Generates a program of length 'n', to stress the unifier. *)
+fun program n =
+  let
+    fun concat2 (start, sep, `end`, list) =
+      start ^
+        (case list of
+            [] => ""
+          | [s] => s
+          | first :: rest => first ^ (String.concat (List.map (fn s => sep ^ s) rest))) ^
+        `end`
+    fun f i =
+      " val i" ^ (Int.toString i) ^ " = " ^
+        let
+          val factors = (factorize i)
+        in
+          if (length factors) = 1 then
+            Int.toString (hd factors)
+          else
+            (concat2 ("", " * ", "", (List.map (fn factor => "i" ^ (Int.toString factor)) factors)))
+        end ^ ";"
+  in
+    "let " ^
+      String.concat (List.tabulate (n, f)) ^
+      " in " ^
+      concat2 ("(", ", ", ")", List.tabulate (n, fn i => "i" ^ (Int.toString i))) ^
+      " end"
+  end;
+> val program = fn : int -> string
+
+(*) End type.smli
