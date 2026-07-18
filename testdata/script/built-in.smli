@@ -270,6 +270,10 @@ null;
 > val it = fn : 'a list -> bool
 List.null;
 > val it = fn : 'a list -> bool
+
+(* "val o : ('a->'b) * ('c->'a) -> 'c->'b" maps to "General.o" *)
+op o;
+> val it = fn : ('a -> 'b) * ('c -> 'a) -> 'c -> 'b
 General.`o`;
 > val it = fn : ('a -> 'b) * ('c -> 'a) -> 'c -> 'b
 
