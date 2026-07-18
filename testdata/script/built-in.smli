@@ -119,6 +119,11 @@ LESS;
 (* "datatype 'a list = nil | :: of ('a * 'a list)" is primitive *)
 [];
 > val it = [] : 'a list
+(* "exception Option" maps to "Option". The structure "Option" shadows the
+ * exception, so we reach it via "valOf", which raises it. *)
+valOf NONE;
+> uncaught exception Option
+>   raised at: stdIn:1.1-1.11
 
 (* Values --------------------------------------------------------- *)
 
@@ -211,6 +216,10 @@ List.foldl;
 > val it = fn : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
 List.foldr;
 > val it = fn : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
+
+(* "val getOpt : ('a option * 'a) -> 'a" maps to "Option.getOpt" *)
+getOpt;
+> val it = fn : 'a option * 'a -> 'a
 Option.getOpt;
 > val it = fn : 'a option * 'a -> 'a
 
@@ -231,6 +240,10 @@ implode;
 > val it = fn : char list -> string
 String.implode;
 > val it = fn : char list -> string
+
+(* "val isSome : 'a option -> bool" maps to "Option.isSome" *)
+isSome;
+> val it = fn : 'a option -> bool
 Option.isSome;
 > val it = fn : 'a option -> bool
 
@@ -302,6 +315,10 @@ Real.trunc;
 > val it = fn : real -> int
 Interact.use;
 > val it = fn : string -> unit
+
+(* "val valOf : 'a option -> 'a" maps to "Option.valOf" *)
+valOf;
+> val it = fn : 'a option -> 'a
 Option.valOf;
 > val it = fn : 'a option -> 'a
 Vector.fromList;

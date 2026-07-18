@@ -39,13 +39,98 @@ Option;
 >       map:('l -> 'm) -> 'l option -> 'm option,
 >       mapPartial:('n -> 'o option) -> 'n option -> 'o option,
 >       valOf:'p option -> 'p}
+
+(*) val getOpt : 'a option * 'a -> 'a
+Option.getOpt (SOME 1, 2);
+> val it = 1 : int
+Option.getOpt (NONE, 2);
+> val it = 2 : int
+
+(*) val isSome : 'a option -> bool
+Option.isSome (SOME 1);
+> val it = true : bool
+Option.isSome NONE;
+> val it = false : bool
+
+(*) val valOf : 'a option -> 'a
+Option.valOf (SOME 1);
+> val it = 1 : int
+(* sml-nj gives:
+    stdIn:6.1-6.18 Warning: type vars not generalized because of
+       value restriction are instantiated to dummy types (X1,X2,...)
+ *)
+Option.valOf NONE;
+> uncaught exception Option
+>   raised at: stdIn:1.1-1.18
 Sys.set ("inlinePassCount", 0);
 > val it = () : unit
 val noneInt = if true then NONE else SOME 0;
 > val noneInt = NONE : int option
+Option.valOf noneInt;
+> uncaught exception Option
+>   raised at: stdIn:1.1-1.21
+
+(*) val filter : ('a -> bool) -> 'a -> 'a option
+Option.filter (fn x => x mod 2 = 0) 1;
+> val it = NONE : int option
+Option.filter (fn x => x mod 2 = 0) 2;
+> val it = SOME 2 : int option
+
+(* val join : 'a option option -> 'a option
+ * (The function name is quoted using backticks because 'join' is a keyword.) *)
+Option.`join` (SOME (SOME 1));
+> val it = SOME 1 : int option
+Option.`join` (SOME noneInt);
+> val it = NONE : int option
+(* sml-nj gives
+  stdIn:1.2-1.18 Warning: type vars not generalized because of
+     value restriction are instantiated to dummy types (X1,X2,...)
+*)
+Option.`join` NONE;
+> val it = NONE : 'a option
+
+(*) val app : ('a -> unit) -> 'a option -> unit
+Option.app General.ignore (SOME 1);
+> val it = () : unit
+Option.app General.ignore NONE;
+> val it = () : unit
+
+(*) val map : ('a -> 'b) -> 'a option -> 'b option
+Option.map String.size (SOME "xyz");
+> val it = SOME 3 : int option
+Option.map String.size NONE;
+> val it = NONE : int option
+
+(*) val mapPartial : ('a -> 'b option) -> 'a option -> 'b option
+Option.mapPartial (fn s => if s = "" then NONE else (SOME (String.size s))) (SOME "xyz");
+> val it = SOME 3 : int option
+Option.mapPartial (fn s => if s = "" then NONE else (SOME (String.size s))) NONE;
+> val it = NONE : int option
+Option.mapPartial (fn s => if s = "" then NONE else (SOME (String.size s))) (SOME "");
+> val it = NONE : int option
 
 (*) val compose : ('a -> 'b) * ('c -> 'a option) -> 'c -> 'b option
 Option.compose;
 > val it = fn : ('a -> 'b) * ('c -> 'a option) -> 'c -> 'b option
+Option.compose (String.size,
+                (fn s => if s = "" then NONE
+                 else SOME (String.substring (s, 1, String.size s))))
+               "";
+> val it = NONE : int option
+Option.compose (String.size,
+                (fn s => if s = "" then NONE
+                 else SOME (String.substring (s, 0, String.size s))))
+               "";
+> val it = NONE : int option
+
+(*) val composePartial : ('a -> 'b option) * ('c -> 'a option) -> 'c -> 'b option
+Option.composePartial (fn i => if i = 0 then NONE else (SOME i),
+                       fn s => if s = "" then NONE else SOME (String.size s))
+                      "abc";
+> val it = SOME 3 : int option
+Option.composePartial (fn i => if i = 0 then NONE else (SOME i),
+                       fn s => if s = "" then NONE else SOME (String.size s))
+                      "";
+> val it = NONE : int option
 
 (*) End option.smli
