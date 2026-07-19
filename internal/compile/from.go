@@ -108,12 +108,12 @@ func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 // scalar scan). "pat in exp" iterates a collection, binding the
 // pattern to the element type and sharing the collection's
 // orderedness; "pat = exp" binds the pattern to the value of exp
-// and contributes no orderedness. An unbounded scan, or one with a
-// join condition, is not yet supported.
+// and contributes no orderedness. A "join ... on" condition is a
+// boolean typed over the earlier fields and the pattern this scan
+// binds. An unbounded scan is not yet supported.
 func (r *typeResolver) deduceScan(env typeEnv, scan *ast.Scan,
 ) ([]labelTerm, *unify.Var, error) {
-	if scan.On != nil ||
-		scan.Kind != ast.ScanIn && scan.Kind != ast.ScanEq {
+	if scan.Kind != ast.ScanIn && scan.Kind != ast.ScanEq {
 		return nil, nil, &Error{
 			Span: scan.Span(),
 			Msg:  "cannot deduce type for " + scan.Op().String(),
@@ -143,6 +143,16 @@ func (r *typeResolver) deduceScan(env typeEnv, scan *ast.Scan,
 	fields := make([]labelTerm, len(termMap))
 	for i, pt := range termMap {
 		fields[i] = labelTerm{label: pt.name, term: pt.term}
+	}
+	if scan.On != nil {
+		// The join condition sees the earlier fields and the ones
+		// this scan binds, and must be a boolean.
+		vBool := r.u.Variable()
+		err := r.deduceExp(bindFields(env, fields), scan.On, vBool)
+		if err != nil {
+			return nil, nil, err
+		}
+		r.equiv(vBool, r.primTerm(boolName))
 	}
 	return fields, sourceOrd, nil
 }

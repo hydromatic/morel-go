@@ -406,6 +406,8 @@ from d in [{a=1,b=true}], i in [2] yield {d} yield a;
 
 :t from {c, a, ...} in [{a=1.0,b=true,c=3},{a=1.5,b=true,c=4}];
 > val it : {a:real, c:int} list
+:t fn f => from i in [1, 2, 3] join j in [3, 4] on f (i, j) yield i + j;
+> val it : (int * int -> bool) -> int list
 :t fn f => from i in [1, 2, 3] where f i;
 > val it : (int -> bool) -> int list
 :t from a in [1], b in [true];
