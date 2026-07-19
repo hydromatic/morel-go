@@ -71,7 +71,7 @@ func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 			}
 			fields = append(fields, newFields...)
 			elem = nil
-			env = bindFields(rootEnv, fields)
+			env = r.bindStep(rootEnv, fields, nil)
 		case *ast.WhereStep:
 			vBool := r.u.Variable()
 			err := r.deduceExp(env, s.Exp, vBool)
@@ -86,7 +86,7 @@ func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 			}
 			fields = yieldFields
 			elem = vYield
-			env = bindFields(rootEnv, fields)
+			env = r.bindStep(rootEnv, fields, vYield)
 		default:
 			return r.unsupportedFrom(from)
 		}
@@ -189,6 +189,25 @@ func bindFields(env typeEnv, fields []labelTerm) typeEnv {
 		env = bind(env, f.label, f.term)
 	}
 	return env
+}
+
+// currentName is the keyword bound in each query step to the
+// current row.
+const currentName = "current"
+
+// bindStep is the environment a query step is typed in: the root
+// environment extended with each field, and with "current" bound
+// to the step's row — the sole field's type for one field, a
+// record of the fields otherwise, or an explicit element (a
+// yield's value).
+func (r *typeResolver) bindStep(rootEnv typeEnv, fields []labelTerm,
+	elem unify.Term,
+) typeEnv {
+	env := bindFields(rootEnv, fields)
+	if elem == nil {
+		elem = r.rowElem(fields)
+	}
+	return bind(env, currentName, elem)
 }
 
 func (r *typeResolver) unsupportedFrom(from *ast.From) error {
