@@ -37,7 +37,9 @@ type Con struct {
 const (
 	ExnBind     = "Bind"
 	ExnDiv      = "Div"
+	ExnDomain   = "Domain"
 	ExnOverflow = "Overflow"
+	ExnSize     = "Size"
 )
 
 // MorelError is a Morel runtime error: the name of the exception

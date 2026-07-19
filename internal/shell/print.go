@@ -20,7 +20,6 @@ package shell
 import (
 	"math"
 	"strconv"
-	"strings"
 
 	"github.com/hydromatic/morel-go/internal/eval"
 	"github.com/hydromatic/morel-go/internal/parse"
@@ -198,10 +197,10 @@ func (c *Config) primitiveString(t *types.Primitive,
 		return `#"` + escapeString(string(v2)) + `"`
 	case "int":
 		v2, _ := v.(int32)
-		return formatInt(v2)
+		return eval.FormatInt(v2)
 	case "real":
 		v2, _ := v.(float32)
-		return formatReal(v2)
+		return eval.FormatReal(v2)
 	case "string":
 		v2, _ := v.(string)
 		if c.StringDepth >= 0 && len(v2) > c.StringDepth {
@@ -212,93 +211,6 @@ func (c *Config) primitiveString(t *types.Primitive,
 	default:
 		return "()"
 	}
-}
-
-// formatInt renders an int with Morel's negation sign: ~3.
-func formatInt(i int32) string {
-	return strings.ReplaceAll(strconv.FormatInt(int64(i), 10),
-		"-", "~")
-}
-
-// formatReal renders a real the way java's Codes.floatToString
-// does, matching Standard ML's Real.toString: the shortest
-// decimal digits that round-trip the float32; plain decimal
-// notation for magnitudes in [1e-3, 1e7) and scientific notation
-// otherwise; a trailing ".0" dropped (1.0 prints as "1", 1.0e10
-// as "1E10"); and "~" for minus, in exponents too.
-func formatReal(f float32) string {
-	f64 := float64(f)
-	switch {
-	case math.IsNaN(f64):
-		return "nan"
-	case math.IsInf(f64, 1):
-		return "inf"
-	case math.IsInf(f64, -1):
-		return "~inf"
-	}
-	s := strconv.FormatFloat(f64, 'E', -1, 32)
-	mantissa, expText, _ := strings.Cut(s, "E")
-	exp, err := strconv.Atoi(expText)
-	if err != nil {
-		return s
-	}
-	neg := strings.HasPrefix(mantissa, "-")
-	digits := strings.ReplaceAll(
-		strings.TrimPrefix(mantissa, "-"), ".", "")
-	var b strings.Builder
-	if neg {
-		b.WriteString("~")
-	}
-	const loExp, hiExp = -3, 7
-	if exp >= loExp && exp < hiExp {
-		writeDecimal(&b, digits, exp)
-	} else {
-		writeScientific(&b, digits, exp)
-	}
-	// Real.minPos: SML reports 1.4E~45, though "1E~45" denotes
-	// the same float.
-	result := b.String()
-	if strings.HasSuffix(result, "1E~45") {
-		result = strings.Replace(result, "1E~45", "1.4E~45", 1)
-	}
-	return result
-}
-
-// writeDecimal renders digits with the decimal point after the
-// digit at position exp: digits "15" with exp 0 is "1.5", digits
-// "1" with exp -3 is "0.001", digits "1" with exp 2 is "100".
-func writeDecimal(b *strings.Builder, digits string, exp int) {
-	if exp < 0 {
-		b.WriteString("0.")
-		b.WriteString(strings.Repeat("0", -exp-1))
-		b.WriteString(digits)
-		return
-	}
-	if len(digits) <= exp+1 {
-		b.WriteString(digits)
-		b.WriteString(strings.Repeat("0", exp+1-len(digits)))
-		return
-	}
-	b.WriteString(digits[:exp+1])
-	b.WriteString(".")
-	b.WriteString(digits[exp+1:])
-}
-
-// writeScientific renders "d.dddEx", dropping a ".0" mantissa
-// ("1E10" rather than "1.0E10") and using "~" for a negative
-// exponent.
-func writeScientific(b *strings.Builder, digits string, exp int) {
-	b.WriteString(digits[:1])
-	if len(digits) > 1 {
-		b.WriteString(".")
-		b.WriteString(digits[1:])
-	}
-	b.WriteString("E")
-	if exp < 0 {
-		b.WriteString("~")
-		exp = -exp
-	}
-	b.WriteString(strconv.Itoa(exp))
 }
 
 func asVals(v eval.Val) []eval.Val {

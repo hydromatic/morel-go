@@ -58,6 +58,8 @@ Sys.set ("lineWidth", 78);
 > val it = 1E10 : real
 1.5e9;
 > val it = 1.5E9 : real
+(Real.posInf / Real.posInf, Real.posInf, Real.negInf, 0.0, ~0.0);
+> val it = (nan,inf,~inf,0,~0) : real * real * real * real * real
 "a string";
 > val it = "a string" : string
 "a \"quoted\" string\\with backslash";

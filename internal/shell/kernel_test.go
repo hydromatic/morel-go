@@ -659,5 +659,38 @@ func TestExecuteIntRealMath(t *testing.T) {
 		{"Int.rem (~7, 2);", "val it = ~1 : int"},
 		{"Int.min (3, 4);", "val it = 3 : int"},
 		{"Int.sameSign (1, ~1);", "val it = false : bool"},
+		{"Real.radix;", "val it = 2 : int"},
+		{"Real.precision;", "val it = 24 : int"},
+		{"Real.maxFinite;", "val it = 3.4028235E38 : real"},
+		{"Real.minPos;", "val it = 1.4E~45 : real"},
+		{
+			"Real.minNormalPos;",
+			"val it = 1.1754944E~38 : real",
+		},
+		{"Real.posInf;", "val it = inf : real"},
+		{"Real.sign 0.0;", "val it = 0 : int"},
+		{"Real.signBit (~2.5);", "val it = true : bool"},
+		{"Real.compare (1.0, 2.0);", "val it = LESS : order"},
+		{"Real.isNan (0.0 / 0.0);", "val it = true : bool"},
+		{"Real.isFinite 1.0;", "val it = true : bool"},
+		{"Real.min (1.0, 2.0);", "val it = 1 : real"},
+		{"Real.toString 2.5;", `val it = "2.5" : string`},
+		{
+			`Real.fromString "2.5x";`,
+			"val it = SOME 2.5 : real option",
+		},
+		{"Real.fromInt 3;", "val it = 3 : real"},
+		{"Real.floor 2.7;", "val it = 2 : int"},
+		{
+			"Real.split 2.75;",
+			"val it = {frac=0.75,whole=2}" +
+				" : {frac:real, whole:real}",
+		},
+		{
+			"Real.toManExp 8.0;",
+			"val it = {exp=4,man=0.5} : {exp:int, man:real}",
+		},
+		{"Real.checkFloat 1.0;", "val it = 1 : real"},
+		{"Real.rem (7.0, 2.0);", "val it = 1 : real"},
 	})
 }

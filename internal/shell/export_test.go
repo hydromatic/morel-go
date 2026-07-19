@@ -31,5 +31,5 @@ func PrettyBindingForTest(c Config, name string, v eval.Val,
 }
 
 func FormatRealForTest(f float32) string {
-	return formatReal(f)
+	return eval.FormatReal(f)
 }
