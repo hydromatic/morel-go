@@ -440,10 +440,89 @@ func TestExecuteBasis(t *testing.T) {
 	})
 }
 
-// TestExecuteCrossStatement stress-tests values that flow across
-// statement boundaries — the class of bugs that plagued
-// morel-rust. Every expected output was probed against the java
-// binary.
+// TestExecuteIntRealMath pins Int, Real, and Math outputs.
+func TestExecuteIntRealMath(t *testing.T) {
+	runSession(t, [][2]string{
+		{"Int.precision;", "val it = SOME 32 : int option"},
+		{
+			"Int.minInt;",
+			"val it = SOME ~2147483648 : int option",
+		},
+		{
+			"Int.maxInt;",
+			"val it = SOME 2147483647 : int option",
+		},
+		{"Int.compare (1, 2);", "val it = LESS : order"},
+		{"Int.sign (~5);", "val it = ~1 : int"},
+		{"Int.toString (~5);", `val it = "~5" : string`},
+		{
+			`Int.fromString "83a";`,
+			"val it = SOME 83 : int option",
+		},
+		{
+			`Int.fromString "bad";`,
+			"val it = NONE : int option",
+		},
+		{"Int.quot (~7, 2);", "val it = ~3 : int"},
+		{"Int.rem (~7, 2);", "val it = ~1 : int"},
+		{"Int.min (3, 4);", "val it = 3 : int"},
+		{"Int.sameSign (1, ~1);", "val it = false : bool"},
+		{"Real.radix;", "val it = 2 : int"},
+		{"Real.precision;", "val it = 24 : int"},
+		{"Real.maxFinite;", "val it = 3.4028235E38 : real"},
+		{"Real.minPos;", "val it = 1.4E~45 : real"},
+		{
+			"Real.minNormalPos;",
+			"val it = 1.1754944E~38 : real",
+		},
+		{"Real.posInf;", "val it = inf : real"},
+		{"Real.sign 0.0;", "val it = 0 : int"},
+		{"Real.signBit (~2.5);", "val it = true : bool"},
+		{"Real.compare (1.0, 2.0);", "val it = LESS : order"},
+		{"Real.isNan (0.0 / 0.0);", "val it = true : bool"},
+		{"Real.isFinite 1.0;", "val it = true : bool"},
+		{"Real.min (1.0, 2.0);", "val it = 1 : real"},
+		{"Real.toString 2.5;", `val it = "2.5" : string`},
+		{
+			`Real.fromString "2.5x";`,
+			"val it = SOME 2.5 : real option",
+		},
+		{"Real.fromInt 3;", "val it = 3 : real"},
+		{"Real.floor 2.7;", "val it = 2 : int"},
+		{
+			"Real.split 2.75;",
+			"val it = {frac=0.75,whole=2}" +
+				" : {frac:real, whole:real}",
+		},
+		{
+			"Real.toManExp 8.0;",
+			"val it = {exp=4,man=0.5} : {exp:int, man:real}",
+		},
+		{"Real.checkFloat 1.0;", "val it = 1 : real"},
+		{"Real.rem (7.0, 2.0);", "val it = 1 : real"},
+		{"Math.pi;", "val it = 3.1415927 : real"},
+		{"Math.e;", "val it = 2.7182817 : real"},
+		{"Math.sqrt 4.0;", "val it = 2 : real"},
+		{"Math.sqrt (~1.0);", "val it = nan : real"},
+		{"Math.pow (2.0, 10.0);", "val it = 1024 : real"},
+		{
+			"Math.atan2 (1.0, 1.0);",
+			"val it = 0.7853982 : real",
+		},
+		{"Math.ln Math.e;", "val it = 0.99999994 : real"},
+		{"floor 2.7;", "val it = 2 : int"},
+		{"ceil 2.2;", "val it = 3 : int"},
+		{"round 2.5;", "val it = 2 : int"},
+		{"round 3.5;", "val it = 4 : int"},
+		{"trunc (~2.7);", "val it = ~2 : int"},
+		{"real 5;", "val it = 5 : real"},
+	})
+}
+
+// TestExecuteCrossStatement stress-tests values that flow
+// across statement boundaries: closures stored in bindings and
+// applied later, and recursive functions called from later
+// statements.
 func TestExecuteCrossStatement(t *testing.T) {
 	runSession(t, [][2]string{
 		// An escaping lambda calls its sibling recursive
@@ -628,69 +707,5 @@ func TestExecuteItOnlyOnSuccess(t *testing.T) {
 		// arrive later), so 'it' keeps its value.
 		{"from i in [1] yield i;", ""},
 		{"it;", "val it = 7 : int"},
-	})
-}
-
-// TestExecuteIntRealMath pins Int, Real, and Math outputs probed
-// against the java binary.
-func TestExecuteIntRealMath(t *testing.T) {
-	runSession(t, [][2]string{
-		{"Int.precision;", "val it = SOME 32 : int option"},
-		{
-			"Int.minInt;",
-			"val it = SOME ~2147483648 : int option",
-		},
-		{
-			"Int.maxInt;",
-			"val it = SOME 2147483647 : int option",
-		},
-		{"Int.compare (1, 2);", "val it = LESS : order"},
-		{"Int.sign (~5);", "val it = ~1 : int"},
-		{"Int.toString (~5);", `val it = "~5" : string`},
-		{
-			`Int.fromString "83a";`,
-			"val it = SOME 83 : int option",
-		},
-		{
-			`Int.fromString "bad";`,
-			"val it = NONE : int option",
-		},
-		{"Int.quot (~7, 2);", "val it = ~3 : int"},
-		{"Int.rem (~7, 2);", "val it = ~1 : int"},
-		{"Int.min (3, 4);", "val it = 3 : int"},
-		{"Int.sameSign (1, ~1);", "val it = false : bool"},
-		{"Real.radix;", "val it = 2 : int"},
-		{"Real.precision;", "val it = 24 : int"},
-		{"Real.maxFinite;", "val it = 3.4028235E38 : real"},
-		{"Real.minPos;", "val it = 1.4E~45 : real"},
-		{
-			"Real.minNormalPos;",
-			"val it = 1.1754944E~38 : real",
-		},
-		{"Real.posInf;", "val it = inf : real"},
-		{"Real.sign 0.0;", "val it = 0 : int"},
-		{"Real.signBit (~2.5);", "val it = true : bool"},
-		{"Real.compare (1.0, 2.0);", "val it = LESS : order"},
-		{"Real.isNan (0.0 / 0.0);", "val it = true : bool"},
-		{"Real.isFinite 1.0;", "val it = true : bool"},
-		{"Real.min (1.0, 2.0);", "val it = 1 : real"},
-		{"Real.toString 2.5;", `val it = "2.5" : string`},
-		{
-			`Real.fromString "2.5x";`,
-			"val it = SOME 2.5 : real option",
-		},
-		{"Real.fromInt 3;", "val it = 3 : real"},
-		{"Real.floor 2.7;", "val it = 2 : int"},
-		{
-			"Real.split 2.75;",
-			"val it = {frac=0.75,whole=2}" +
-				" : {frac:real, whole:real}",
-		},
-		{
-			"Real.toManExp 8.0;",
-			"val it = {exp=4,man=0.5} : {exp:int, man:real}",
-		},
-		{"Real.checkFloat 1.0;", "val it = 1 : real"},
-		{"Real.rem (7.0, 2.0);", "val it = 1 : real"},
 	})
 }
