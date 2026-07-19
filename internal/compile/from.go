@@ -45,33 +45,61 @@ func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 		return r.unsupportedFrom(from)
 	}
 	var fields []labelTerm
-	// elem is set by an explicit yield; otherwise the element
-	// type is derived from the fields at the end.
-	var elem unify.Term
-	// ordVar is the query's orderedness so far, nil until the first
+	// curElem is the current element type; nil means derive it from
+	// the fields (the sole field's type, or a record of them).
+	var curElem unify.Term
+	// ord is the query's orderedness so far, nil until the first
 	// collection scan sets it.
-	var ordVar *unify.Var
+	var ord unify.Term
+	// elemTerm resolves the current element type.
+	elemTerm := func() unify.Term {
+		if curElem != nil {
+			return curElem
+		}
+		return r.rowElem(fields)
+	}
 	env := rootEnv
 	for _, step := range from.Steps {
 		// lint: sort until '^\t\t}' where '^\t\tcase '
 		switch s := step.(type) {
+		case *ast.DistinctStep:
+			// "distinct" changes neither element type nor orderedness.
+		case *ast.OrderStep:
+			// The sort key is typed in the step env; "order" forces
+			// the result to be a list.
+			err := r.deduceExp(env, s.Exp, r.u.Variable())
+			if err != nil {
+				return err
+			}
+			ord = r.u.Atom(orderedName)
 		case *ast.Scan:
 			newFields, sourceOrd, err := r.deduceScan(env, s)
 			if err != nil {
 				return err
 			}
-			if sourceOrd != nil {
-				if ordVar == nil {
-					ordVar = sourceOrd
-				} else {
-					meetOrd := r.u.Variable()
-					r.meetOrderedness(meetOrd, ordVar, sourceOrd)
-					ordVar = meetOrd
-				}
-			}
+			ord = r.meetSourceOrd(ord, sourceOrd)
 			fields = append(fields, newFields...)
-			elem = nil
+			curElem = nil
 			env = r.bindStep(rootEnv, fields, nil)
+		case *ast.SetOpStep:
+			newOrd, err := r.deduceSetOp(rootEnv, elemTerm(),
+				r.orDefaultOrd(ord), s.Exps)
+			if err != nil {
+				return err
+			}
+			ord = newOrd
+		case *ast.SkipStep:
+			err := r.deduceCount(rootEnv, s.Exp)
+			if err != nil {
+				return err
+			}
+		case *ast.TakeStep:
+			err := r.deduceCount(rootEnv, s.Exp)
+			if err != nil {
+				return err
+			}
+		case *ast.UnorderStep:
+			ord = r.u.Atom(unorderedName)
 		case *ast.WhereStep:
 			vBool := r.u.Variable()
 			err := r.deduceExp(env, s.Exp, vBool)
@@ -85,22 +113,103 @@ func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 				return err
 			}
 			fields = yieldFields
-			elem = vYield
+			curElem = vYield
 			env = r.bindStep(rootEnv, fields, vYield)
 		default:
 			return r.unsupportedFrom(from)
 		}
 	}
-	if elem == nil {
-		elem = r.rowElem(fields)
-	}
 	// An empty "from", or one with only scalar scans, is ordered.
-	var ord unify.Term = r.u.Atom(orderedName)
-	if ordVar != nil {
-		ord = ordVar
+	if ord == nil {
+		ord = r.u.Atom(orderedName)
 	}
-	r.regEquiv(from, v, r.collectionTerm(elem, ord))
+	r.regEquiv(from, v, r.collectionTerm(elemTerm(), ord))
 	return nil
+}
+
+// deduceSetOp types a "union"/"intersect"/"except" step: each
+// argument is a collection of the same element type, typed in the
+// root env, and the result is a list only if the input and every
+// argument are. It returns the result's orderedness.
+func (r *typeResolver) deduceSetOp(rootEnv typeEnv, elem,
+	inputOrd unify.Term, exps []ast.Expr,
+) (unify.Term, error) {
+	ords := []*unify.Var{r.asOrdVar(inputOrd)}
+	for _, arg := range exps {
+		vColl := r.u.Variable()
+		err := r.deduceExp(rootEnv, arg, vColl)
+		if err != nil {
+			return nil, err
+		}
+		argOrd := r.u.Variable()
+		r.equiv(vColl, r.collectionTerm(elem, argOrd))
+		ords = append(ords, argOrd)
+	}
+	return r.naryMeetOrderedness(ords), nil
+}
+
+// deduceCount types a "skip" or "take" count, which is evaluated in
+// the root environment (not the step env) and must be an int.
+func (r *typeResolver) deduceCount(rootEnv typeEnv, exp ast.Expr,
+) error {
+	vCount := r.u.Variable()
+	err := r.deduceExp(rootEnv, exp, vCount)
+	if err != nil {
+		return err
+	}
+	r.equiv(vCount, r.primTerm(intName))
+	return nil
+}
+
+// meetSourceOrd folds a scan source's orderedness into the query's
+// orderedness so far: the first collection scan adopts the source's
+// orderedness, a later one meets the two (a list only if both are);
+// a scalar scan (sourceOrd nil) leaves it unchanged.
+func (r *typeResolver) meetSourceOrd(ord unify.Term,
+	sourceOrd *unify.Var,
+) unify.Term {
+	switch {
+	case sourceOrd == nil:
+		return ord
+	case ord == nil:
+		return sourceOrd
+	default:
+		meet := r.u.Variable()
+		r.meetOrderedness(meet, r.asOrdVar(ord), sourceOrd)
+		return meet
+	}
+}
+
+// asOrdVar returns an orderedness term as a variable, wrapping a
+// concrete atom in a fresh variable so it can feed a meet.
+func (r *typeResolver) asOrdVar(ord unify.Term) *unify.Var {
+	if v, ok := ord.(*unify.Var); ok {
+		return v
+	}
+	v := r.u.Variable()
+	r.equiv(v, ord)
+	return v
+}
+
+// orDefaultOrd returns ord, or the "ordered" atom when ord is nil.
+func (r *typeResolver) orDefaultOrd(ord unify.Term) unify.Term {
+	if ord == nil {
+		return r.u.Atom(orderedName)
+	}
+	return ord
+}
+
+// naryMeetOrderedness returns the meet of several orderednesses: a
+// list only if all are lists.
+func (r *typeResolver) naryMeetOrderedness(ords []*unify.Var,
+) unify.Term {
+	result := ords[0]
+	for _, o := range ords[1:] {
+		meet := r.u.Variable()
+		r.meetOrderedness(meet, result, o)
+		result = meet
+	}
+	return result
 }
 
 // deduceScan types a scan, returning the fields its pattern binds
@@ -224,15 +333,18 @@ func bindFields(env typeEnv, fields []labelTerm) typeEnv {
 	return env
 }
 
-// currentName is the keyword bound in each query step to the
-// current row.
-const currentName = "current"
+// Keywords bound in each query step: "current" is the current row,
+// "ordinal" its position.
+const (
+	currentName = "current"
+	ordinalName = "ordinal"
+)
 
 // bindStep is the environment a query step is typed in: the root
-// environment extended with each field, and with "current" bound
-// to the step's row — the sole field's type for one field, a
-// record of the fields otherwise, or an explicit element (a
-// yield's value).
+// environment extended with each field, with "current" bound to
+// the step's row — the sole field's type for one field, a record of
+// the fields otherwise, or an explicit element (a yield's value) —
+// and "ordinal" bound to an int.
 func (r *typeResolver) bindStep(rootEnv typeEnv, fields []labelTerm,
 	elem unify.Term,
 ) typeEnv {
@@ -240,7 +352,8 @@ func (r *typeResolver) bindStep(rootEnv typeEnv, fields []labelTerm,
 	if elem == nil {
 		elem = r.rowElem(fields)
 	}
-	return bind(env, currentName, elem)
+	env = bind(env, currentName, elem)
+	return bind(env, ordinalName, r.primTerm(intName))
 }
 
 func (r *typeResolver) unsupportedFrom(from *ast.From) error {

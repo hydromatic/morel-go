@@ -483,6 +483,12 @@ wc_reducer ("hello", [1, 4, 2]);
 (*) Bind them to mapReduce, and run
 fun wordCount lines = mapReduce wc_mapper wc_reducer lines;
 > val wordCount = fn : string list -> (string * int) list
+from p in wordCount ["a skunk sat on a stump",
+    "and thunk the stump stunk",
+    "but the stump thunk the skunk stunk"]
+order p.word;
+> stdIn:4.9-4.13 Error: no field 'word' in type 'string * int'
+>   raised at: stdIn:4.9-4.13
 
 (*) WordCount in Morel
 val lines = ["a skunk sat on a stump",
