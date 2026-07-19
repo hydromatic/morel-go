@@ -459,6 +459,8 @@ from d in [{a=1,b=true}], i in [2] yield {d} yield a;
 > val it : bool list
 :t from d in [{a=1,b=true}], i in [2] yield d where true;
 > val it : {a:int, b:bool} list
+:t from d in [{a=1,b=true}], i in [2] yield d yield d.a;
+> val it : int list
 :t from d in [{a=1,b=true}], i in [2] yield i yield 3.0;
 > val it : real list
 

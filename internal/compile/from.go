@@ -149,8 +149,10 @@ func (r *typeResolver) deduceScan(env typeEnv, scan *ast.Scan,
 
 // deduceYield types a "yield exp" step, returning the fields the
 // yielded value exposes to later steps and its element type. A
-// record literal exposes its fields by name; anything else
-// exposes none.
+// record literal exposes its fields by name; any other expression
+// exposes a single field, labelled by its implicit label — the
+// name for "yield x", the field for "yield e.b" — or "current"
+// when it has none.
 func (r *typeResolver) deduceYield(env typeEnv, exp ast.Expr,
 ) ([]labelTerm, unify.Term, error) {
 	if rec, ok := exp.(*ast.Record); ok && rec.With == nil {
@@ -167,7 +169,28 @@ func (r *typeResolver) deduceYield(env typeEnv, exp ast.Expr,
 	if err != nil {
 		return nil, nil, err
 	}
-	return nil, vYield, nil
+	label := implicitLabel(exp)
+	if label == "" {
+		label = currentName
+	}
+	return []labelTerm{{label: label, term: vYield}}, vYield, nil
+}
+
+// implicitLabel is the label a query step derives from an
+// expression when none is given: the name of an identifier
+// ("yield x" is field x), the field of a selection ("yield e.b" is
+// field b), or "" when the expression has no implicit label.
+func implicitLabel(exp ast.Expr) string {
+	// lint: sort until '^	}' where '^	case '
+	switch e := exp.(type) {
+	case *ast.Apply:
+		if sel, ok := e.Fn.(*ast.RecordSelector); ok {
+			return sel.Name
+		}
+	case *ast.ID:
+		return e.Name
+	}
+	return ""
 }
 
 // rowElem is the element type of a query whose rows have the
