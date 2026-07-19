@@ -22,16 +22,22 @@ import (
 	"github.com/hydromatic/morel-go/internal/unify"
 )
 
-// deduceFrom types a query expression over lists: "from pat in
-// exp" scans, "where exp" filters, and "yield exp" transforms.
-// Its rows carry a set of named fields; the query's element type
-// is the sole field's type when exactly one field is bound, and
-// a record of the fields otherwise. A "yield" of a record literal
-// exposes that record's fields to later steps; any other yield
-// leaves no named fields.
+// deduceFrom types a query expression: "from pat in exp" scans a
+// collection, "pat = exp" binds a value, "where exp" filters, and
+// "yield exp" transforms. Its rows carry a set of named fields;
+// the query's element type is the sole field's type when exactly
+// one field is bound, and a record of the fields otherwise. A
+// "yield" of a record literal exposes that record's fields to
+// later steps; any other yield leaves no named fields.
 //
-// Bags, joins, group/compute, and the other step forms are not
-// yet supported and fall through to the "cannot deduce" error.
+// The query carries an orderedness that decides whether its result
+// is a list or a bag: an empty "from" is an ordered "unit list";
+// the first scan shares its source's orderedness (so "from x in
+// aBag" is a bag); a further comma scan meets the two (a list only
+// if both are lists); "where" and "yield" pass orderedness
+// through. Group/compute, joins with conditions, and the other
+// step forms are not yet supported and fall through to the "cannot
+// deduce" error.
 func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 	v *unify.Var,
 ) error {
@@ -42,14 +48,26 @@ func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 	// elem is set by an explicit yield; otherwise the element
 	// type is derived from the fields at the end.
 	var elem unify.Term
+	// ordVar is the query's orderedness so far, nil until the first
+	// collection scan sets it.
+	var ordVar *unify.Var
 	env := rootEnv
 	for _, step := range from.Steps {
 		// lint: sort until '^\t\t}' where '^\t\tcase '
 		switch s := step.(type) {
 		case *ast.Scan:
-			newFields, err := r.deduceScan(env, s)
+			newFields, sourceOrd, err := r.deduceScan(env, s)
 			if err != nil {
 				return err
+			}
+			if sourceOrd != nil {
+				if ordVar == nil {
+					ordVar = sourceOrd
+				} else {
+					meetOrd := r.u.Variable()
+					r.meetOrderedness(meetOrd, ordVar, sourceOrd)
+					ordVar = meetOrd
+				}
 			}
 			fields = append(fields, newFields...)
 			elem = nil
@@ -76,48 +94,57 @@ func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 	if elem == nil {
 		elem = r.rowElem(fields)
 	}
-	r.regEquiv(from, v, unify.Apply(listTyCon, elem))
+	// An empty "from", or one with only scalar scans, is ordered.
+	var ord unify.Term = r.u.Atom(orderedName)
+	if ordVar != nil {
+		ord = ordVar
+	}
+	r.regEquiv(from, v, r.collectionTerm(elem, ord))
 	return nil
 }
 
-// deduceScan types a scan and returns the fields its pattern
-// binds. "pat in exp" iterates a list, binding the pattern to the
-// element type; "pat = exp" binds the pattern to the value of
-// exp. An unbounded scan, or one with a join condition, is not
-// yet supported.
+// deduceScan types a scan, returning the fields its pattern binds
+// and, for a collection scan, its source's orderedness (nil for a
+// scalar scan). "pat in exp" iterates a collection, binding the
+// pattern to the element type and sharing the collection's
+// orderedness; "pat = exp" binds the pattern to the value of exp
+// and contributes no orderedness. An unbounded scan, or one with a
+// join condition, is not yet supported.
 func (r *typeResolver) deduceScan(env typeEnv, scan *ast.Scan,
-) ([]labelTerm, error) {
+) ([]labelTerm, *unify.Var, error) {
 	if scan.On != nil ||
 		scan.Kind != ast.ScanIn && scan.Kind != ast.ScanEq {
-		return nil, &Error{
+		return nil, nil, &Error{
 			Span: scan.Span(),
 			Msg:  "cannot deduce type for " + scan.Op().String(),
 		}
 	}
 	vElem := r.u.Variable()
+	var sourceOrd *unify.Var
 	if scan.Kind == ast.ScanIn {
 		vColl := r.u.Variable()
 		err := r.deduceExp(env, scan.Exp, vColl)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		r.equiv(vColl, unify.Apply(listTyCon, vElem))
+		sourceOrd = r.u.Variable()
+		r.equiv(vColl, r.collectionTerm(vElem, sourceOrd))
 	} else {
 		err := r.deduceExp(env, scan.Exp, vElem)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	var termMap []patTerm
 	err := r.deducePat(scan.Pat, &termMap, nil, vElem)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	fields := make([]labelTerm, len(termMap))
 	for i, pt := range termMap {
 		fields[i] = labelTerm{label: pt.name, term: pt.term}
 	}
-	return fields, nil
+	return fields, sourceOrd, nil
 }
 
 // deduceYield types a "yield exp" step, returning the fields the

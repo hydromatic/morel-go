@@ -80,6 +80,18 @@ func (c *termToTypeConverter) sequenceType(s *unify.Sequence) (
 	}
 	// lint: sort until '^\t}' where '^\tcase '
 	switch s.Op {
+	case collectionTyCon:
+		elem, err := c.termType(s.Terms[0])
+		if err != nil {
+			return nil, err
+		}
+		// A collection is a list only when its orderedness is the
+		// concrete "ordered" atom; a free orderedness variable, like
+		// the "unordered" atom, reads back as a bag.
+		if isOrderedAtom(s.Terms[1]) {
+			return c.m.sys.List(elem), nil
+		}
+		return c.m.sys.Named(bagTyCon, elem), nil
 	case fnTyCon:
 		param, err := c.termType(s.Terms[0])
 		if err != nil {
@@ -90,12 +102,6 @@ func (c *termToTypeConverter) sequenceType(s *unify.Sequence) (
 			return nil, err
 		}
 		return c.m.sys.Fn(param, result), nil
-	case listTyCon:
-		elem, err := c.termType(s.Terms[0])
-		if err != nil {
-			return nil, err
-		}
-		return c.m.sys.List(elem), nil
 	case tupleTyCon:
 		args := make([]types.Type, len(s.Terms))
 		for i, term := range s.Terms {

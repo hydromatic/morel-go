@@ -391,8 +391,18 @@ func (w *work) allTermPairs() []TermPair {
 func (w *work) decompose(pair TermPair) error {
 	left, _ := pair.Left.(*Sequence)
 	right, _ := pair.Right.(*Sequence)
+	// A list and a bag share the collection operator, so they would
+	// otherwise decompose and report a conflict on the internal
+	// orderedness atom. Report the collections themselves, before
+	// their elements are unified, so the message reads "T list vs
+	// T bag".
+	if orderednessConflict(left, right) {
+		return fmt.Errorf("conflict: %s vs %s",
+			renderCollection(left), renderCollection(right))
+	}
 	if left.Op != right.Op || len(left.Terms) != len(right.Terms) {
-		return fmt.Errorf("conflict: %s vs %s", left, right)
+		return fmt.Errorf("conflict: %s vs %s",
+			renderCollection(left), renderCollection(right))
 	}
 	for i, t := range left.Terms {
 		w.add(t, right.Terms[i])

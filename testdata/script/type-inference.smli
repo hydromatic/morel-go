@@ -365,6 +365,16 @@ stdIn:1.33-1.38 Error: operator and operand do not agree [overload - bad instant
 (* From/query type tests (migrated from MainTest.testFromType) *)
 :t from i in [1];
 > val it : int list
+:t from i in bag [1];
+> val it : int bag
+:t from i in (from j in bag [1]);
+> val it : int bag
+:t from i in (
+  from e in bag [{deptno=10}]
+  yield e.deptno)
+where i > 10
+yield i div 10;
+> val it : int bag
 :t from (i, j) in [("a", 1)];
 > val it : {i:string, j:int} list
 :t from (i, j) in [(1, 1), (2, 3)];
@@ -404,8 +414,12 @@ from d in [{a=1,b=true}], i in [2] yield {d} yield a;
 > val it : {a:int, b:unit} list
 :t from a in [1], _ in [true];
 > val it : int list
+:t from a in [1], _ in bag [true];
+> val it : int bag
 :t from a in [1], _ = ();
 > val it : int list
+:t from a in bag [1], _ = ();
+> val it : int bag
 
 :t from a in [1], b in [true] yield a;
 > val it : int list
@@ -460,6 +474,14 @@ from d in [{a=1,b=true}] yield #x d;
 (*) with
 :t from d in [{a=1,b=true}], i in [2] yield {d with b=false};
 > val it : {a:int, b:bool} list
+
+:t
+let
+  val records = from r in bag [1,2]
+in
+  from r2 in records
+end;
+> val it : int bag
 
 :t
 let

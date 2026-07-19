@@ -191,6 +191,82 @@ func (s *Sequence) eq(other Term) bool {
 	return true
 }
 
+// Internal operators for the collection representation, known to
+// the unifier only so that a list/bag clash renders in user terms.
+const (
+	collectionOp = "$collection"
+	orderedOp    = "ordered"
+	unorderedOp  = "unordered"
+)
+
+// orderednessConflict reports whether two terms are collections
+// that differ only in orderedness — one a list, the other a bag.
+// Such a pair shares the collection operator, so decomposition
+// would report a confusing clash on the internal orderedness atom;
+// the caller reports the collections themselves instead.
+func orderednessConflict(left, right *Sequence) bool {
+	o1 := orderednessOf(left)
+	o2 := orderednessOf(right)
+	return o1 != "" && o2 != "" && o1 != o2
+}
+
+// orderednessOf returns the concrete orderedness ("ordered" or
+// "unordered") of a collection term, or "" if it is not a
+// collection or its orderedness is not yet determined.
+func orderednessOf(s *Sequence) string {
+	if s.Op != collectionOp || len(s.Terms) != 2 {
+		return ""
+	}
+	o, ok := s.Terms[1].(*Sequence)
+	if !ok || len(o.Terms) != 0 {
+		return ""
+	}
+	if o.Op == orderedOp || o.Op == unorderedOp {
+		return o.Op
+	}
+	return ""
+}
+
+// renderCollection renders a term for an error message, decoding
+// the internal collection representation to user-facing "list" and
+// "bag": a collection term becomes "list(elem)" or "bag(elem)", a
+// bare orderedness atom becomes "list" or "bag", and everything
+// else keeps its ordinary term form.
+func renderCollection(t Term) string {
+	s, ok := t.(*Sequence)
+	if !ok {
+		return t.String()
+	}
+	if len(s.Terms) == 0 {
+		switch s.Op {
+		case orderedOp:
+			return "list"
+		case unorderedOp:
+			return "bag"
+		default:
+			return s.Op
+		}
+	}
+	if s.Op == collectionOp && len(s.Terms) == 2 {
+		kind := "bag"
+		if orderednessOf(s) == orderedOp {
+			kind = "list"
+		}
+		return kind + "(" + renderCollection(s.Terms[0]) + ")"
+	}
+	var b strings.Builder
+	b.WriteString(s.Op)
+	b.WriteString("(")
+	for i, term := range s.Terms {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(renderCollection(term))
+	}
+	b.WriteString(")")
+	return b.String()
+}
+
 // TermPair is a pair of terms to be unified.
 type TermPair struct {
 	Left  Term

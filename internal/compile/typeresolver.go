@@ -32,8 +32,23 @@ import (
 const (
 	fnTyCon     = "fn"
 	listTyCon   = "list"
+	bagTyCon    = "bag"
 	recordTyCon = "record"
 	tupleTyCon  = "tuple"
+
+	// collectionTyCon is the internal term operator for a
+	// collection: collection(elem, orderedness), where orderedness
+	// is the atom "ordered" (a list), "unordered" (a bag), or a
+	// variable. The "$" prefix keeps it distinct from any
+	// user-facing type name. A list and a bag are the same term but
+	// for the orderedness argument, so they unify as far as their
+	// elements and clash only on orderedness.
+	collectionTyCon = "$collection"
+	// argTyCon bundles the two orderedness arguments of a meet into
+	// one term, so a single constraint can prune on the pair.
+	argTyCon      = "$arg"
+	orderedName   = "ordered"
+	unorderedName = "unordered"
 )
 
 // Resolved is the outcome of type deduction: the declaration and
@@ -301,6 +316,56 @@ func (r *typeResolver) primTerm(name string) unify.Term {
 	return r.u.Atom(name)
 }
 
+// collectionTerm is "collection(elem, orderedness)".
+func (r *typeResolver) collectionTerm(elem, ord unify.Term,
+) unify.Term {
+	return unify.Apply(collectionTyCon, elem, ord)
+}
+
+// listTerm is a collection of elem that is ordered (a list).
+func (r *typeResolver) listTerm(elem unify.Term) unify.Term {
+	return r.collectionTerm(elem, r.u.Atom(orderedName))
+}
+
+// bagTerm is a collection of elem that is unordered (a bag).
+func (r *typeResolver) bagTerm(elem unify.Term) unify.Term {
+	return r.collectionTerm(elem, r.u.Atom(unorderedName))
+}
+
+// isOrderedAtom reports whether a term is the concrete "ordered"
+// atom — the orderedness of a list. A free variable or the
+// "unordered" atom is not, and reads back as a bag.
+func isOrderedAtom(t unify.Term) bool {
+	s, ok := t.(*unify.Sequence)
+	return ok && s.Op == orderedName && len(s.Terms) == 0
+}
+
+// meetOrderedness constrains o to be the meet of o0 and o1:
+// ordered if both are ordered, otherwise unordered. It is a
+// constraint whose four candidates prune as o0 and o1 resolve;
+// when one remains, it equates o with the result.
+func (r *typeResolver) meetOrderedness(o, o0, o1 *unify.Var) {
+	ordered := r.u.Atom(orderedName)
+	unordered := r.u.Atom(unorderedName)
+	arg := r.u.Variable()
+	r.equiv(arg, unify.Apply(argTyCon, o0, o1))
+	candidate := func(a0, a1, result unify.Term) unify.Candidate {
+		return unify.Candidate{
+			Term:   unify.Apply(argTyCon, a0, a1),
+			Action: unify.Equiv(o, result),
+		}
+	}
+	r.constraints = append(r.constraints, unify.Constraint{
+		Arg: arg,
+		Candidates: []unify.Candidate{
+			candidate(ordered, ordered, ordered),
+			candidate(ordered, unordered, unordered),
+			candidate(unordered, ordered, unordered),
+			candidate(unordered, unordered, unordered),
+		},
+	})
+}
+
 // typeTerm converts a type to a term. Type variables become
 // unification variables via subst, fresh at their first
 // occurrence, so each conversion instantiates a polymorphic type.
@@ -313,8 +378,11 @@ func (r *typeResolver) typeTerm(t types.Type,
 		return r.fnTerm(r.typeTerm(t.Param, subst),
 			r.typeTerm(t.Result, subst))
 	case *types.List:
-		return unify.Apply(listTyCon, r.typeTerm(t.Elem, subst))
+		return r.listTerm(r.typeTerm(t.Elem, subst))
 	case *types.Named:
+		if t.Name == bagTyCon && len(t.Args) == 1 {
+			return r.bagTerm(r.typeTerm(t.Args[0], subst))
+		}
 		terms := make([]unify.Term, len(t.Args))
 		for i, arg := range t.Args {
 			terms[i] = r.typeTerm(arg, subst)
@@ -424,7 +492,10 @@ func (r *typeResolver) astNamedTerm(t *ast.NamedType) (unify.Term,
 		terms[i] = term
 	}
 	if t.Name == listTyCon && len(terms) == 1 {
-		return unify.Apply(listTyCon, terms[0]), nil
+		return r.listTerm(terms[0]), nil
+	}
+	if t.Name == bagTyCon && len(terms) == 1 {
+		return r.bagTerm(terms[0]), nil
 	}
 	if arity, ok := r.sys.DatatypeArity(t.Name); ok &&
 		arity == len(terms) {
@@ -609,9 +680,9 @@ func (r *typeResolver) deducePat(pat ast.Pat,
 		if err != nil {
 			return err
 		}
-		listTerm := unify.Apply(listTyCon, vElem)
-		r.equiv(vList, listTerm)
-		r.regEquiv(pat, v, listTerm)
+		lt := r.listTerm(vElem)
+		r.equiv(vList, lt)
+		r.regEquiv(pat, v, lt)
 		return nil
 	case *ast.IDPat:
 		if tc, ok := r.sys.LookupTyCon(p.Name); ok {
@@ -633,7 +704,7 @@ func (r *typeResolver) deducePat(pat ast.Pat,
 				return err
 			}
 		}
-		r.regEquiv(pat, v, unify.Apply(listTyCon, vElem))
+		r.regEquiv(pat, v, r.listTerm(vElem))
 		return nil
 	case *ast.LiteralPat:
 		return r.deduceLiteral(pat, p.Kind, p.Value, v)
@@ -734,7 +805,7 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 				return err
 			}
 		}
-		r.regEquiv(exp, v, unify.Apply(listTyCon, vElem))
+		r.regEquiv(exp, v, r.listTerm(vElem))
 		return nil
 	case *ast.Literal:
 		return r.deduceLiteral(exp, e.Kind, e.Value, v)
