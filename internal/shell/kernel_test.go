@@ -582,8 +582,8 @@ func TestExecuteDatatypes(t *testing.T) {
 	})
 }
 
-// TestExecuteExceptions pins exception reports probed against
-// the java binary: the bracketed description, and "raised at"
+// TestExecuteExceptions pins exception reports: the bracketed
+// description, and "raised at"
 // spans (an application's own span; a match list's span for
 // Bind in case or fn; the pattern-through-expression span for
 // Bind in val).
@@ -628,5 +628,36 @@ func TestExecuteItOnlyOnSuccess(t *testing.T) {
 		// arrive later), so 'it' keeps its value.
 		{"from i in [1] yield i;", ""},
 		{"it;", "val it = 7 : int"},
+	})
+}
+
+// TestExecuteIntRealMath pins Int, Real, and Math outputs probed
+// against the java binary.
+func TestExecuteIntRealMath(t *testing.T) {
+	runSession(t, [][2]string{
+		{"Int.precision;", "val it = SOME 32 : int option"},
+		{
+			"Int.minInt;",
+			"val it = SOME ~2147483648 : int option",
+		},
+		{
+			"Int.maxInt;",
+			"val it = SOME 2147483647 : int option",
+		},
+		{"Int.compare (1, 2);", "val it = LESS : order"},
+		{"Int.sign (~5);", "val it = ~1 : int"},
+		{"Int.toString (~5);", `val it = "~5" : string`},
+		{
+			`Int.fromString "83a";`,
+			"val it = SOME 83 : int option",
+		},
+		{
+			`Int.fromString "bad";`,
+			"val it = NONE : int option",
+		},
+		{"Int.quot (~7, 2);", "val it = ~3 : int"},
+		{"Int.rem (~7, 2);", "val it = ~1 : int"},
+		{"Int.min (3, 4);", "val it = 3 : int"},
+		{"Int.sameSign (1, ~1);", "val it = false : bool"},
 	})
 }

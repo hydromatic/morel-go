@@ -111,9 +111,7 @@ func NewKernel(name string) *Kernel {
 		bindings: bindings,
 	}
 	values := make(map[string]eval.Val, len(eval.Builtins))
-	for name, fn := range eval.Builtins {
-		values[name] = fn
-	}
+	maps.Copy(values, eval.Builtins)
 	// The Sys implementations read and write session state, so
 	// the kernel supplies them.
 	maps.Copy(values, k.sysBuiltins())
@@ -389,8 +387,8 @@ func builtinCall(e ast.Expr) (string, ast.Expr, bool) {
 
 // callString invokes a built-in whose result is a string, and
 // formats the result as the shell prints it.
-func callString(f eval.Fn, arg string) string {
-	v, err := f(arg)
+func callString(f eval.Val, arg string) string {
+	v, err := eval.ApplyVal(f, arg)
 	if err != nil {
 		return err.Error()
 	}

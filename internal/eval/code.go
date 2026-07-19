@@ -189,6 +189,10 @@ func ApplyVal(fn, arg Val) (Val, error) {
 		return ApplyVal(fn.v, arg)
 	case Fn:
 		return fn(arg)
+	case func(Val) (Val, error):
+		// A bare function reference in the Builtins table has
+		// this unnamed type rather than Fn.
+		return fn(arg)
 	default:
 		return nil, fmt.Errorf("cannot apply %T", fn)
 	}

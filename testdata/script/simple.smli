@@ -112,6 +112,8 @@ true;
 (*) All the characters
 Sys.set ("printLength", 300);
 > val it = () : unit
+Sys.unset "printLength";
+> val it = () : unit
 
 String.size "tt";
 > val it = 2 : int
@@ -366,6 +368,16 @@ strTimes "" 12 [];
 > val it =
 >   ["aaaaaaaaaaa","aaaaaaaaaa","aaaaaaaaa","aaaaaaaa","aaaaaaa","aaaaaa",
 >    "aaaaa","aaaa","aaa","aa","a",""] : string list
+strTimes "" 13 [];
+> val it =
+>   ["aaaaaaaaaaaa","aaaaaaaaaaa","aaaaaaaaaa","aaaaaaaaa","aaaaaaaa",
+>    "aaaaaaa","aaaaaa","aaaaa","aaaa","aaa","aa","a",...] : string list
+strTimes "" 20 [];
+> val it =
+>   ["aaaaaaaaaaaaaaaaaaa","aaaaaaaaaaaaaaaaaa","aaaaaaaaaaaaaaaaa",
+>    "aaaaaaaaaaaaaaaa","aaaaaaaaaaaaaaa","aaaaaaaaaaaaaa","aaaaaaaaaaaaa",
+>    "aaaaaaaaaaaa","aaaaaaaaaaa","aaaaaaaaaa","aaaaaaaaa","aaaaaaaa",...]
+>   : string list
 {a=1,b=2,c=3,d=4,e=5,f=6,g=7,h=8,i=9,j=10,k=11,l=12,m=13,n=14,o_=15,p=16};
 > val it =
 >   {a=1,b=2,c=3,d=4,e=5,f=6,g=7,h=8,i=9,j=10,k=11,l=12,m=13,n=14,o_=15,p=16}
@@ -609,6 +621,8 @@ in
 end;
 > uncaught exception Bind [nonexhaustive binding failure]
 >   raised at: stdIn:2.7-2.29
+Sys.unset "matchCoverageEnabled";
+> val it = () : unit
 
 (* Patterns ------------------------------------------------------- *)
 
@@ -619,6 +633,8 @@ val x = (( "foo", true ), 17 );
 > val x = (("foo",true),17) : (string * bool) * int
 
 Sys.set ("matchCoverageEnabled", false);
+> val it = () : unit
+Sys.unset "matchCoverageEnabled";
 > val it = () : unit
 
 (* Field access --------------------------------------------------- *)
