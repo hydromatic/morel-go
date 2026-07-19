@@ -564,6 +564,8 @@ end;
 fun distance (x, y) (x', y') =
   Math.sqrt ((x - x') * (x - x') + (y - y') * (y - y'));
 > val distance = fn : real * real -> real * real -> real
+distance (0.0, 1.0) (4.0, 4.0);
+> val it = 5 : real
 
 (*) Composite declarations
 let
