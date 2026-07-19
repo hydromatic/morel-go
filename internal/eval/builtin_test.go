@@ -25,7 +25,7 @@ import (
 
 func TestParseTree(t *testing.T) {
 	f := eval.Builtins["Sys.parseTree"]
-	v, err := f("f 1")
+	v, err := eval.ApplyVal(f, "f 1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestParseTree(t *testing.T) {
 	if v != want {
 		t.Errorf("got %q, want %q", v, want)
 	}
-	_, err = f("1 +")
+	_, err = eval.ApplyVal(f, "1 +")
 	if err == nil {
 		t.Fatal("expected error")
 	}

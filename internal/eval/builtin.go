@@ -66,10 +66,10 @@ func Curry3(f func(a, b, c Val) (Val, error)) Fn {
 	}
 }
 
-// Builtins maps a built-in function's name to its
-// implementation. (The full registry, validated against
-// lib/*.sig, arrives with the standard library.)
-var Builtins = map[string]Fn{
+// Builtins maps a built-in's name to its value — usually an Fn,
+// but a constant such as Int.maxInt is its value directly. The
+// registry is validated against lib/*.sig.
+var Builtins = map[string]Val{
 	// lint: sort until '^}' where '^\t"'
 	"Bool.<": boolOp(func(a, b bool) bool {
 		return !a && b
@@ -94,18 +94,43 @@ var Builtins = map[string]Fn{
 	"Bool.orelse": boolOp(func(a, b bool) bool {
 		return a || b
 	}),
-	"Bool.toString":         boolToStringFn,
-	"Char.chr":              chrFn,
-	"Char.ord":              ordFn,
-	"General.before":        beforeFn,
-	"General.ignore":        ignoreFn,
-	"General.o":             composeFn,
-	"Int.*":                 arith(mulInt, nil),
-	"Int.+":                 arith(addInt, nil),
-	"Int.-":                 arith(subInt, nil),
+	"Bool.toString":  boolToStringFn,
+	"Char.chr":       chrFn,
+	"Char.ord":       ordFn,
+	"General.before": beforeFn,
+	"General.ignore": ignoreFn,
+	"General.o":      composeFn,
+	"Int.*":          arith(mulInt, nil),
+	"Int.+":          arith(addInt, nil),
+	"Int.-":          arith(subInt, nil),
+	"Int.<":          compareFn(func(c int) bool { return c < 0 }),
+	"Int.<=": compareFn(func(c int) bool {
+		return c <= 0
+	}),
+	"Int.>": compareFn(func(c int) bool { return c > 0 }),
+	"Int.>=": compareFn(func(c int) bool {
+		return c >= 0
+	}),
 	"Int.abs":               absFn,
+	"Int.compare":           Fn(intCompareFn),
 	"Int.div":               arith(divInt, nil),
+	"Int.fmt":               Fn(intFmtFn),
+	"Int.fromInt":           Fn(identityFn),
+	"Int.fromLarge":         Fn(identityFn),
+	"Int.fromString":        Fn(intFromStringFn),
+	"Int.max":               Fn(intMaxFn),
+	"Int.maxInt":            someVal(int32(math.MaxInt32)),
+	"Int.min":               Fn(intMinFn),
+	"Int.minInt":            someVal(int32(math.MinInt32)),
 	"Int.mod":               arith(modInt, nil),
+	"Int.precision":         someVal(intPrecision),
+	"Int.quot":              Fn(intQuotFn),
+	"Int.rem":               Fn(intRemFn),
+	"Int.sameSign":          Fn(intSameSignFn),
+	"Int.sign":              Fn(intSignFn),
+	"Int.toInt":             Fn(identityFn),
+	"Int.toLarge":           Fn(identityFn),
+	"Int.toString":          Fn(intToStringFn),
 	"Int.~":                 negFn,
 	"List.@":                atFn,
 	"List.hd":               hdFn,
@@ -124,12 +149,6 @@ var Builtins = map[string]Fn{
 	"Option.map":            optionMapFn,
 	"Option.mapPartial":     optionMapPartialFn,
 	"Option.valOf":          valOfFn,
-	"Real.*":                arith(nil, mulReal),
-	"Real.+":                arith(nil, addReal),
-	"Real.-":                arith(nil, subReal),
-	"Real./":                arith(nil, divReal),
-	"Real.abs":              absFn,
-	"Real.~":                negFn,
 	"String.^":              caretFn,
 	"String.concat":         concatFn,
 	"String.size":           sizeFn,
@@ -174,6 +193,13 @@ var Builtins = map[string]Fn{
 	"tl":                    tlFn,
 	"valOf":                 valOfFn,
 }
+
+// Precisions and radixes of the numeric types.
+const (
+	intPrecision  = int32(32)
+	realPrecision = int32(24)
+	realRadix     = int32(2)
+)
 
 // unitVal is the unit value.
 var unitVal = core.Unit{}
@@ -272,7 +298,8 @@ func absFn(arg Val) (Val, error) {
 	switch v := arg.(type) {
 	case int32:
 		if v < 0 {
-			return -v, nil
+			// -minInt does not fit in int, so raise Overflow.
+			return checkIntRange(-int64(v))
 		}
 		return v, nil
 	case float32:

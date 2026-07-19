@@ -176,6 +176,9 @@ Int.abs;
 > val it = fn : int -> int
 abs ~3;
 > val it = 3 : int
+abs (valOf Int.minInt);
+> uncaught exception Overflow [overflow]
+>   raised at: stdIn:1.1-1.22
 abs ~3.5;
 > val it = 3.5 : real
 List.app;
@@ -335,6 +338,12 @@ Relational.count;
 > val it = fn : 'a bag -> int
 Relational.empty;
 > val it = fn : 'a bag -> bool
+
+(* "env" is a Morel alias for "Sys.env". *)
+env;
+> val it = fn : unit -> (string * string) list
+Sys.env;
+> val it = fn : unit -> (string * string) list
 String.fields;
 > val it = fn : (char -> bool) -> string -> string list
 Relational.iterate;
@@ -347,8 +356,38 @@ Relational.nonEmpty;
 > val it = fn : 'a bag -> bool
 Relational.only;
 > val it = fn : 'a bag -> 'a
+
+(* "plan" is a Morel alias for "Sys.plan". *)
+plan;
+> val it = fn : unit -> string
+Sys.plan;
+> val it = fn : unit -> string
+
+(* "set" is a Morel alias for "Sys.set". *)
+set;
+> val it = fn : string * 'a -> unit
+Sys.set;
+> val it = fn : string * 'a -> unit
+
+(* "show" is a Morel alias for "Sys.show". *)
+show;
+> val it = fn : string -> string option
+Sys.show;
+> val it = fn : string -> string option
+
+(* "showAll" is a Morel alias for "Sys.showAll". *)
+showAll;
+> val it = fn : unit -> (string * string option) list
+Sys.showAll;
+> val it = fn : unit -> (string * string option) list
 String.tokens;
 > val it = fn : (char -> bool) -> string -> string list
+
+(* "unset" is a Morel alias for "Sys.unset". *)
+unset;
+> val it = fn : string -> unit
+Sys.unset;
+> val it = fn : string -> unit
 Interact.useSilently;
 > val it = fn : string -> unit
 
