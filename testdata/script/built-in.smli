@@ -48,6 +48,9 @@ fun print x = ignore x;
 fn x => x + 1;
 > val it = fn : int -> int
 
+val nan = abs (Real.posInf / Real.posInf);
+> val nan = nan : real
+
 (* Datatypes ------------------------------------------------------ *)
 
 (*
@@ -185,6 +188,10 @@ List.app;
 > val it = fn : ('a -> unit) -> 'a list -> unit
 General.before;
 > val it = fn : 'a * unit -> 'a
+
+(* "val ceil : real -> int" maps to "Real.ceil" *)
+ceil;
+> val it = fn : real -> int
 Real.ceil;
 > val it = fn : real -> int
 
@@ -213,6 +220,10 @@ explode;
 > val it = fn : string -> char list
 String.explode;
 > val it = fn : string -> char list
+
+(* "val floor : real -> int" maps to "Real.floor" *)
+floor;
+> val it = fn : real -> int
 Real.floor;
 > val it = fn : real -> int
 List.foldl;
@@ -285,6 +296,13 @@ ord;
 > val it = fn : char -> int
 Char.ord;
 > val it = fn : char -> int
+
+(* "val print : string -> unit" maps to "TextIO.print" *)
+(*) TODO print;
+
+(* "val real : int -> real" maps to "Real.fromInt" *)
+real;
+> val it = fn : int -> real
 Real.fromInt;
 > val it = fn : int -> real
 
@@ -296,6 +314,10 @@ rev;
 > val it = fn : 'a list -> 'a list
 List.rev;
 > val it = fn : 'a list -> 'a list
+
+(* "val round : real -> int" maps to "Real.round" *)
+round;
+> val it = fn : real -> int
 Real.round;
 > val it = fn : real -> int
 
@@ -318,6 +340,10 @@ tl;
 > val it = fn : 'a list -> 'a list
 List.tl;
 > val it = fn : 'a list -> 'a list
+
+(* "val trunc : real -> int" maps to "Real.trunc" *)
+trunc;
+> val it = fn : real -> int
 Real.trunc;
 > val it = fn : real -> int
 Interact.use;
