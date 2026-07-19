@@ -22,108 +22,169 @@ import (
 	"github.com/hydromatic/morel-go/internal/unify"
 )
 
+// fromState is the state threaded through a query's steps: the
+// current row's fields, its element type (curElem, nil to derive
+// from the fields), the orderedness so far (nil until the first
+// collection scan), the environment steps are typed in, and, once a
+// standalone "compute" has run, the scalar result it produced.
+type fromState struct {
+	r       *typeResolver
+	rootEnv typeEnv
+	env     typeEnv
+	fields  []labelTerm
+	curElem unify.Term
+	ord     unify.Term
+	scalar  unify.Term
+}
+
+// elemTerm resolves the current element type: the explicit element
+// if set, otherwise the sole field's type or a record of them.
+func (st *fromState) elemTerm() unify.Term {
+	if st.curElem != nil {
+		return st.curElem
+	}
+	return st.r.rowElem(st.fields)
+}
+
 // deduceFrom types a query expression: "from pat in exp" scans a
-// collection, "pat = exp" binds a value, "where exp" filters, and
-// "yield exp" transforms. Its rows carry a set of named fields;
-// the query's element type is the sole field's type when exactly
-// one field is bound, and a record of the fields otherwise. A
-// "yield" of a record literal exposes that record's fields to
-// later steps; any other yield leaves no named fields.
+// collection, "pat = exp" binds a value, "where" filters, "yield"
+// transforms, "group"/"compute" aggregate, and the passthrough and
+// forcer steps adjust orderedness. Its rows carry named fields; the
+// element type is the sole field's type when one field is bound and
+// a record of them otherwise.
 //
 // The query carries an orderedness that decides whether its result
 // is a list or a bag: an empty "from" is an ordered "unit list";
-// the first scan shares its source's orderedness (so "from x in
-// aBag" is a bag); a further comma scan meets the two (a list only
-// if both are lists); "where" and "yield" pass orderedness
-// through. Group/compute, joins with conditions, and the other
-// step forms are not yet supported and fall through to the "cannot
-// deduce" error.
+// the first scan shares its source's orderedness; a comma scan
+// meets the two; "order" forces a list and "unorder" a bag. A
+// standalone "compute" produces a scalar rather than a collection.
 func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 	v *unify.Var,
 ) error {
 	if from.Kind != ast.FromOp {
 		return r.unsupportedFrom(from)
 	}
-	var fields []labelTerm
-	// curElem is the current element type; nil means derive it from
-	// the fields (the sole field's type, or a record of them).
-	var curElem unify.Term
-	// ord is the query's orderedness so far, nil until the first
-	// collection scan sets it.
-	var ord unify.Term
-	// elemTerm resolves the current element type.
-	elemTerm := func() unify.Term {
-		if curElem != nil {
-			return curElem
+	st := &fromState{r: r, rootEnv: rootEnv, env: rootEnv}
+	steps := from.Steps
+	for i := 0; i < len(steps); i++ {
+		// A "group" absorbs the "compute" that follows it, so the
+		// aggregates are typed over the pre-group rows.
+		if g, ok := steps[i].(*ast.GroupStep); ok {
+			var compute *ast.ComputeStep
+			if i+1 < len(steps) {
+				if c, ok := steps[i+1].(*ast.ComputeStep); ok {
+					compute = c
+					i++
+				}
+			}
+			err := st.groupStep(g, compute)
+			if err != nil {
+				return err
+			}
+			continue
 		}
-		return r.rowElem(fields)
+		err := st.step(steps[i])
+		if err != nil {
+			return err
+		}
 	}
-	env := rootEnv
-	for _, step := range from.Steps {
-		// lint: sort until '^\t\t}' where '^\t\tcase '
-		switch s := step.(type) {
-		case *ast.DistinctStep:
-			// "distinct" changes neither element type nor orderedness.
-		case *ast.OrderStep:
-			// The sort key is typed in the step env; "order" forces
-			// the result to be a list.
-			err := r.deduceExp(env, s.Exp, r.u.Variable())
-			if err != nil {
-				return err
-			}
-			ord = r.u.Atom(orderedName)
-		case *ast.Scan:
-			newFields, sourceOrd, err := r.deduceScan(env, s)
-			if err != nil {
-				return err
-			}
-			ord = r.meetSourceOrd(ord, sourceOrd)
-			fields = append(fields, newFields...)
-			curElem = nil
-			env = r.bindStep(rootEnv, fields, nil)
-		case *ast.SetOpStep:
-			newOrd, err := r.deduceSetOp(rootEnv, elemTerm(),
-				r.orDefaultOrd(ord), s.Exps)
-			if err != nil {
-				return err
-			}
-			ord = newOrd
-		case *ast.SkipStep:
-			err := r.deduceCount(rootEnv, s.Exp)
-			if err != nil {
-				return err
-			}
-		case *ast.TakeStep:
-			err := r.deduceCount(rootEnv, s.Exp)
-			if err != nil {
-				return err
-			}
-		case *ast.UnorderStep:
-			ord = r.u.Atom(unorderedName)
-		case *ast.WhereStep:
-			vBool := r.u.Variable()
-			err := r.deduceExp(env, s.Exp, vBool)
-			if err != nil {
-				return err
-			}
-			r.equiv(vBool, r.primTerm(boolName))
-		case *ast.YieldStep:
-			yieldFields, vYield, err := r.deduceYield(env, s.Exp)
-			if err != nil {
-				return err
-			}
-			fields = yieldFields
-			curElem = vYield
-			env = r.bindStep(rootEnv, fields, vYield)
-		default:
-			return r.unsupportedFrom(from)
-		}
+	if st.scalar != nil {
+		r.regEquiv(from, v, st.scalar)
+		return nil
 	}
 	// An empty "from", or one with only scalar scans, is ordered.
+	ord := st.ord
 	if ord == nil {
 		ord = r.u.Atom(orderedName)
 	}
-	r.regEquiv(from, v, r.collectionTerm(elemTerm(), ord))
+	r.regEquiv(from, v, r.collectionTerm(st.elemTerm(), ord))
+	return nil
+}
+
+// step types one query step (other than a group), updating st.
+func (st *fromState) step(step ast.FromStep) error {
+	r := st.r
+	// lint: sort until '^\t}' where '^\tcase '
+	switch s := step.(type) {
+	case *ast.ComputeStep:
+		// A standalone "compute" (not absorbed by a group) reduces
+		// the whole input to a scalar.
+		fields, err := r.deduceCompute(st.env, s.Exp, nil,
+			st.elemTerm(), r.orDefaultOrd(st.ord))
+		if err != nil {
+			return err
+		}
+		st.scalar = r.rowElem(fields)
+		return nil
+	case *ast.DistinctStep:
+		return nil
+	case *ast.OrderStep:
+		err := r.deduceExp(st.env, s.Exp, r.u.Variable())
+		if err != nil {
+			return err
+		}
+		st.ord = r.u.Atom(orderedName)
+		return nil
+	case *ast.Scan:
+		newFields, sourceOrd, err := r.deduceScan(st.env, s)
+		if err != nil {
+			return err
+		}
+		st.ord = r.meetSourceOrd(st.ord, sourceOrd)
+		st.fields = append(st.fields, newFields...)
+		st.curElem = nil
+		st.env = r.bindStep(st.rootEnv, st.fields, nil)
+		return nil
+	case *ast.SetOpStep:
+		newOrd, err := r.deduceSetOp(st.rootEnv, st.elemTerm(),
+			r.orDefaultOrd(st.ord), s.Exps)
+		if err != nil {
+			return err
+		}
+		st.ord = newOrd
+		return nil
+	case *ast.SkipStep:
+		return r.deduceCount(st.rootEnv, s.Exp)
+	case *ast.TakeStep:
+		return r.deduceCount(st.rootEnv, s.Exp)
+	case *ast.UnorderStep:
+		st.ord = r.u.Atom(unorderedName)
+		return nil
+	case *ast.WhereStep:
+		vBool := r.u.Variable()
+		err := r.deduceExp(st.env, s.Exp, vBool)
+		if err != nil {
+			return err
+		}
+		r.equiv(vBool, r.primTerm(boolName))
+		return nil
+	case *ast.YieldStep:
+		yieldFields, vYield, err := r.deduceYield(st.env, s.Exp)
+		if err != nil {
+			return err
+		}
+		st.fields = yieldFields
+		st.curElem = vYield
+		st.env = r.bindStep(st.rootEnv, st.fields, vYield)
+		return nil
+	default:
+		return r.unsupportedStep(step)
+	}
+}
+
+// groupStep types a "group" step and its optional "compute",
+// updating st; the output orderedness is the input's (unchanged).
+func (st *fromState) groupStep(g *ast.GroupStep,
+	compute *ast.ComputeStep,
+) error {
+	fields, elem, err := st.r.deduceGroup(st.env, g,
+		compute, st.elemTerm(), st.r.orDefaultOrd(st.ord))
+	if err != nil {
+		return err
+	}
+	st.fields = fields
+	st.curElem = elem
+	st.env = st.r.bindStep(st.rootEnv, fields, elem)
 	return nil
 }
 
@@ -308,6 +369,11 @@ func implicitLabel(exp ast.Expr) string {
 		}
 	case *ast.ID:
 		return e.Name
+	case *ast.InfixCall:
+		// An aggregate "fn over e" takes its label from the function.
+		if e.Kind == ast.OverOp {
+			return implicitLabel(e.A0)
+		}
 	}
 	return ""
 }
@@ -360,5 +426,14 @@ func (r *typeResolver) unsupportedFrom(from *ast.From) error {
 	return &Error{
 		Span: from.Span(),
 		Msg:  "cannot deduce type for " + from.Op().String(),
+	}
+}
+
+// unsupportedStep reports a query step whose form is not yet
+// supported.
+func (r *typeResolver) unsupportedStep(step ast.FromStep) error {
+	return &Error{
+		Span: step.Span(),
+		Msg:  "cannot deduce type for " + step.Op().String(),
 	}
 }

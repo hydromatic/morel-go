@@ -42,6 +42,7 @@ const (
 	opMod      = "op mod"
 	opNegate   = "op ~"
 	comparison = "'a * 'a -> bool"
+	bagToElem  = "'a bag -> 'a"
 	realToInt  = "real -> int"
 	boolName   = "bool"
 	intName    = "int"
@@ -60,7 +61,13 @@ var topBuiltins = map[string]topBuiltin{
 	"chr":       {"int -> char", ""},
 	"concat":    {"string list -> string", ""},
 	"env":       {"unit -> (string * string) list", ""},
+	"count":     {"'a bag -> int", ""},
+	"empty":     {"'a bag -> bool", ""},
 	"explode":   {"string -> char list", ""},
+	"max":       {bagToElem, ""},
+	"min":       {bagToElem, ""},
+	"nonEmpty":  {"'a bag -> bool", ""},
+	"sum":       {bagToElem, ""},
 	"fields":    {"(char -> bool) -> string -> string list", ""},
 	"floor":     {realToInt, ""},
 	"foldl":     {"('a * 'b -> 'b) -> 'b -> 'a list -> 'b", ""},

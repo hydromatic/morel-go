@@ -75,6 +75,7 @@ func Deduce(sys *types.System, bindings []Binding,
 			byName[bindings[i].Name] = &bindings[i]
 		}
 		env = &bindingTypeEnv{parent: env, bindings: byName}
+		r.bindings = byName
 	}
 	var termMap []patTerm
 	decl2, err := r.deduceDecl(env, decl, &termMap)
@@ -263,6 +264,7 @@ type patTerm struct {
 type typeResolver struct {
 	sys           *types.System
 	u             *unify.Unifier
+	bindings      map[string]*Binding
 	pairs         []unify.TermPair
 	nodeTerm      map[ast.Node]unify.Term
 	actions       []unify.VarAction
