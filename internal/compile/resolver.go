@@ -371,6 +371,12 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 			}
 			steps = append(steps, scanSteps...)
 			cur = newCur
+		case *ast.SetOpStep:
+			setOp, err := r.toSetOpStep(env, s)
+			if err != nil {
+				return nil, err
+			}
+			steps = append(steps, setOp)
 		case *ast.SkipStep:
 			exp, err := r.toExp(env, s.Exp)
 			if err != nil {
@@ -404,6 +410,23 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 		return nil, unsupported
 	}
 	return &core.From{T: t, Steps: steps}, nil
+}
+
+// toSetOpStep converts a union/intersect/except step. Its argument
+// collections are in the root scope, so they cannot reference the
+// query's variables.
+func (r *resolver) toSetOpStep(env *coreEnv, s *ast.SetOpStep) (
+	core.FromStep, error,
+) {
+	args := make([]core.Exp, len(s.Exps))
+	for i, arg := range s.Exps {
+		a, err := r.toExp(env, arg)
+		if err != nil {
+			return nil, err
+		}
+		args[i] = a
+	}
+	return &core.SetOp{Kind: s.Kind, Args: args, Distinct: s.Distinct}, nil
 }
 
 // toScanStep converts an "in" scan, returning the Core steps it

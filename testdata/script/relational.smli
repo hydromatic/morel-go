@@ -615,6 +615,94 @@ in
 end;
 > val it = ["Shaggy","Scooby"] : string list
 
+(*) union distinct (matches SQL's UNION DISTINCT, aka UNION)
+from deptno in (from e in emps yield e.deptno)
+  union distinct (from d in depts yield d.deptno);
+> val it = [10,20,30,40] : int list
+
+(* A wildcard scan binds no variables, so each row is unit; a set
+ * operation once read row[0] and panicked, printing nothing. *)
+from _ in [1,2] union [(),()];
+> val it = [(),(),(),()] : unit list
+
+from i in [2, 1, 2, 2, 2, 3] union [2, 2, 4];
+> val it = [2,1,2,2,2,3,2,2,4] : int list
+from i in [2, 1, 2, 2, 2, 3] union distinct [2, 2, 4];
+> val it = [2,1,3,4] : int list
+from i in [2, 1, 2, 2, 2, 3] union [2, 2, 4] distinct;
+> val it = [2,1,3,4] : int list
+from i in [2, 1, 2, 2, 2, 3] intersect [2, 2, 4];
+> val it = [2,2] : int list
+from i in [2, 1, 2, 2, 2, 3] intersect distinct [2, 2, 4];
+> val it = [2] : int list
+from i in [2, 1, 2, 2, 2, 3] intersect [2, 2, 4] distinct;
+> val it = [2] : int list
+from i in [2, 1, 2, 2, 2, 3] except [2, 2, 4];
+> val it = [1,2,2,3] : int list
+from i in [2, 1, 2, 2, 2, 3] except distinct [2, 2, 4];
+> val it = [1,3] : int list
+from i in [2, 1, 2, 2, 2, 3] except [2, 2, 4] distinct;
+> val it = [1,2,3] : int list
+
+(* A set operation may directly follow a 'distinct' (or 'group') step, where
+   the row's variables live in the environment rather than on the stack.
+   To make this work in morel-java, the compiler adds a 'rematerialize'
+   adapter. *)
+from i in [2, 1, 2, 3] distinct except [2];
+> val it = [1,3] : int list
+from i in [2, 1, 2, 3] distinct union [9];
+> val it = [2,1,3,9] : int list
+from i in [2, 1, 2, 3] distinct intersect [2];
+> val it = [2] : int list
+
+from i in [2, 1, 2, 2, 2, 3]
+  distinct
+  except (from j in [2, 4] distinct)
+  distinct;
+> val it = [1,3] : int list
+
+(* In the morel-java implementation, the scan emits {j, i} records, which
+   an adapter permutes to {i, j} to match those from except's argument. *)
+from j in [1, 2],
+    i in ["x", "y"]
+  except [{i = "y", j = 2}];
+> val it = [{i="x",j=1},{i="y",j=1},{i="x",j=2}] : {i:string, j:int} list
+from i in [(1, "x"), (2, "y")]
+  except [(2, "y")];
+> val it = [(1,"x")] : (int * string) list
+
+(*) Two arguments to union, except, intersect
+from i in [2, 1, 2, 2, 2, 3] union [2, 2, 4];
+> val it = [2,1,2,2,2,3,2,2,4] : int list
+from i in [2, 1, 2, 2, 2, 3] union [2, 2, 4], [];
+> val it = [2,1,2,2,2,3,2,2,4] : int list
+from i in [2, 1, 2, 2, 2, 3] union [2, 2, 4], [2];
+> val it = [2,1,2,2,2,3,2,2,4,2] : int list
+from i in [2, 1, 2, 2, 2, 3] union [2, 2, 4], [2, 2, 2];
+> val it = [2,1,2,2,2,3,2,2,4,2,2,2] : int list
+
+from i in [2, 1, 2, 2, 2, 3] intersect [2, 2, 4];
+> val it = [2,2] : int list
+from i in [2, 1, 2, 2, 2, 3] intersect [2, 2, 4], [];
+> val it = [] : int list
+from i in [2, 1, 2, 2, 2, 3] intersect [2, 2, 4], [2];
+> val it = [2] : int list
+from i in [2, 1, 2, 2, 2, 3] intersect [2, 2, 4], [2, 2, 2];
+> val it = [2,2] : int list
+
+from i in [2, 1, 2, 2, 2, 3] except [2, 2, 4];
+> val it = [1,2,2,3] : int list
+from i in [2, 1, 2, 2, 2, 3] except [2, 2, 4], [];
+> val it = [1,2,2,3] : int list
+from i in [2, 1, 2, 2, 2, 3] except [2, 2, 4], [2];
+> val it = [1,2,3] : int list
+from i in [2, 1, 2, 2, 2, 3] except [2, 2, 4], [2, 2, 2];
+> val it = [1,3] : int list
+
+(*) 2 occurs twice on left, once on right, so should be output once.
+from i in [1,2,3,4,5,1,5,1,2] except [2,4];
+> val it = [1,3,5,1,5,1,2] : int list
+
 (*) Set operators are not "lateral". They can't see the "current row".
 val orders = [{id=1, items=["beer"]}, {id=2, items=[]}];
 > val orders = [{id=1,items=["beer"]},{id=2,items=[]}]

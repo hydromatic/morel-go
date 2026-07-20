@@ -186,6 +186,203 @@ func countOf(code Code, f *Frame) (int, error) {
 	return int(n), nil
 }
 
+// SetOpKind is the kind of a set operation.
+type SetOpKind int
+
+const (
+	// SetUnion combines the input with the arguments.
+	SetUnion SetOpKind = iota
+	// SetIntersect keeps rows present in the input and every argument.
+	SetIntersect
+	// SetExcept removes the arguments' rows from the input.
+	SetExcept
+)
+
+// SetOpStage combines the input rows with the argument collections
+// by union, intersect, or except. With Distinct, duplicates are
+// removed; otherwise multiplicity is respected (a multiset union,
+// meet, or difference).
+type SetOpStage struct {
+	Args     []Code
+	Kind     SetOpKind
+	Distinct bool
+	// Slots holds the current row's variable slots in field
+	// (name) order; a row's value is unit for none, the sole
+	// slot's value for one, the record of them for several. Rows
+	// are always full frame snapshots, whatever earlier steps
+	// bound.
+	Slots []int
+}
+
+func (s *SetOpStage) transform(q *fromCode, f *Frame, rows [][]Val,
+) ([][]Val, error) {
+	left := make([]Val, len(rows))
+	for i, row := range rows {
+		q.restore(f, row)
+		left[i] = s.rowValue(f)
+	}
+	args := make([][]Val, len(s.Args))
+	for i, code := range s.Args {
+		v, err := code.Eval(f)
+		if err != nil {
+			return nil, err
+		}
+		args[i], _ = v.([]Val)
+	}
+	var result []Val
+	// lint: sort until '^	}' where '^	case '
+	switch s.Kind {
+	case SetExcept:
+		result = exceptOp(left, args, s.Distinct)
+	case SetIntersect:
+		result = intersectOp(left, args, s.Distinct)
+	case SetUnion:
+		result = unionOp(left, args, s.Distinct)
+	}
+	out := make([][]Val, len(result))
+	for i, v := range result {
+		out[i] = s.snapshot(q, f, v)
+	}
+	return out, nil
+}
+
+// rowValue is the value of the row now in the frame: unit for no
+// variables, the sole slot's value for one, the record of them
+// for several.
+func (s *SetOpStage) rowValue(f *Frame) Val {
+	switch len(s.Slots) {
+	case 0:
+		return unitVal
+	case 1:
+		return f.Slots[s.Slots[0]]
+	default:
+		vals := make([]Val, len(s.Slots))
+		for i, slot := range s.Slots {
+			vals[i] = f.Slots[slot]
+		}
+		return vals
+	}
+}
+
+// snapshot is the full frame snapshot for a row value, the
+// inverse of rowValue; slots outside the row are cleared.
+func (s *SetOpStage) snapshot(q *fromCode, f *Frame, v Val) []Val {
+	for _, slot := range q.slots {
+		f.Slots[slot] = nil
+	}
+	switch len(s.Slots) {
+	case 0:
+	case 1:
+		f.Slots[s.Slots[0]] = v
+	default:
+		vals, _ := v.([]Val)
+		for i, slot := range s.Slots {
+			if i < len(vals) {
+				f.Slots[slot] = vals[i]
+			}
+		}
+	}
+	return q.snapshot(f)
+}
+
+// dedup returns the distinct values in first-occurrence order.
+func dedup(vals []Val) []Val {
+	var out []Val
+	seen := map[string]bool{}
+	for _, v := range vals {
+		k := PlanString(v)
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// counts tallies values by key.
+func counts(vals []Val) map[string]int {
+	m := map[string]int{}
+	for _, v := range vals {
+		m[PlanString(v)]++
+	}
+	return m
+}
+
+// unionOp is the input followed by every argument; distinct dedups.
+func unionOp(left []Val, args [][]Val, distinct bool) []Val {
+	out := append([]Val(nil), left...)
+	for _, arg := range args {
+		out = append(out, arg...)
+	}
+	if distinct {
+		return dedup(out)
+	}
+	return out
+}
+
+// exceptOp removes the arguments' rows from the input: as a
+// multiset difference, or (distinct) the input's distinct rows
+// absent from every argument.
+func exceptOp(left []Val, args [][]Val, distinct bool) []Val {
+	remove := map[string]int{}
+	for _, arg := range args {
+		for _, v := range arg {
+			remove[PlanString(v)]++
+		}
+	}
+	src := left
+	if distinct {
+		src = dedup(left)
+	}
+	var out []Val
+	for _, v := range src {
+		k := PlanString(v)
+		if remove[k] > 0 {
+			if !distinct {
+				remove[k]--
+			}
+			continue
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+// intersectOp keeps the input's rows present in every argument: at
+// the meet multiplicity, or (distinct) deduplicated.
+func intersectOp(left []Val, args [][]Val, distinct bool) []Val {
+	// The meet count of each key across the arguments.
+	var meet map[string]int
+	for _, arg := range args {
+		ac := counts(arg)
+		if meet == nil {
+			meet = ac
+			continue
+		}
+		for k, m := range meet {
+			if ac[k] < m {
+				meet[k] = ac[k]
+			}
+		}
+	}
+	if meet == nil {
+		meet = map[string]int{}
+	}
+	src := left
+	if distinct {
+		src = dedup(left)
+	}
+	var out []Val
+	for _, v := range src {
+		k := PlanString(v)
+		if meet[k] > 0 {
+			meet[k]--
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // From returns code that evaluates a query: it runs the stages
 // over the rows, then collects the value of collect for each — a
 // list or a bag (the same representation). slots are the frame

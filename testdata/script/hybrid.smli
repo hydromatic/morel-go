@@ -54,6 +54,14 @@ from e in [0]
 map (fn e => {a = 1, b = true}) [0];
 > val it = [{a=1,b=true}] : {a:int, b:bool} list
 
+(*) Three-way intersect
+from i in [1, 2, 3] intersect [1, 2, 3], [99];
+> val it = [] : int list
+from i in [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30]
+  intersect [3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33],
+    [5, 10, 15, 20, 25, 30, 35];
+> val it = [30] : int list
+
 (*) Recursive query
 (*
 let

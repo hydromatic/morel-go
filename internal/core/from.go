@@ -117,3 +117,17 @@ type Take struct {
 func (*Take) Op() ast.Op { return ast.TakeOp }
 
 func (*Take) fromStep() {}
+
+// SetOp is "union"/"intersect"/"except [distinct] exp, ...": it
+// combines the query rows so far with the argument collections.
+// Kind is UnionOp, IntersectOp, or ExceptOp.
+type SetOp struct {
+	Kind     ast.Op
+	Args     []Exp
+	Distinct bool
+}
+
+// Op implements FromStep.
+func (s *SetOp) Op() ast.Op { return s.Kind }
+
+func (*SetOp) fromStep() {}

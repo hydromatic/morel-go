@@ -390,6 +390,33 @@ val prefixes = List.map (fn s =>
 prefixes ["cat", "dog", "", "car", "cart"];
 > val it = ["ca","do","","ca","car"] : string list
 
+(* Fixed-point over union, with an iteration limit 'n'.
+ * A semi-naive algorithm applies the function only to
+ * the deltas (the elements added by the function last
+ * time) so is more efficient than the naive algorithm. *)
+fun fixu_semi_naive (f, a, n) =
+  let
+    fun contains (list, e) =
+      List.`exists` (fn e2 => e = e2) list
+    fun minus (list1, list2) =
+      List.filter (fn e => not (contains (list2, e))) list1
+    fun fixInc (a, delta, i) =
+      let
+        val a2 = f delta
+        val newDelta = minus (a2, a)
+      in
+        if newDelta = [] orelse i = n then
+          a
+        else
+          fixInc ((from z in a union newDelta), newDelta, i + 1)
+      end
+  in
+    fixInc ([], a, 0)
+  end;
+> val fixu_semi_naive = fn : ('a list -> 'a list) * 'a list * int -> 'a list
+fixu_semi_naive (prefixes, ["cat", "dog", "", "car", "cart"], ~1);
+> val it = ["ca","do","","ca","car","c","d","c"] : string list
+
 (* Floyd-Warshall algorithm (shortest path in weighted graph)
  * Data from https://en.wikipedia.org/wiki/Floyd%E2%80%93Warshall_algorithm *)
 val edges =

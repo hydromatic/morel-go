@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/hydromatic/morel-go/internal/ast"
 	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/eval"
 	"github.com/hydromatic/morel-go/internal/types"
@@ -331,13 +332,13 @@ func (c *compiler) compileFrom(from *core.From) (eval.Code, error) {
 	} else {
 		collect = c.rowCode(scanPats)
 	}
-	// The query's variables are the scan patterns' slots; the
-	// pipeline saves and restores them as rows flow through.
-	var slots []int
-	for _, pat := range scanPats {
-		for _, id := range core.PatIDs(pat) {
-			slots = append(slots, c.slots[id])
-		}
+	// The query's variables are the scan patterns' slots, in label
+	// order so a saved row matches a record value; the pipeline
+	// saves and restores them as rows flow through.
+	ids := sortedVarIDs(scanPats)
+	slots := make([]int, len(ids))
+	for i, id := range ids {
+		slots[i] = c.slots[id]
 	}
 	return eval.From(slots, stages, collect), nil
 }
@@ -369,6 +370,8 @@ func (c *compiler) compileStep(step core.FromStep,
 		}
 		*scanPats = append(*scanPats, s.Pat)
 		return &eval.ScanStage{Source: source, Pat: pat}, nil
+	case *core.SetOp:
+		return c.compileSetOp(s, *scanPats)
 	case *core.Skip:
 		count, err := c.compileExp(s.Exp)
 		if err != nil {
@@ -392,26 +395,67 @@ func (c *compiler) compileStep(step core.FromStep,
 	}
 }
 
+// compileSetOp compiles a union/intersect/except step. Its
+// arguments are collections of the row type, compiled in the
+// enclosing scope. A row is a record when several scan variables
+// are in scope so far, or a single value otherwise.
+func (c *compiler) compileSetOp(s *core.SetOp, scanPats []core.Pat,
+) (eval.FromStage, error) {
+	args := make([]eval.Code, len(s.Args))
+	for i, arg := range s.Args {
+		a, err := c.compileExp(arg)
+		if err != nil {
+			return nil, err
+		}
+		args[i] = a
+	}
+	ids := sortedVarIDs(scanPats)
+	slots := make([]int, len(ids))
+	for i, id := range ids {
+		slots[i] = c.allocSlot(id)
+	}
+	return &eval.SetOpStage{
+		Args:     args,
+		Kind:     setOpKinds[s.Kind],
+		Distinct: s.Distinct,
+		Slots:    slots,
+	}, nil
+}
+
+// setOpKinds maps a set-operation Op to its evaluator kind.
+var setOpKinds = map[ast.Op]eval.SetOpKind{
+	ast.UnionOp:     eval.SetUnion,
+	ast.IntersectOp: eval.SetIntersect,
+	ast.ExceptOp:    eval.SetExcept,
+}
+
 // rowCode is the code for a query row that has no explicit yield:
 // the sole bound variable's value, or a record (a []Val in
 // label-sorted order) of all the scan variables.
 func (c *compiler) rowCode(pats []core.Pat) eval.Code {
+	ids := sortedVarIDs(pats)
+	if len(ids) == 1 {
+		return eval.GetSlot(c.slots[ids[0]], ids[0].Name)
+	}
+	args := make([]eval.Code, len(ids))
+	for i, id := range ids {
+		args[i] = eval.GetSlot(c.slots[id], id.Name)
+	}
+	return eval.Tuple(args)
+}
+
+// sortedVarIDs is the patterns' bound variables, sorted by name —
+// the order of a row record's fields, and of the query's saved
+// frame slots.
+func sortedVarIDs(pats []core.Pat) []*core.IDPat {
 	ids := make([]*core.IDPat, 0, len(pats))
 	for _, pat := range pats {
 		ids = append(ids, core.PatIDs(pat)...)
 	}
-	if len(ids) == 1 {
-		return eval.GetSlot(c.slots[ids[0]], ids[0].Name)
-	}
-	sorted := append([]*core.IDPat(nil), ids...)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Name < sorted[j].Name
+	sort.Slice(ids, func(i, j int) bool {
+		return ids[i].Name < ids[j].Name
 	})
-	args := make([]eval.Code, len(sorted))
-	for i, id := range sorted {
-		args[i] = eval.GetSlot(c.slots[id], id.Name)
-	}
-	return eval.Tuple(args)
+	return ids
 }
 
 // compileFn compiles a function body in its own scope, then

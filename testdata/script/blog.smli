@@ -1070,6 +1070,20 @@ from i in [1, 2, 3, 4, 5],
 >
 > val it : {i:int, odd:bool} list
 
+(* I have two sodas and three candies and give my friend
+   one soda and two candies. What do I have left? *)
+from i in ["candy", "soda", "soda", "candy", "candy"]
+  except ["soda", "candy"];
+> val it = ["soda","candy","candy"] : string list
+
+(* I have two sodas and three candies, and my friend
+   has one soda, one donut, and four candies. What do we
+   have in common? *)
+from i in ["candy", "soda", "soda", "candy", "candy"]
+  intersect ["soda", "donut", "candy",
+             "donut", "candy", "candy"];
+> val it = ["candy","soda","candy","candy"] : string list
+
 (* Skip the first 3 rows of a collection. *)
 from i in [1, 2, 3, 4, 5, 6, 7]
   skip 3;
@@ -1093,6 +1107,14 @@ fun multiplesOf base (xs: int list) =
   from x in xs
     where x mod base = 0;
 > val multiplesOf = fn : int -> int list -> int list
+
+(* I have two sodas and three candies, and my friend has
+   one soda and one candy. What do we have if we combine
+   our stashes? *)
+from i in ["candy", "soda", "soda", "candy", "candy"]
+  union ["soda", "candy"];
+> val it = ["candy","soda","soda","candy","candy","soda","candy"]
+>   : string list
 
 (* --- Coda ------------------------------------------------------- *)
 from message in ["the end"];
