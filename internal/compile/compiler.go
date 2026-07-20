@@ -311,30 +311,15 @@ func (c *compiler) compileFrom(from *core.From) (eval.Code, error) {
 	var scanPats []core.Pat
 	var yieldExp core.Exp
 	for _, step := range from.Steps {
-		// lint: sort until '^\t\t}' where '^\t\tcase '
-		switch s := step.(type) {
-		case *core.Scan:
-			source, err := c.compileExp(s.Exp)
-			if err != nil {
-				return nil, err
-			}
-			pat, err := c.compilePat(s.Pat)
-			if err != nil {
-				return nil, err
-			}
-			stages = append(stages, &eval.ScanStage{Source: source, Pat: pat})
-			scanPats = append(scanPats, s.Pat)
-		case *core.Where:
-			cond, err := c.compileExp(s.Exp)
-			if err != nil {
-				return nil, err
-			}
-			stages = append(stages, &eval.WhereStage{Cond: cond})
-		case *core.Yield:
-			yieldExp = s.Exp
-		default:
-			return nil, &Error{Msg: "cannot compile " + s.Op().String()}
+		if y, ok := step.(*core.Yield); ok {
+			yieldExp = y.Exp
+			continue
 		}
+		stage, err := c.compileStep(step, &scanPats)
+		if err != nil {
+			return nil, err
+		}
+		stages = append(stages, stage)
 	}
 	var collect eval.Code
 	if yieldExp != nil {
@@ -346,7 +331,65 @@ func (c *compiler) compileFrom(from *core.From) (eval.Code, error) {
 	} else {
 		collect = c.rowCode(scanPats)
 	}
-	return eval.From(stages, collect), nil
+	// The query's variables are the scan patterns' slots; the
+	// pipeline saves and restores them as rows flow through.
+	var slots []int
+	for _, pat := range scanPats {
+		for _, id := range core.PatIDs(pat) {
+			slots = append(slots, c.slots[id])
+		}
+	}
+	return eval.From(slots, stages, collect), nil
+}
+
+// compileStep compiles one query step (other than a trailing
+// yield) to a pipeline stage, recording each scan's pattern in
+// scanPats.
+func (c *compiler) compileStep(step core.FromStep,
+	scanPats *[]core.Pat,
+) (eval.FromStage, error) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch s := step.(type) {
+	case *core.Distinct:
+		return &eval.DistinctStage{}, nil
+	case *core.Order:
+		key, err := c.compileExp(s.Exp)
+		if err != nil {
+			return nil, err
+		}
+		return &eval.OrderStage{Key: key}, nil
+	case *core.Scan:
+		source, err := c.compileExp(s.Exp)
+		if err != nil {
+			return nil, err
+		}
+		pat, err := c.compilePat(s.Pat)
+		if err != nil {
+			return nil, err
+		}
+		*scanPats = append(*scanPats, s.Pat)
+		return &eval.ScanStage{Source: source, Pat: pat}, nil
+	case *core.Skip:
+		count, err := c.compileExp(s.Exp)
+		if err != nil {
+			return nil, err
+		}
+		return &eval.SkipStage{Count: count}, nil
+	case *core.Take:
+		count, err := c.compileExp(s.Exp)
+		if err != nil {
+			return nil, err
+		}
+		return &eval.TakeStage{Count: count}, nil
+	case *core.Where:
+		cond, err := c.compileExp(s.Exp)
+		if err != nil {
+			return nil, err
+		}
+		return &eval.WhereStage{Cond: cond}, nil
+	default:
+		return nil, &Error{Msg: "cannot compile " + s.Op().String()}
+	}
 }
 
 // rowCode is the code for a query row that has no explicit yield:

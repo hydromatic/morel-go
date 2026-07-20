@@ -622,6 +622,13 @@ from p in wordCount ["a skunk sat on a stump",
 order p.word;
 > stdIn:4.9-4.13 Error: no field 'word' in type 'string * int'
 >   raised at: stdIn:4.9-4.13
+from p in wordCount ["a skunk sat on a stump",
+    "and thunk the stump stunk",
+    "but the stump thunk the skunk stunk"]
+order #1 p;
+> val it =
+>   [("a",2),("and",1),("but",1),("on",1),("sat",1),("skunk",2),("stump",3),
+>    ("stunk",2),("the",3),("thunk",2)] : (string * int) list
 
 (*) WordCount in Morel
 val lines = ["a skunk sat on a stump",
@@ -1062,6 +1069,16 @@ from i in [1, 2, 3, 4, 5],
 > 5 true
 >
 > val it : {i:int, odd:bool} list
+
+(* Skip the first 3 rows of a collection. *)
+from i in [1, 2, 3, 4, 5, 6, 7]
+  skip 3;
+> val it = [4,5,6,7] : int list
+
+(* Return only the first 3 rows of a collection. *)
+from i in [1, 2, 3, 4, 5, 6, 7]
+  take 3;
+> val it = [1,2,3] : int list
 
 (* Define a table function that returns the even numbers
    from a collection. *)

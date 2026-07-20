@@ -356,6 +356,14 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 		}
 		// lint: sort until '^\t\t}' where '^\t\tcase '
 		switch s := step.(type) {
+		case *ast.DistinctStep:
+			steps = append(steps, &core.Distinct{})
+		case *ast.OrderStep:
+			exp, err := r.toExp(cur, s.Exp)
+			if err != nil {
+				return nil, err
+			}
+			steps = append(steps, &core.Order{Exp: exp})
 		case *ast.Scan:
 			scanSteps, newCur, err := r.toScanStep(cur, s)
 			if err != nil {
@@ -363,6 +371,18 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 			}
 			steps = append(steps, scanSteps...)
 			cur = newCur
+		case *ast.SkipStep:
+			exp, err := r.toExp(env, s.Exp)
+			if err != nil {
+				return nil, err
+			}
+			steps = append(steps, &core.Skip{Exp: exp})
+		case *ast.TakeStep:
+			exp, err := r.toExp(env, s.Exp)
+			if err != nil {
+				return nil, err
+			}
+			steps = append(steps, &core.Take{Exp: exp})
 		case *ast.WhereStep:
 			exp, err := r.toExp(cur, s.Exp)
 			if err != nil {

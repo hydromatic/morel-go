@@ -78,3 +78,42 @@ type Yield struct {
 func (*Yield) Op() ast.Op { return ast.YieldOp }
 
 func (*Yield) fromStep() {}
+
+// Order is "order exp": it sorts the rows by the value of exp,
+// ascending.
+type Order struct {
+	Exp Exp
+}
+
+// Op implements FromStep.
+func (*Order) Op() ast.Op { return ast.OrderOp }
+
+func (*Order) fromStep() {}
+
+// Distinct is "distinct": it removes duplicate rows.
+type Distinct struct{}
+
+// Op implements FromStep.
+func (*Distinct) Op() ast.Op { return ast.DistinctOp }
+
+func (*Distinct) fromStep() {}
+
+// Skip is "skip exp": it drops the first exp rows.
+type Skip struct {
+	Exp Exp
+}
+
+// Op implements FromStep.
+func (*Skip) Op() ast.Op { return ast.SkipOp }
+
+func (*Skip) fromStep() {}
+
+// Take is "take exp": it keeps the first exp rows.
+type Take struct {
+	Exp Exp
+}
+
+// Op implements FromStep.
+func (*Take) Op() ast.Op { return ast.TakeOp }
+
+func (*Take) fromStep() {}

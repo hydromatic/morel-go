@@ -109,5 +109,7 @@ Relational.compare;
 Relational.compare (SOME 1, SOME "a");
 > stdIn:1.1-1.38 Error: Cannot deduce type: conflict: int vs string
 >   raised at: stdIn:1.1-1.38
+from x in [0wxffffffffffffffff, 0w7, 0w1] order x;
+> val it = [0wx1,0wx7,0wxFFFFFFFFFFFFFFFF] : word list
 
 (*) End relational.smli

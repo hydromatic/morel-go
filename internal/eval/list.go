@@ -222,6 +222,32 @@ func isNaNReal(v Val) bool {
 func compareVals(a, b Val) int {
 	// lint: sort until '^	}' where '^	case '
 	switch a := a.(type) {
+	case []Val:
+		// Tuples and records (in canonical field order) compare
+		// lexicographically.
+		bs, _ := b.([]Val)
+		for i := range a {
+			if i >= len(bs) {
+				return 1
+			}
+			if c := compareVals(a[i], bs[i]); c != 0 {
+				return c
+			}
+		}
+		if len(bs) > len(a) {
+			return -1
+		}
+		return 0
+	case bool:
+		bb, _ := b.(bool)
+		switch {
+		case a == bb:
+			return 0
+		case !a:
+			return -1
+		default:
+			return 1
+		}
 	case float32:
 		f, ok := b.(float32)
 		if !ok {
