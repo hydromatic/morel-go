@@ -407,8 +407,16 @@ Bag.fromList;
 > val it = fn : 'a list -> 'a bag
 Relational.compare;
 > val it = fn : 'a * 'a -> order
+
+(* "count" is a Morel alias for "Relational.count". *)
+count;
+> val it = fn : 'a bag -> int
 Relational.count;
 > val it = fn : 'a bag -> int
+
+(* "empty" is a Morel alias for "Relational.empty". *)
+empty;
+> val it = fn : 'a bag -> bool
 Relational.empty;
 > val it = fn : 'a bag -> bool
 
@@ -425,10 +433,22 @@ String.fields;
 > val it = fn : (char -> bool) -> string -> string list
 Relational.iterate;
 > val it = fn : 'a bag -> ('a bag * 'a bag -> 'a bag) -> 'a bag
+
+(* "max" is a Morel alias for "Relational.max". *)
+max;
+> val it = fn : 'a bag -> 'a
 Relational.max;
+> val it = fn : 'a bag -> 'a
+
+(* "min" is a Morel alias for "Relational.min". *)
+min;
 > val it = fn : 'a bag -> 'a
 Relational.min;
 > val it = fn : 'a bag -> 'a
+
+(* "nonEmpty" is a Morel alias for "Relational.nonEmpty". *)
+nonEmpty;
+> val it = fn : 'a bag -> bool
 Relational.nonEmpty;
 > val it = fn : 'a bag -> bool
 Relational.only;

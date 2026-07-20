@@ -118,6 +118,36 @@ func (*Take) Op() ast.Op { return ast.TakeOp }
 
 func (*Take) fromStep() {}
 
+// Group is "group keys compute aggregates": it partitions the rows
+// by the key values and, for each group, produces a row of the key
+// fields and the aggregate fields. Each field binds an output
+// variable that later steps see.
+type Group struct {
+	Keys []GroupKey
+	Aggs []GroupAgg
+}
+
+// GroupKey is one grouping key: Pat binds its output variable, Exp
+// computes its value from an input row.
+type GroupKey struct {
+	Pat *IDPat
+	Exp Exp
+}
+
+// GroupAgg is one aggregate: Pat binds its output variable, Fn is
+// the aggregate function, and Arg is the per-row expression it
+// aggregates (nil to aggregate the rows themselves).
+type GroupAgg struct {
+	Pat *IDPat
+	Fn  Exp
+	Arg Exp
+}
+
+// Op implements FromStep.
+func (*Group) Op() ast.Op { return ast.GroupOp }
+
+func (*Group) fromStep() {}
+
 // SetOp is "union"/"intersect"/"except [distinct] exp, ...": it
 // combines the query rows so far with the argument collections.
 // Kind is UnionOp, IntersectOp, or ExceptOp.

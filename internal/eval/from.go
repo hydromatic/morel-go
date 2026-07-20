@@ -17,7 +17,11 @@
 
 package eval
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/hydromatic/morel-go/internal/core"
+)
 
 // A query runs as a sequence of stages over a list of rows. A row
 // is a snapshot of the query variables' frame slots; a stage
@@ -389,6 +393,118 @@ func intersectOp(left []Val, args [][]Val, distinct bool) []Val {
 		}
 	}
 	return out
+}
+
+// GroupStage partitions the rows by their key values and, for each
+// group, produces a row of the key values and the aggregate
+// results. A key's Code and an aggregate's Arg read an input row;
+// the results are written to output slots that later stages read.
+type GroupStage struct {
+	Keys []GroupKeyCode
+	Aggs []GroupAggCode
+}
+
+// GroupKeyCode is a grouping key: Code computes it from an input
+// row, Slot is where its value is written for each group.
+type GroupKeyCode struct {
+	Code Code
+	Slot int
+}
+
+// GroupAggCode is an aggregate: Fn is the aggregate function, Arg
+// the per-row value it aggregates (nil to count the rows), and Slot
+// where its result is written.
+type GroupAggCode struct {
+	Fn   Code
+	Arg  Code
+	Slot int
+}
+
+type groupRows struct {
+	key  []Val
+	rows [][]Val
+}
+
+func (s *GroupStage) transform(q *fromCode, f *Frame, rows [][]Val,
+) ([][]Val, error) {
+	order, groups, err := s.partition(q, f, rows)
+	if err != nil {
+		return nil, err
+	}
+	out := make([][]Val, 0, len(order))
+	for _, k := range order {
+		g := groups[k]
+		aggs := make([]Val, len(s.Aggs))
+		for i, a := range s.Aggs {
+			aggs[i], err = a.eval(q, f, g.rows)
+			if err != nil {
+				return nil, err
+			}
+		}
+		for _, slot := range q.slots {
+			f.Slots[slot] = nil
+		}
+		for i, key := range s.Keys {
+			f.Slots[key.Slot] = g.key[i]
+		}
+		for i, a := range s.Aggs {
+			f.Slots[a.Slot] = aggs[i]
+		}
+		out = append(out, q.snapshot(f))
+	}
+	return out, nil
+}
+
+// partition groups the rows by key value, preserving the order in
+// which each key first appears.
+func (s *GroupStage) partition(q *fromCode, f *Frame, rows [][]Val,
+) ([]string, map[string]*groupRows, error) {
+	var order []string
+	groups := map[string]*groupRows{}
+	for _, row := range rows {
+		q.restore(f, row)
+		key := make([]Val, len(s.Keys))
+		for i, k := range s.Keys {
+			v, err := k.Code.Eval(f)
+			if err != nil {
+				return nil, nil, err
+			}
+			key[i] = v
+		}
+		gk := PlanString(Val(key))
+		g := groups[gk]
+		if g == nil {
+			g = &groupRows{key: key}
+			groups[gk] = g
+			order = append(order, gk)
+		}
+		g.rows = append(g.rows, row)
+	}
+	return order, groups, nil
+}
+
+// eval computes an aggregate over a group's rows: it applies the
+// aggregate function to the collection of the argument's value per
+// row (a unit per row for a bare aggregate, which just counts).
+func (a *GroupAggCode) eval(q *fromCode, f *Frame, rows [][]Val,
+) (Val, error) {
+	fn, err := a.Fn.Eval(f)
+	if err != nil {
+		return nil, err
+	}
+	args := make([]Val, len(rows))
+	for i, row := range rows {
+		if a.Arg == nil {
+			args[i] = core.Unit{}
+			continue
+		}
+		q.restore(f, row)
+		args[i], err = a.Arg.Eval(f)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return ApplyVal(fn, args)
 }
 
 // From returns code that evaluates a query: it runs the stages

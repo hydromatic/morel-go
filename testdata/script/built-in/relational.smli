@@ -35,6 +35,27 @@ DESC "a";
 DESC (DESC "a");
 > val it = DESC (DESC "a") : string descending descending
 
+Relational.count (bag [1, 2, 3]);
+> val it = 3 : int
+Relational.count (bag []);
+> val it = 0 : int
+Relational.count (bag [false]);
+> val it = 1 : int
+
+Relational.nonEmpty (bag [1, 2, 3]);
+> val it = true : bool
+Relational.nonEmpty (bag []);
+> val it = false : bool
+Relational.nonEmpty (bag [false]);
+> val it = true : bool
+
+Relational.empty (bag [1, 2, 3]);
+> val it = false : bool
+Relational.empty (bag []);
+> val it = true : bool
+Relational.empty (bag [false]);
+> val it = false : bool
+
 val emps = [
   {empno=7839, ename="KING", mgr=0},
   {empno=7566, ename="JONES", mgr=7839},
@@ -59,6 +80,43 @@ val emps = [
 >    {empno=7900,ename="JAMES",mgr=7698},{empno=7934,ename="MILLER",mgr=7782},
 >    {empno=7876,ename="ADAMS",mgr=7788},{empno=7369,ename="SMITH",mgr=7902}]
 >   : {empno:int, ename:string, mgr:int} list
+
+Relational.sum (bag [1, 2, 3]);
+> val it = 6 : int
+Relational.sum (bag [1.0, 2.5, 3.5]);
+> val it = 7 : real
+
+Relational.max (bag [1, 2, 3]);
+> val it = 3 : int
+Relational.max (bag [1.0, 2.5, 3.5]);
+> val it = 3.5 : real
+Relational.max (bag ["a", "bc", "ab"]);
+> val it = "bc" : string
+Relational.max (bag [] : int bag);
+> uncaught exception Empty
+>   raised at: stdIn:1.1-1.33
+Relational.max (bag [0w1, 0wxFFFFFFFFFFFFFFFF]);
+> val it = 0wxFFFFFFFFFFFFFFFF : word
+Relational.max (bag [(1, 2), (2, 1), (1, 9)]);
+> val it = (2,1) : int * int
+Relational.max (bag [false, true]);
+> val it = true : bool
+
+Relational.min (bag [1, 2, 3]);
+> val it = 1 : int
+Relational.min (bag [1.0, 2.5, 3.5]);
+> val it = 1 : real
+Relational.min (bag ["a", "bc", "ab"]);
+> val it = "a" : string
+Relational.min (bag [] : int bag);
+> uncaught exception Empty
+>   raised at: stdIn:1.1-1.33
+Relational.min (bag [0w1, 0wxFFFFFFFFFFFFFFFF]);
+> val it = 0wx1 : word
+Relational.min (bag [(1, 2), (2, 1), (1, 9)]);
+> val it = (1,2) : int * int
+Relational.min (bag [false, true]);
+> val it = false : bool
 
 List.concat [[1, 2], [3], [], [4, 2, 5]];
 > val it = [1,2,3,4,2,5] : int list

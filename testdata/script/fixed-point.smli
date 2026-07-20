@@ -147,6 +147,17 @@ val adjacent_states =
 >    {adjacents=["MT","SD","NE","CO","UT","ID"],state="WY"}]
 >   : {adjacents:string list, state:string} list
 
+(*) Distinct state names
+val states =
+  from a in adjacent_states
+    group a.state
+    order state;
+> val states =
+>   ["AK","AL","AR","AZ","CA","CO","CT","DC","DE","FL","GA","HI","IA","ID","IL",
+>    "IN","KS","KY","LA","MA","MD","ME","MI","MN","MO","MS","MT","NC","ND","NE",
+>    "NH","NJ","NM","NV","NY","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT",
+>    "VA","VT","WA","WI","WV","WY"] : string list
+
 (*) Coastal states
 val coastal_states = ["WA", "OR", "CA", "TX", "LA", "MS",
   "AL", "GA", "FL", "SC", "NC", "VA", "MD", "DE", "NJ",
@@ -337,6 +348,48 @@ is_adjacent "CA" "OR";
 > val it = true : bool
 is_adjacent "OR" "OR";
 > val it = false : bool
+
+(*) States that are n hops of a given state
+fun states_within x 0 = [x]
+  | states_within x 1 =
+    (from p in neighbors
+     where p.state = x
+     yield p.adjacent)
+  | states_within x n =
+    (from p in (from p in neighbors where p.state = x),
+        a in states_within p.adjacent (n - 1)
+     group a);
+> val states_within = fn : string -> int -> string list
+
+states_within "CA" 0;
+> val it = ["CA"] : string list
+from s in states_within "CA" 1 order s;
+> val it = ["AZ","NV","OR"] : string list
+from s in states_within "CA" 2 order s;
+> val it = ["AZ","CA","CO","ID","NM","NV","OR","UT","WA"] : string list
+from s in states_within "CA" 2 group {} compute count over ();
+> val it = [9] : int list
+from s in states_within "CA" 3 group {} compute count over ();
+> val it = [15] : int list
+(* It takes 11 steps to reach to all 48 contiguous states plus DC.
+   But it takes 2 minutes, so the following expression is disabled.
+   See later, the same expression computed efficiently using semi-naive. *)
+if true then [49] else from s in states_within "CA" 11 group {} compute count over ();
+> val it = [49] : int list
+from s in states_within "HI" 0 order s;
+> val it = ["HI"] : string list
+from s in states_within "HI" 1 order s;
+> val it = [] : string list
+from s in states_within "HI" 100 order s;
+> val it = [] : string list
+from s in states_within "ME" 0 order s;
+> val it = ["ME"] : string list
+from s in states_within "ME" 1 order s;
+> val it = ["NH"] : string list
+from s in states_within "ME" 2 order s;
+> val it = ["MA","ME","VT"] : string list
+from s in states_within "ME" 3 order s;
+> val it = ["CT","MA","NH","NY","RI","VT"] : string list
  (*) maine is not 3 steps from itself
 
 (* Finding a square root using the Babylonian method
@@ -390,6 +443,23 @@ val prefixes = List.map (fn s =>
 prefixes ["cat", "dog", "", "car", "cart"];
 > val it = ["ca","do","","ca","car"] : string list
 
+(* Fixed-point over union.
+ * A naive algorithm recomputes the whole set each hop,
+ * so is not very efficient. *)
+fun fixu_naive f a =
+  let
+    val a2 = f a
+    val a3 = from i in (a : 'a list) union (a2 : 'a list) group i
+  in
+    if a3 = a then
+      a
+    else
+      fixu_naive f a3
+  end;
+> val fixu_naive = fn : ('a list -> 'a list) -> 'a list -> 'a list
+from p in fixu_naive prefixes ["cat", "dog", "", "car", "cart"] order p;
+> val it = ["","c","ca","car","cart","cat","d","do","dog"] : string list
+
 (* Fixed-point over union, with an iteration limit 'n'.
  * A semi-naive algorithm applies the function only to
  * the deltas (the elements added by the function last
@@ -417,6 +487,28 @@ fun fixu_semi_naive (f, a, n) =
 fixu_semi_naive (prefixes, ["cat", "dog", "", "car", "cart"], ~1);
 > val it = ["ca","do","","ca","car","c","d","c"] : string list
 
+(* Now, back to the states.
+ * The semi-naive algorithm gets to 11 hops more efficiently. *)
+fun states_within2 s n =
+  fixu_semi_naive ((fn states =>
+    from s in states,
+        p in neighbors
+      where p.state = s
+      group p.adjacent), [s], n);
+> val states_within2 = fn : string -> int -> string list
+from s in states_within2 "CA" 1 order s;
+> val it = ["AZ","NV","OR"] : string list
+from s in states_within2 "CA" 2 order s;
+> val it = ["AZ","CA","CO","ID","NM","NV","OR","UT","WA"] : string list
+from s in states_within2 "CA" 8 group {} compute count over ();
+> val it = [43] : int list
+from s in states_within2 "CA" 9 group {} compute count over ();
+> val it = [46] : int list
+from s in states_within2 "CA" 10 group {} compute count over ();
+> val it = [48] : int list
+from s in states_within2 "CA" 11 group {} compute count over ();
+> val it = [49] : int list
+
 (* Floyd-Warshall algorithm (shortest path in weighted graph)
  * Data from https://en.wikipedia.org/wiki/Floyd%E2%80%93Warshall_algorithm *)
 val edges =
@@ -429,6 +521,50 @@ val edges =
 >   [{source="b",target="a",weight=4},{source="a",target="c",weight=~2},
 >    {source="b",target="c",weight=3},{source="c",target="d",weight=2},
 >    {source="d",target="b",weight=~1}]
+>   : {source:string, target:string, weight:int} list
+fun shortest_path (edges: 'a list) =
+  let
+    val vertices =
+      from v in (from {source, target, weight} in edges yield source)
+          union
+          (from {source, target, weight} in edges yield target)
+        group v
+    val edges0 =
+      from e in edges
+          union
+          (from v in vertices yield {source = v, target = v, weight = 0})
+        group {e.source, e.target} compute {weight = min over e.weight}
+    fun sp (paths, []) = paths
+      | sp (paths, v :: vs) =
+        let
+          val paths2 =
+            from p1 in paths,
+                p2 in paths
+              where p1.target = v
+              andalso p2.source = v
+              yield {p1.source, p2.target, weight = p1.weight + p2.weight}
+          val paths3 =
+            from p in paths union paths2
+              group {p.source, p.target} compute {weight = min over p.weight}
+        in
+          sp (paths3, vs)
+        end
+  in
+    from p in sp (edges0, vertices) order (p.source, p.target)
+  end;
+> val shortest_path = fn
+>   : {source:'a, target:'a, weight:int} list
+>      -> {source:'a, target:'a, weight:int} list
+shortest_path edges;
+> val it =
+>   [{source="a",target="a",weight=0},{source="a",target="b",weight=~1},
+>    {source="a",target="c",weight=~2},{source="a",target="d",weight=0},
+>    {source="b",target="a",weight=4},{source="b",target="b",weight=0},
+>    {source="b",target="c",weight=2},{source="b",target="d",weight=4},
+>    {source="c",target="a",weight=5},{source="c",target="b",weight=1},
+>    {source="c",target="c",weight=0},{source="c",target="d",weight=2},
+>    {source="d",target="a",weight=3},{source="d",target="b",weight=~1},
+>    {source="d",target="c",weight=1},{source="d",target="d",weight=0}]
 >   : {source:string, target:string, weight:int} list
 
 (* -- Graph algorithms -----------------------------------------------
@@ -450,5 +586,45 @@ val western_states = ["AZ","CA","CO","ID","NM","NV","OR","UT","WA"];
  * this returned rows in which x = y. *)
 val ps = [(1,2),(2,1),(1,3),(3,1),(2,3),(3,2)];
 > val ps = [(1,2),(2,1),(1,3),(3,1),(2,3),(3,2)] : (int * int) list
+
+(* 7. Single-Source Shortest Paths (SSSP) ----------------------------
+ * In Datalog:
+ *   SSSP(x; y: int) :- Edge("start", x); y = 1.
+ *   SSSP(x; y: int)* :- Edge(w, x), SSSP(w); y = <<MIN(w)>> + 1.
+ * BFS from "CA" using fixp: shortest hop count to each reachable
+ * state.
+ *)
+let
+  val source = "CA"
+  fun step d =
+    let
+      val extended =
+        from {node = n, dist = di} in d,
+             (x, y) in pairs
+          where x = n
+          yield {node = y, dist = di + 1}
+      val d2 =
+        from p in d union extended
+          group p.node compute {dist = min over p.dist}
+    in
+      from r in d2 order r.node
+    end
+in
+  fixp step [{node = source, dist = 0}]
+end;
+> val it =
+>   [{dist=6,node="AL"},{dist=4,node="AR"},{dist=1,node="AZ"},{dist=0,node="CA"},
+>    {dist=2,node="CO"},{dist=9,node="CT"},{dist=7,node="DC"},{dist=8,node="DE"},
+>    {dist=7,node="FL"},{dist=6,node="GA"},{dist=4,node="IA"},{dist=2,node="ID"},
+>    {dist=5,node="IL"},{dist=6,node="IN"},{dist=3,node="KS"},{dist=5,node="KY"},
+>    {dist=4,node="LA"},{dist=9,node="MA"},{dist=7,node="MD"},{dist=11,node="ME"},
+>    {dist=6,node="MI"},{dist=5,node="MN"},{dist=4,node="MO"},{dist=5,node="MS"},
+>    {dist=3,node="MT"},{dist=6,node="NC"},{dist=4,node="ND"},{dist=3,node="NE"},
+>    {dist=10,node="NH"},{dist=8,node="NJ"},{dist=2,node="NM"},{dist=1,node="NV"},
+>    {dist=8,node="NY"},{dist=6,node="OH"},{dist=3,node="OK"},{dist=1,node="OR"},
+>    {dist=7,node="PA"},{dist=10,node="RI"},{dist=7,node="SC"},{dist=4,node="SD"},
+>    {dist=5,node="TN"},{dist=3,node="TX"},{dist=2,node="UT"},{dist=6,node="VA"},
+>    {dist=9,node="VT"},{dist=2,node="WA"},{dist=5,node="WI"},{dist=6,node="WV"},
+>    {dist=3,node="WY"}] : {dist:int, node:string} list
 
 (*) End fixed-point.smli

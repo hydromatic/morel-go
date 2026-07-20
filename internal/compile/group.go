@@ -84,6 +84,9 @@ func (r *typeResolver) deduceCompute(stepEnv typeEnv,
 			if err != nil {
 				return nil, err
 			}
+			// Register the aggregate expression's type so the
+			// resolver can read it back when building the group.
+			r.reg(f.Exp, v)
 			fields[i] = labelTerm{label: label, term: v}
 		}
 		return fields, nil
@@ -97,6 +100,7 @@ func (r *typeResolver) deduceCompute(stepEnv typeEnv,
 	if err != nil {
 		return nil, err
 	}
+	r.reg(computeExp, v)
 	return []labelTerm{{label: label, term: v}}, nil
 }
 

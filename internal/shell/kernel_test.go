@@ -703,9 +703,9 @@ func TestExecuteItOnlyOnSuccess(t *testing.T) {
 	runSession(t, [][2]string{
 		{"val y = 7;", "val y = 7 : int"},
 		{"y;", "val it = 7 : int"},
-		// The next statement does not evaluate yet (group
+		// The next statement does not evaluate yet (quantifier
 		// evaluation arrives later), so 'it' keeps its value.
-		{"from i in [1] group i compute count over i;", ""},
+		{"exists i in [1] where i > 0;", ""},
 		{"it;", "val it = 7 : int"},
 	})
 }

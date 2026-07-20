@@ -131,6 +131,12 @@ func NewKernel(name string) *Kernel {
 	}
 	values := make(map[string]eval.Val, len(eval.Builtins))
 	maps.Copy(values, eval.Builtins)
+	// The relational aggregates are bound both at top level and as
+	// members of the Relational structure.
+	for name, fn := range eval.RelationalAggregates() {
+		values[name] = fn
+		values["Relational."+name] = fn
+	}
 	// The Sys implementations read and write session state, so
 	// the kernel supplies them.
 	maps.Copy(values, k.sysBuiltins())

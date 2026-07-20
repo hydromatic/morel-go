@@ -348,68 +348,182 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 	steps := make([]core.FromStep, 0, len(from.Steps))
 	cur := env
 	yielded := false
-	for _, step := range from.Steps {
+	for i := 0; i < len(from.Steps); i++ {
+		step := from.Steps[i]
 		if yielded {
 			// A step after a yield reads the yielded row's fields,
 			// which are not yet rebound in Core.
 			return nil, unsupported
 		}
-		// lint: sort until '^\t\t}' where '^\t\tcase '
-		switch s := step.(type) {
-		case *ast.DistinctStep:
-			steps = append(steps, &core.Distinct{})
-		case *ast.OrderStep:
-			exp, err := r.toExp(cur, s.Exp)
+		// A "group" absorbs the "compute" that follows it, so the
+		// aggregates are typed over the pre-group rows.
+		if g, ok := step.(*ast.GroupStep); ok {
+			var compute *ast.ComputeStep
+			if i+1 < len(from.Steps) {
+				if c, ok := from.Steps[i+1].(*ast.ComputeStep); ok {
+					compute = c
+					i++
+				}
+			}
+			groupStep, newCur, err := r.toGroupStep(cur, g, compute)
 			if err != nil {
 				return nil, err
 			}
-			steps = append(steps, &core.Order{Exp: exp})
-		case *ast.Scan:
-			scanSteps, newCur, err := r.toScanStep(cur, s)
-			if err != nil {
-				return nil, err
-			}
-			steps = append(steps, scanSteps...)
+			steps = append(steps, groupStep)
 			cur = newCur
-		case *ast.SetOpStep:
-			setOp, err := r.toSetOpStep(env, s)
-			if err != nil {
-				return nil, err
-			}
-			steps = append(steps, setOp)
-		case *ast.SkipStep:
-			exp, err := r.toExp(env, s.Exp)
-			if err != nil {
-				return nil, err
-			}
-			steps = append(steps, &core.Skip{Exp: exp})
-		case *ast.TakeStep:
-			exp, err := r.toExp(env, s.Exp)
-			if err != nil {
-				return nil, err
-			}
-			steps = append(steps, &core.Take{Exp: exp})
-		case *ast.WhereStep:
-			exp, err := r.toExp(cur, s.Exp)
-			if err != nil {
-				return nil, err
-			}
-			steps = append(steps, &core.Where{Exp: exp})
-		case *ast.YieldStep:
-			exp, err := r.toExp(cur, s.Exp)
-			if err != nil {
-				return nil, err
-			}
-			steps = append(steps, &core.Yield{Exp: exp})
-			yielded = true
-		default:
-			return nil, unsupported
+			continue
 		}
+		newSteps, newCur, y, err := r.toQueryStep(env, cur, step)
+		if err != nil {
+			return nil, err
+		}
+		steps = append(steps, newSteps...)
+		cur = newCur
+		yielded = y
 	}
 	if _, ok := steps[0].(*core.Scan); !ok {
 		return nil, unsupported
 	}
 	return &core.From{T: t, Steps: steps}, nil
+}
+
+// toQueryStep converts a query step other than a group, returning
+// the Core steps it produces, the environment for what follows, and
+// whether it was a yield (after which no step may follow). Scan
+// sources, order keys, where and yield expressions see the query
+// variables; skip/take counts and set-op arguments see only the
+// root scope.
+func (r *resolver) toQueryStep(env, cur *coreEnv, step ast.FromStep,
+) ([]core.FromStep, *coreEnv, bool, error) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch s := step.(type) {
+	case *ast.DistinctStep:
+		return []core.FromStep{&core.Distinct{}}, cur, false, nil
+	case *ast.OrderStep:
+		exp, err := r.toExp(cur, s.Exp)
+		return []core.FromStep{&core.Order{Exp: exp}}, cur, false, err
+	case *ast.Scan:
+		scanSteps, newCur, err := r.toScanStep(cur, s)
+		return scanSteps, newCur, false, err
+	case *ast.SetOpStep:
+		setOp, err := r.toSetOpStep(env, s)
+		return []core.FromStep{setOp}, cur, false, err
+	case *ast.SkipStep:
+		exp, err := r.toExp(env, s.Exp)
+		return []core.FromStep{&core.Skip{Exp: exp}}, cur, false, err
+	case *ast.TakeStep:
+		exp, err := r.toExp(env, s.Exp)
+		return []core.FromStep{&core.Take{Exp: exp}}, cur, false, err
+	case *ast.WhereStep:
+		exp, err := r.toExp(cur, s.Exp)
+		return []core.FromStep{&core.Where{Exp: exp}}, cur, false, err
+	case *ast.YieldStep:
+		exp, err := r.toExp(cur, s.Exp)
+		return []core.FromStep{&core.Yield{Exp: exp}}, cur, true, err
+	default:
+		return nil, nil, false, &Error{
+			Span: step.Span(),
+			Msg:  "cannot convert to core: " + step.Op().String(),
+		}
+	}
+}
+
+// toGroupStep converts a "group" step and the "compute" that
+// follows it. The keys and aggregate arguments are computed over an
+// input row (the current scope); the key and aggregate fields
+// become the query's variables downstream.
+func (r *resolver) toGroupStep(cur *coreEnv, group *ast.GroupStep,
+	compute *ast.ComputeStep,
+) (core.FromStep, *coreEnv, error) {
+	var keys []core.GroupKey
+	for _, f := range r.stepFields(group.Exp) {
+		exp, err := r.toExp(cur, f.exp)
+		if err != nil {
+			return nil, nil, err
+		}
+		keys = append(keys, core.GroupKey{
+			Pat: &core.IDPat{T: exp.Type(), Name: f.label},
+			Exp: exp,
+		})
+	}
+	var aggs []core.GroupAgg
+	if compute != nil {
+		for _, f := range r.stepFields(compute.Exp) {
+			agg, err := r.toGroupAgg(cur, f)
+			if err != nil {
+				return nil, nil, err
+			}
+			aggs = append(aggs, agg)
+		}
+	}
+	newCur := cur
+	for _, k := range keys {
+		newCur = newCur.bind(k.Pat)
+	}
+	for _, a := range aggs {
+		newCur = newCur.bind(a.Pat)
+	}
+	return &core.Group{Keys: keys, Aggs: aggs}, newCur, nil
+}
+
+// toGroupAgg converts one aggregate field "label = fn over arg" (or
+// a bare "fn"), reading its result type from the type map.
+func (r *resolver) toGroupAgg(cur *coreEnv, f stepField) (
+	core.GroupAgg, error,
+) {
+	fnExp, argExp := f.exp, ast.Expr(nil)
+	if ic, ok := f.exp.(*ast.InfixCall); ok && ic.Kind == ast.OverOp {
+		fnExp, argExp = ic.A0, ic.A1
+	}
+	fn, err := r.toExp(cur, fnExp)
+	if err != nil {
+		return core.GroupAgg{}, err
+	}
+	var arg core.Exp
+	if argExp != nil {
+		arg, err = r.toExp(cur, argExp)
+		if err != nil {
+			return core.GroupAgg{}, err
+		}
+	}
+	t, err := r.typeMap.TypeOf(f.exp)
+	if err != nil {
+		return core.GroupAgg{}, err
+	}
+	return core.GroupAgg{
+		Pat: &core.IDPat{T: t, Name: f.label},
+		Fn:  fn,
+		Arg: arg,
+	}, nil
+}
+
+// stepField is a labelled expression in a group's keys or a
+// compute's aggregates.
+type stepField struct {
+	label string
+	exp   ast.Expr
+}
+
+// stepFields splits a group-key or compute expression into its
+// labelled fields: a record's fields (by their labels or implicit
+// labels), or a single field labelled by its implicit label.
+func (r *resolver) stepFields(exp ast.Expr) []stepField {
+	if rec, ok := exp.(*ast.Record); ok && rec.With == nil {
+		fields := make([]stepField, len(rec.Fields))
+		for i, f := range rec.Fields {
+			label := f.Label
+			if label == "" {
+				label = implicitLabel(f.Exp)
+			}
+			fields[i] = stepField{label: label, exp: f.Exp}
+		}
+		return fields
+	}
+	label := implicitLabel(exp)
+	if label == "" {
+		label = currentName
+	}
+	return []stepField{{label: label, exp: exp}}
 }
 
 // toSetOpStep converts a union/intersect/except step. Its argument

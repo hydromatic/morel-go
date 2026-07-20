@@ -646,6 +646,35 @@ fun split s =
     List.rev (split0 (String.explode s) "" [])
   end;
 > val split = fn : string -> string list
+from line in lines,
+    word in split line
+  group word compute count over ()
+  order word;
+> val it =
+>   [{count=2,word="a"},{count=1,word="and"},{count=1,word="but"},
+>    {count=1,word="on"},{count=1,word="sat"},{count=2,word="skunk"},
+>    {count=3,word="stump"},{count=2,word="stunk"},{count=3,word="the"},
+>    {count=2,word="thunk"}] : {count:int, word:string} list
+
+(*) A more complete solution
+fun wordCount (lines: 'a list) =
+  let
+    fun split0 [] word words = word :: words
+      | split0 (#" " :: s) word words = split0 s "" (word :: words)
+      | split0 (c :: s) word words = split0 s (word ^ (String.str c)) words
+    fun split s = List.rev (split0 (String.explode s) "" [])
+  in
+    from line in lines,
+        word in split line
+    group word compute count over ()
+  end;
+> val wordCount = fn : string list -> {count:int, word:string} list
+from p in wordCount lines order p.word;
+> val it =
+>   [{count=2,word="a"},{count=1,word="and"},{count=1,word="but"},
+>    {count=1,word="on"},{count=1,word="sat"},{count=2,word="skunk"},
+>    {count=3,word="stump"},{count=2,word="stunk"},{count=3,word="the"},
+>    {count=2,word="thunk"}] : {count:int, word:string} list
 
 (* --- StrangeLoop 2021 talk -------------------------------------- *)
 
@@ -788,6 +817,32 @@ from e in emps,
 >   [{deptno=10,name="Fred"},{deptno=20,name="Velma"},{deptno=30,name="Shaggy"},
 >    {deptno=30,name="Scooby"}] : {deptno:int, name:string} list
 
+(*) WordCount
+let
+  fun split0 [] word words = word :: words
+    | split0 (#" " :: s) word words = split0 s "" (word :: words)
+    | split0 (c :: s) word words = split0 s (word ^ (String.str c)) words
+  fun split s = List.rev (split0 (String.explode s) "" [])
+in
+  from line in lines,
+    word in split line
+  group word compute {c = count over ()}
+  order word
+end;
+> val it =
+>   [{c=2,word="a"},{c=1,word="and"},{c=1,word="but"},{c=1,word="on"},
+>    {c=1,word="sat"},{c=2,word="skunk"},{c=3,word="stump"},{c=2,word="stunk"},
+>    {c=3,word="the"},{c=2,word="thunk"}] : {c:int, word:string} list
+from p in wordCount ["a skunk sat on a stump",
+    "and thunk the stump stunk",
+    "but the stump thunk the skunk stunk"]
+order p.word;
+> val it =
+>   [{count=2,word="a"},{count=1,word="and"},{count=1,word="but"},
+>    {count=1,word="on"},{count=1,word="sat"},{count=2,word="skunk"},
+>    {count=3,word="stump"},{count=2,word="stunk"},{count=3,word="the"},
+>    {count=2,word="thunk"}] : {count:int, word:string} list
+
 (*) Functions as views, functions as values
 fun emps2 () =
    from e in emps
@@ -833,12 +888,36 @@ fun squareList xs =
 > val squareList = fn : int list -> int list
 squareList [1, 2, 3];
 > val it = [1,4,9] : int list
+
+(*) wordCount again
+fun mapReduce mapper reducer list =
+  from e in (list : 'a list),
+      (k, v) in (mapper e : 'b list)
+    group k compute {c = (fn vs => reducer (k, vs)) over v};
+> val mapReduce = fn
+>   : ('a -> ('b * 'c) list)
+>      -> ('b * 'c list -> 'd) -> 'a list -> {c:'d, k:'b} list
 fun wc_mapper line =
   List.map (fn w => (w, 1)) (split line);
 > val wc_mapper = fn : string -> (string * int) list
 fun wc_reducer (key, values) =
   List.foldl (fn (x, y) => x + y) 0 values;
 > val wc_reducer = fn : 'a * int list -> int
+val wordCount = mapReduce wc_mapper wc_reducer;
+> val wordCount = fn : string list -> {c:int, k:string} list
+from p in wordCount lines order p.k;
+> val it =
+>   [{c=2,k="a"},{c=1,k="and"},{c=1,k="but"},{c=1,k="on"},{c=1,k="sat"},
+>    {c=2,k="skunk"},{c=3,k="stump"},{c=2,k="stunk"},{c=3,k="the"},
+>    {c=2,k="thunk"}] : {c:int, k:string} list
+from line in lines,
+   word in split line
+ group word compute {c = count over ()}
+ order word;
+> val it =
+>   [{c=2,word="a"},{c=1,word="and"},{c=1,word="but"},{c=1,word="on"},
+>    {c=1,word="sat"},{c=2,word="skunk"},{c=3,word="stump"},{c=2,word="stunk"},
+>    {c=3,word="the"},{c=2,word="thunk"}] : {c:int, word:string} list
 
 (* --- More than Query -------------------------------------------- *)
 (* Talk "More than Query", at Data Council, 2025/04/23. *)

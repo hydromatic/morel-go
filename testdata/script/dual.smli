@@ -47,6 +47,34 @@ from n in [1,2,3] where false yield n;
 from n in [1,2,3] where n < 2 orelse n > 2 yield n * 3;
 > val it = [3,9] : int list
 
+from r in [{a=2,b=3},{a=2,b=1},{a=1,b=1}]
+  group r.a
+  order a;
+> val it = [1,2] : int list
+
+from r in [{a=2,b=3},{a=2,b=1},{a=1,b=1}]
+  group {} compute sum over r.b;
+> val it = [5] : int list
+
+from r in [{a=2,b=3}]
+group r.b compute {sb = sum over r.b,
+    mb = min over r.b, a = count over ()};
+> a b mb sb
+> - - -- --
+> 1 3  3  3
+>
+> val it : {a:int, b:int, mb:int, sb:int} list
+
+from r in [{a=2,b=3}]
+group r.b compute {sb = sum over r.b,
+    mb = min over r.b, a = count over ()}
+yield {a, a2 = a + b, sb};
+> a a2 sb
+> - -- --
+> 1  4  3
+>
+> val it : {a:int, a2:int, sb:int} list
+
 from i in [1, 2, 3] union [2, 5, 4];
 > val it = [1,2,3,2,5,4] : int list
 from i in [1, 2, 3] union [2, 5, 4], [2, 1, 7];

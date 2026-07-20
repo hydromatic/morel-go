@@ -309,18 +309,38 @@ func builtinArity(t types.Type) int {
 // order.
 func (c *compiler) compileFrom(from *core.From) (eval.Code, error) {
 	var stages []eval.FromStage
-	var scanPats []core.Pat
+	// rowPats are the patterns whose variables make up the current
+	// row: the scans so far, or a group's output fields once a group
+	// replaces them.
+	var rowPats []core.Pat
+	// allSlots is every slot the query binds, saved and restored as
+	// rows flow through the stages.
+	var allSlots []int
 	var yieldExp core.Exp
 	for _, step := range from.Steps {
-		if y, ok := step.(*core.Yield); ok {
-			yieldExp = y.Exp
-			continue
+		// lint: sort until '^\t}' where '^\tcase '
+		switch s := step.(type) {
+		case *core.Yield:
+			yieldExp = s.Exp
+		case *core.Group:
+			stage, outPats, err := c.compileGroup(s)
+			if err != nil {
+				return nil, err
+			}
+			stages = append(stages, stage)
+			rowPats = outPats
+			allSlots = append(allSlots, c.patSlots(outPats)...)
+		default:
+			stage, err := c.compileStep(step, &rowPats)
+			if err != nil {
+				return nil, err
+			}
+			stages = append(stages, stage)
+			if scan, ok := step.(*core.Scan); ok {
+				allSlots = append(allSlots,
+					c.patSlots([]core.Pat{scan.Pat})...)
+			}
 		}
-		stage, err := c.compileStep(step, &scanPats)
-		if err != nil {
-			return nil, err
-		}
-		stages = append(stages, stage)
 	}
 	var collect eval.Code
 	if yieldExp != nil {
@@ -330,17 +350,57 @@ func (c *compiler) compileFrom(from *core.From) (eval.Code, error) {
 			return nil, err
 		}
 	} else {
-		collect = c.rowCode(scanPats)
+		collect = c.rowCode(rowPats)
 	}
-	// The query's variables are the scan patterns' slots, in label
-	// order so a saved row matches a record value; the pipeline
-	// saves and restores them as rows flow through.
-	ids := sortedVarIDs(scanPats)
+	return eval.From(allSlots, stages, collect), nil
+}
+
+// patSlots returns the frame slots of the patterns' variables.
+func (c *compiler) patSlots(pats []core.Pat) []int {
+	ids := sortedVarIDs(pats)
 	slots := make([]int, len(ids))
 	for i, id := range ids {
 		slots[i] = c.slots[id]
 	}
-	return eval.From(slots, stages, collect), nil
+	return slots
+}
+
+// compileGroup compiles a group step, returning its stage and the
+// output field patterns (the query's variables downstream). The key
+// and aggregate-argument expressions are compiled over the input
+// row's slots; each key and aggregate gets an output slot.
+func (c *compiler) compileGroup(g *core.Group) (eval.FromStage,
+	[]core.Pat, error,
+) {
+	keys := make([]eval.GroupKeyCode, len(g.Keys))
+	outPats := make([]core.Pat, 0, len(g.Keys)+len(g.Aggs))
+	for i, k := range g.Keys {
+		code, err := c.compileExp(k.Exp)
+		if err != nil {
+			return nil, nil, err
+		}
+		keys[i] = eval.GroupKeyCode{Code: code, Slot: c.allocSlot(k.Pat)}
+		outPats = append(outPats, k.Pat)
+	}
+	aggs := make([]eval.GroupAggCode, len(g.Aggs))
+	for i, a := range g.Aggs {
+		fn, err := c.compileExp(a.Fn)
+		if err != nil {
+			return nil, nil, err
+		}
+		var arg eval.Code
+		if a.Arg != nil {
+			arg, err = c.compileExp(a.Arg)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		aggs[i] = eval.GroupAggCode{
+			Fn: fn, Arg: arg, Slot: c.allocSlot(a.Pat),
+		}
+		outPats = append(outPats, a.Pat)
+	}
+	return &eval.GroupStage{Keys: keys, Aggs: aggs}, outPats, nil
 }
 
 // compileStep compiles one query step (other than a trailing
