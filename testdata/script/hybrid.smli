@@ -27,13 +27,28 @@ Sys.set ("stringDepth", ~1);
 Sys.set ("hybrid", true);
 > val it = () : unit
 
+(*) Query on an empty list whose element is not referenced
+from e in []
+  yield {a = 1, b = true};
+> val it = [] : {a:int, b:bool} list
+
 (*) Equivalent, using map
 map (fn e => {a = 1, b = true}) [];
+> val it = [] : {a:int, b:bool} list
+
+(*) Query on an empty list whose element is referenced
+from e in []
+  yield {a = 1 + e, b = true};
 > val it = [] : {a:int, b:bool} list
 
 (*) Equivalent, using map
 map (fn e => {a = 1 + e, b = true}) [];
 > val it = [] : {a:int, b:bool} list
+
+(*) Query on a singleton list whose element is not referenced
+from e in [0]
+  yield {a = 1, b = true};
+> val it = [{a=1,b=true}] : {a:int, b:bool} list
 
 (*) Equivalent, using map
 map (fn e => {a = 1, b = true}) [0];

@@ -1,0 +1,114 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Example of matching regular expressions using combinators.
+ *
+ * Code and text is based upon sections 3.2 and 3.3 of "Seminaïve
+ * Evaluation for a Higher-Order Functional Language" (Arntzenius,
+ * Krishnaswami, 2020).
+ *)
+
+(* "chars" splits a string into a list of (index, character) pairs. *)
+fun chars s =
+    List.tabulate (size s, fn i => (i, String.sub (s, i)));
+> val chars = fn : string -> (int * char) list
+chars "abc";
+> val it = [(0,#"a"),(1,#"b"),(2,#"c")] : (int * char) list
+
+(* The type of regular expression matchers:
+     type re = string -> int * int
+   A regular expression takes a string "s" and returns the set of all
+   pairs "(i, j)" such that the substring "si, . . . , sj − 1" matches the
+   regular expression. *)
+
+(*) Prints a solution
+fun matchStrings (matches: 'a list) s =
+    from (i, j) in matches
+      yield substring (s, i, j - i);
+> val matchStrings = fn : (int * int) list -> string -> string list
+
+(* "sym" finds all matches for a single character "c"; it
+    returns the range "(i, i + 1)" whenever "(i, c) is in "chars s": *)
+fun sym c s =
+    from (i, c2) in chars s
+      where c2 = c
+      yield (i, i + 1);
+> val sym = fn : char -> string -> (int * int) list
+sym #"l" "hello";
+> val it = [(2,3),(3,4)] : (int * int) list
+sym #"z" "hello";
+> val it = [] : (int * int) list
+
+(* "epsilon" finds all matches for the empty regex, i.e. all empty substrings,
+   including the one "beyond the last character" *)
+fun epsilon s =
+    List.tabulate ((size s) + 1, fn i => (i, i));
+> val epsilon = fn : string -> (int * int) list
+epsilon "";
+> val it = [(0,0)] : (int * int) list
+epsilon "abc";
+> val it = [(0,0),(1,1),(2,2),(3,3)] : (int * int) list
+
+(* -------------------------------------------------------------------
+ * The combinators in the previous section found all matches within a
+ * given substring, but often we are not interested in all matches: we
+ * only want to know if a string can match starting at a particular
+ * location. We can easily refactor the combinators above to work in
+ * this style, which illustrates the benefits of tightly integrating
+ * functional and relational styles of programming – we can use
+ * functions to manage strict input/output divisions, and relations to
+ * manage nondeterminism and search.
+ *
+ *   type re = (string * int) -> int list
+ *
+ * Our new type of combinators takes a string and a starting position,
+ * and returns a set of ending positions. For example, "sym c" checks
+ * if "c" occurs at the start position "i", yielding "[i + 1]" if it
+ * does and the empty set otherwise, while epsilon simply returns the
+ * start position i.
+ *)
+
+(*
+ * "matchStringsPos" iterates over all positions in a string,
+ * returning print a pair (index, substring) for each match. It helps
+ * with testing.
+ *)
+fun range n =
+    List.tabulate (n, fn i => i);
+> val range = fn : int -> int list
+
+fun symPos c (s, i) =
+    from (i2, c2) in chars s
+      where i2 = i andalso c2 = c
+      yield i + 1;
+> val symPos = fn : char -> string * int -> int list
+val r = symPos #"l";
+> val r = fn : string * int -> int list
+r ("hello", 1);
+> val it = [] : int list
+r ("hello", 2);
+> val it = [3] : int list
+r ("hello", 3);
+> val it = [4] : int list
+
+fun epsilonPos (s, i) = [i];
+> val epsilonPos = fn : 'a * 'b -> 'b list
+val r = epsilonPos;
+> val r = fn : 'a * 'b -> 'b list
+
+(*) End regex-example.smli

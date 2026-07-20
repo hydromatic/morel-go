@@ -63,6 +63,9 @@ val depts =
 >   [{deptno=10,name="Sales"},{deptno=20,name="Marketing"},
 >    {deptno=30,name="Engineering"},{deptno=40,name="Support"}]
 >   : {deptno:int, name:string} list
+(*) the expression
+from e in emps where e.deptno = 30 yield e.id;
+> val it = [102,103] : int list
 (*) is equivalent to standard ML
 map (fn e => (#id e)) (filter (fn e => (#deptno e) = 30) emps);
 > val it = [102,103] : int list
@@ -226,6 +229,35 @@ val depts =
 >   [{deptno=10,name="Sales"},{deptno=20,name="HR"},
 >    {deptno=30,name="Engineering"},{deptno=40,name="Support"}]
 >   : {deptno:int, name:string} list
+
+(*) Now our first query, equivalent to "select * from emps as e".
+from e in emps yield e;
+> val it =
+>   [{deptno=10,id=100,name="Fred"},{deptno=20,id=101,name="Velma"},
+>    {deptno=30,id=102,name="Shaggy"},{deptno=30,id=103,name="Scooby"}]
+>   : {deptno:int, id:int, name:string} list
+
+(*) Now "select e.id from emps as e where e.deptno = 30"
+from e in emps where (#deptno e) = 30 yield (#id e);
+> val it = [102,103] : int list
+
+(* A query with "exists" and a correlated sub-query.
+ * We define the "exists" function ourselves: no need for a
+ * built-in!
+ *
+ * Note: Since the blog post was written, we have added "exists"
+ * as a keyword; to fix the example, we have added backticks. *)
+let
+  fun exists_ [] = false
+    | exists_ (head :: tail) = true
+in
+  from e in emps
+    where exists_ (from d in depts
+                  where (#deptno d) = (#deptno e)
+                  andalso (#name d) = "Engineering")
+    yield (#name e)
+end;
+> val it = ["Shaggy","Scooby"] : string list
 
 (* That's all, folks!
  * To recap, Morel has:
@@ -428,6 +460,13 @@ val depts =
 >    {deptno=30,name="Engineering"},{deptno=40,name="Support"}]
 >   : {deptno:int, name:string} list
 
+(* Now let's run our first query. *)
+from e in emps yield e;
+> val it =
+>   [{deptno=10,id=100,name="Fred"},{deptno=20,id=101,name="Velma"},
+>    {deptno=30,id=102,name="Shaggy"},{deptno=30,id=103,name="Scooby"}]
+>   : {deptno:int, id:int, name:string} list
+
 (* There is no difference between a query, a table and a list-valued
    expression, so we could have instead written just `emps`. *)
 emps;
@@ -435,6 +474,42 @@ emps;
 >   [{deptno=10,id=100,name="Fred"},{deptno=20,id=101,name="Velma"},
 >    {deptno=30,id=102,name="Shaggy"},{deptno=30,id=103,name="Scooby"}]
 >   : {deptno:int, id:int, name:string} list
+
+(* A where clause filters out rows. *)
+from e in emps
+  where #deptno e = 30
+  yield {id = #id e};
+> val it = [{id=102},{id=103}] : {id:int} list
+
+(* If you omit 'yield' you get the raw values of 'e'. *)
+from e in emps
+  where #deptno e = 30;
+> val it = [{deptno=30,id=102,name="Shaggy"},{deptno=30,id=103,name="Scooby"}]
+>   : {deptno:int, id:int, name:string} list
+
+(* Shorthand. The following 3 queries are equivalent. *)
+from e in emps
+  yield {e = #id e};
+> val it = [{e=100},{e=101},{e=102},{e=103}] : {e:int} list
+from e in emps
+  yield {e = e.id};
+> val it = [{e=100},{e=101},{e=102},{e=103}] : {e:int} list
+
+(* The following query would, in SQL, be described as having 'EXISTS
+   and a correlated sub-query'. But 'exists' is not a built-in keyword
+   in Morel, just a function that we define in the query, and a
+   sub-query is just an expression that happens to return a list. *)
+let
+  fun exists_ [] = false
+    | exists_ (head :: tail) = true
+in
+  from e in emps
+    where exists_ (from d in depts
+                  where d.deptno = e.deptno
+                  andalso d.name = "Engineering")
+    yield e.name
+end;
+> val it = ["Shaggy","Scooby"] : string list
 
 (* --- 2020/03/03: Morel: The basic language ---------------------- *)
 
@@ -632,6 +707,13 @@ List.map
 >   [{deptno=10,name="Fred"},{deptno=20,name="Velma"},{deptno=30,name="Shaggy"},
 >    {deptno=30,name="Scooby"}] : {deptno:int, name:string} list
 
+(*) Chaining relational operators
+from e in emps;
+> val it =
+>   [{deptno=10,id=100,name="Fred"},{deptno=20,id=101,name="Velma"},
+>    {deptno=30,id=102,name="Shaggy"},{deptno=30,id=103,name="Scooby"}]
+>   : {deptno:int, id:int, name:string} list
+
 (*) Integration with Apache Calcite - relational algebra
 Sys.set ("hybrid", true);
 > val it = () : unit
@@ -646,6 +728,12 @@ fun squareList xs = List.map (fn x => x * 2) xs;
 > val squareList = fn : int list -> int list
 squareList [1, 2, 3];
 > val it = [2,4,6] : int list
+fun squareList xs =
+  from x in (xs : 'a list)
+    yield x * x;
+> val squareList = fn : int list -> int list
+squareList [1, 2, 3];
+> val it = [1,4,9] : int list
 fun wc_mapper line =
   List.map (fn w => (w, 1)) (split line);
 > val wc_mapper = fn : string -> (string * int) list
@@ -684,6 +772,11 @@ fun maskToString m =
     maskToString2 (m, "", 5)
   end;
 > val maskToString = fn : int -> string
+fun remaining (words: string list, []) = words
+  | remaining (words, (guess, m) :: rest) =
+      from w in (remaining (words, rest))
+        where maskToString (mask (guess, w)) = m;
+> val remaining = fn : string list * (string * string) list -> string list
 
 (*) Functional programming  –  values, types, operators
 1 + 2;
@@ -742,6 +835,11 @@ val parents = [
 > val parents =
 >   [("earendil","elrond"),("elrond","arwen"),("elrond","elladan"),
 >    ("elrond","elrohir")] : (string * string) list
+from (parent, child) in parents
+  where parent = "elrond";
+> val it =
+>   [{child="arwen",parent="elrond"},{child="elladan",parent="elrond"},
+>    {child="elrohir",parent="elrond"}] : {child:string, parent:string} list
 
 (* --- GCD and LCM ------------------------------------------------ *)
 
@@ -778,6 +876,21 @@ Sys.set ("lineWidth", 65);
 Sys.set ("printLength", 20);
 > val it = () : unit
 
+(* Query over a list of integers. *)
+from i in [1, 2, 3, 4, 5]
+  where i mod 2 = 0;
+> val it = [2,4] : int list
+
+(* Query over a list of (string, int) pairs. *)
+from (name, age) in [("shaggy", 17), ("scooby", 7)]
+  yield {s = name ^ " is " ^ Int.toString(age) ^ "."};
+> s
+> -------------
+> shaggy is 17.
+> scooby is 7.
+>
+> val it : {s:string} list
+
 (*) If you want scans later in a query, use the join step.
 val clients =
   [{cname = "Apple", contact = 7654, city = "BOSTON"},
@@ -807,5 +920,23 @@ val shipments =
 >  2 cider          4      7.5
 >
 > val shipments : {id:int, items:{product:string, quantity:int} list, shipping:real} list
+
+(* Define a table function that returns the even numbers
+   from a collection. *)
+fun evenNumbers (xs: int list) =
+  from x in xs
+    where x mod 2 = 0;
+> val evenNumbers = fn : int list -> int list
+
+(* Define a table function that returns the numbers from
+   a collection that are multiples of base. *)
+fun multiplesOf base (xs: int list) =
+  from x in xs
+    where x mod base = 0;
+> val multiplesOf = fn : int -> int list -> int list
+
+(* --- Coda ------------------------------------------------------- *)
+from message in ["the end"];
+> val it = ["the end"] : string list
 
 (*) End blog.smli

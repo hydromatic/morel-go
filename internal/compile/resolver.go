@@ -218,6 +218,8 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 		return r.toCase(env, e, t)
 	case *ast.Fn:
 		return r.toFn(env, e, t)
+	case *ast.From:
+		return r.toFrom(env, e, t)
 	case *ast.ID:
 		if pat := env.get(e.Name); pat != nil {
 			return &core.ID{Pat: pat}, nil
@@ -326,6 +328,71 @@ func (r *resolver) toApply(env *coreEnv, apply *ast.Apply,
 		Span: apply.Span(),
 	}
 	return apply2, nil
+}
+
+// toFrom converts a query to Core. Only the subset that evaluates
+// so far is supported: a single "in" scan, followed by "where"
+// filters and an optional trailing "yield". Anything else — a
+// scalar scan, a join, a group, an order, or a step after a yield —
+// is not yet convertible, so the statement produces no output.
+func (r *resolver) toFrom(env *coreEnv, from *ast.From,
+	t types.Type,
+) (core.Exp, error) {
+	unsupported := &Error{
+		Span: from.Span(),
+		Msg:  "cannot convert to core: " + from.Op().String(),
+	}
+	if from.Kind != ast.FromOp || len(from.Steps) == 0 {
+		return nil, unsupported
+	}
+	steps := make([]core.FromStep, 0, len(from.Steps))
+	cur := env
+	yielded := false
+	for i, step := range from.Steps {
+		if yielded {
+			// A step after a yield reads the yielded row's fields,
+			// which are not yet rebound in Core.
+			return nil, unsupported
+		}
+		// lint: sort until '^\t\t}' where '^\t\tcase '
+		switch s := step.(type) {
+		case *ast.Scan:
+			if i != 0 || s.Kind != ast.ScanIn || s.On != nil {
+				return nil, unsupported
+			}
+			pat, err := r.toPat(s.Pat)
+			if err != nil {
+				return nil, err
+			}
+			exp, err := r.toExp(cur, s.Exp)
+			if err != nil {
+				return nil, err
+			}
+			steps = append(steps, &core.Scan{Pat: pat, Exp: exp})
+			for _, id := range core.PatIDs(pat) {
+				cur = cur.bind(id)
+			}
+		case *ast.WhereStep:
+			exp, err := r.toExp(cur, s.Exp)
+			if err != nil {
+				return nil, err
+			}
+			steps = append(steps, &core.Where{Exp: exp})
+		case *ast.YieldStep:
+			exp, err := r.toExp(cur, s.Exp)
+			if err != nil {
+				return nil, err
+			}
+			steps = append(steps, &core.Yield{Exp: exp})
+			yielded = true
+		default:
+			return nil, unsupported
+		}
+	}
+	if _, ok := steps[0].(*core.Scan); !ok {
+		return nil, unsupported
+	}
+	return &core.From{T: t, Steps: steps}, nil
 }
 
 // toFn converts a function. A single rule that binds one name

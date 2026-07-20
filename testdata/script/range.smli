@@ -285,6 +285,10 @@ Range.flatten ([] : int range list);
 "a" ^ "b";
 > val it = "ab" : string
 
+(*) Plain comparison in a where clause.
+from x in [1, 2, 3] where x < 2;
+> val it = [1] : int list
+
 (*) List of bool comparisons: no `..` involved, plain list literal.
 [1 < 2, 3 < 4, 5 < 6];
 > val it = [true,true,true] : bool list

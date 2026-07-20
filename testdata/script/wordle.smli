@@ -87,4 +87,17 @@ maskToString 5;
 maskToString (mask ("abcde", "spuds"));
 > val it = "bbbgb" : string
 
+(* Returns the words left after applying a set of filters from previous
+   guesses. *)
+fun remaining (words: 'a list, []) = words
+  | remaining (words, (guess, m) :: rest) =
+      from w in (remaining (words, rest))
+        where maskToString (mask (guess, w)) = m;
+> val remaining = fn : string list * (string * string) list -> string list
+
+fun remaining2 (words: 'a list, guess, m) =
+  from w in words
+    where mask (guess, w) = m;
+> val remaining2 = fn : string list * string * int -> string list
+
 (*) End wordle.smli

@@ -18,6 +18,7 @@
 package compile
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/hydromatic/morel-go/internal/core"
@@ -170,6 +171,8 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 			})), nil
 	case *core.Fn:
 		return c.compileFn(e)
+	case *core.From:
+		return c.compileFrom(e)
 	case *core.ID:
 		if slot, ok := c.resolveSlot(e.Pat); ok {
 			return eval.GetSlot(slot, e.Pat.Name), nil
@@ -292,6 +295,75 @@ func builtinArity(t types.Type) int {
 		return len(tup.Args)
 	}
 	return 1
+}
+
+// compileFrom compiles a query into code that scans its source,
+// filters by the where conditions, and collects each row. The scan
+// source is compiled in the enclosing scope; the scan pattern's
+// variables get frame slots, which the where conditions and the
+// collected value read. With a trailing yield, the collected value
+// is the yield expression; otherwise it is the row itself — the
+// sole bound variable, or a record of them in label order.
+func (c *compiler) compileFrom(from *core.From) (eval.Code, error) {
+	scan, ok := from.Steps[0].(*core.Scan)
+	if !ok {
+		return nil, &Error{Msg: "cannot compile " + from.Op().String()}
+	}
+	source, err := c.compileExp(scan.Exp)
+	if err != nil {
+		return nil, err
+	}
+	pat, err := c.compilePat(scan.Pat)
+	if err != nil {
+		return nil, err
+	}
+	var wheres []eval.Code
+	var yieldExp core.Exp
+	for _, step := range from.Steps[1:] {
+		// lint: sort until '^\t\t}' where '^\t\tcase '
+		switch s := step.(type) {
+		case *core.Where:
+			var w eval.Code
+			w, err = c.compileExp(s.Exp)
+			if err != nil {
+				return nil, err
+			}
+			wheres = append(wheres, w)
+		case *core.Yield:
+			yieldExp = s.Exp
+		default:
+			return nil, &Error{Msg: "cannot compile " + s.Op().String()}
+		}
+	}
+	var collect eval.Code
+	if yieldExp != nil {
+		collect, err = c.compileExp(yieldExp)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		collect = c.rowCode(scan.Pat)
+	}
+	return eval.From(source, pat, wheres, collect), nil
+}
+
+// rowCode is the code for a query row that has no explicit yield:
+// the sole bound variable's value, or a record (a []Val in
+// label-sorted order) of the bound variables.
+func (c *compiler) rowCode(pat core.Pat) eval.Code {
+	ids := core.PatIDs(pat)
+	if len(ids) == 1 {
+		return eval.GetSlot(c.slots[ids[0]], ids[0].Name)
+	}
+	sorted := append([]*core.IDPat(nil), ids...)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Name < sorted[j].Name
+	})
+	args := make([]eval.Code, len(sorted))
+	for i, id := range sorted {
+		args[i] = eval.GetSlot(c.slots[id], id.Name)
+	}
+	return eval.Tuple(args)
 }
 
 // compileFn compiles a function body in its own scope, then

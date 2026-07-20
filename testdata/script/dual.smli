@@ -1,0 +1,76 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Queries that must give the same answer whether evaluated
+ * locally or pushed down to Apache Calcite.
+ *
+ * Morel-Java's suite runs this script twice (see
+ * ScriptTest.testScriptDual): once in local mode, and once in
+ * Calcite ("hybrid") mode with a tracer that fails if any query is
+ * not pushed down. So do not add queries that cannot be pushed down,
+ * and do not call Sys.plan (whose output differs between modes).
+ *
+ * Morel-Rust cannot push queries down to SQL, so runs this test
+ * only in local mode.
+ *)
+
+(* Configuration statements cannot be pushed down; the tracer's deny list
+ * exempts calls to the Sys structure. *)
+Sys.set ("printLength", 64);
+> val it = () : unit
+Sys.set ("stringDepth", ~1);
+> val it = () : unit
+Sys.set ("output", "tabular");
+> val it = () : unit
+
+from n in [1,2,3] yield n;
+> val it = [1,2,3] : int list
+from n in [1,2,3] where n mod 2 = 1 andalso n < 3 yield n;
+> val it = [1] : int list
+from n in [1,2,3] where false yield n;
+> val it = [] : int list
+from n in [1,2,3] where n < 2 orelse n > 2 yield n * 3;
+> val it = [3,9] : int list
+
+(*) Intersect, except, concat via List methods
+List.`except` [[1, 2, 3], [2, 5, 4]];
+> val it = [1,3] : int list
+List.`intersect` [[1, 2, 3], [2, 5, 4]];
+> val it = [2] : int list
+List.`except` [[1, 2, 3], [2, 5, 4], [2, 1, 6]];
+> val it = [3] : int list
+List.`intersect` [[1, 2, 3], [2, 5, 4], [2, 1, 6]];
+> val it = [2] : int list
+List.`intersect` [[1, 1, 2, 3], [1, 1, 5]];
+> val it = [1,1] : int list
+List.concat [[1, 2], [3], [4, 5]];
+> val it = [1,2,3,4,5] : int list
+
+(*) Collections of collections
+[[1, 2], [3]];
+> val it = [[1,2],[3]] : int list list
+[bag [1, 2], bag [3]];
+> val it = [[1,2],[3]] : int bag list
+from l in [[1, 2], [3]];
+> val it = [[1,2],[3]] : int list list
+from l in [[1, 2], [3]] yield List.length l;
+> val it = [2,1] : int list
+Bag.concat [bag [1, 2], bag [3]];
+> val it = [1,2,3] : int bag
+
+(*) End dual.smli

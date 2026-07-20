@@ -703,9 +703,9 @@ func TestExecuteItOnlyOnSuccess(t *testing.T) {
 	runSession(t, [][2]string{
 		{"val y = 7;", "val y = 7 : int"},
 		{"y;", "val it = 7 : int"},
-		// The next statement fails to compile (queries
-		// arrive later), so 'it' keeps its value.
-		{"from i in [1] yield i;", ""},
+		// The next statement does not evaluate yet (a join
+		// arrives later), so 'it' keeps its value.
+		{"from i in [1], j in [2];", ""},
 		{"it;", "val it = 7 : int"},
 	})
 }

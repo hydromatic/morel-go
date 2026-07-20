@@ -1,0 +1,110 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Bags vs lists, and relational operators between the two
+ *)
+Sys.set ("lineWidth", 78);
+> val it = () : unit
+Sys.set ("printDepth", 6);
+> val it = () : unit
+Sys.set ("printLength", 64);
+> val it = () : unit
+Sys.set ("stringDepth", ~1);
+> val it = () : unit
+
+(*) constants
+bag [1,2,3];
+> val it = [1,2,3] : int bag
+bag ([]: int list);
+> val it = [] : int bag
+bag [(1,true),(2,false)];
+> val it = [(1,true),(2,false)] : (int * bool) bag
+bag [[1],[2],[3]];
+> val it = [[1],[2],[3]] : int list bag
+
+(* check that we get good error messages when we apply a list function to
+ * a bag, and vice versa *)
+String.size 1;
+> stdIn:1.1-1.14 Error: Cannot deduce type: conflict: int vs string
+>   raised at: stdIn:1.1-1.14
+List.length List.nil;
+> val it = 0 : int
+Bag.length Bag.nil;
+> val it = 0 : int
+(* TODO
+List.length Bag.nil;
+> val it = 0 : int
+Bag.length List.nil;
+> val it = 0 : int
+*)
+
+(*) assign to variables
+val intList = [1,2,1,3];
+> val intList = [1,2,1,3] : int list
+val intBag = bag intList;
+> val intBag = [1,2,1,3] : int bag
+val emptyIntBag = bag ([]: int list);
+> val emptyIntBag = [] : int bag
+val pairList = [(1,true),(2,false)];
+> val pairList = [(1,true),(2,false)] : (int * bool) list
+val pairBag = bag pairList;
+> val pairBag = [(1,true),(2,false)] : (int * bool) bag
+val recList = [{i=1,b=true}, {i=2,b=false}, {i=1,b=false}];
+> val recList = [{b=true,i=1},{b=false,i=2},{b=false,i=1}]
+>   : {b:bool, i:int} list
+val recBag = bag recList;
+> val recBag = [{b=true,i=1},{b=false,i=2},{b=false,i=1}] : {b:bool, i:int} bag
+
+(*) scan is ordered iff its input is ordered
+from i in [1];
+> val it = [1] : int list
+from i in intList;
+> val it = [1,2,1,3] : int list
+from i in intBag;
+> val it = [1,2,1,3] : int bag
+
+(*) where is ordered iff its input is ordered
+from i in intList where i > 1;
+> val it = [2,3] : int list
+from i in intBag where i > 1;
+> val it = [2,3] : int bag
+
+(*) yield is ordered iff its input is ordered
+from i in intList yield i;
+> val it = [1,2,1,3] : int list
+from i in intBag yield i;
+> val it = [1,2,1,3] : int bag
+from i in intList yield i * 2;
+> val it = [2,4,2,6] : int list
+from i in intBag yield i * 2;
+> val it = [2,4,2,6] : int bag
+from i in intList yield {j=i*i, i};
+> val it = [{i=1,j=1},{i=2,j=4},{i=1,j=1},{i=3,j=9}] : {i:int, j:int} list
+from i in intBag yield {j=i*i, i};
+> val it = [{i=1,j=1},{i=2,j=4},{i=1,j=1},{i=3,j=9}] : {i:int, j:int} bag
+
+fun doubleList list = List.map (fn i => i * 2) list;
+> val doubleList = fn : int list -> int list
+fun doubleBag bag = Bag.map (fn i => i * 2) bag;
+> val doubleBag = fn : int bag -> int bag
+
+(*) dummy
+from message in ["the end"];
+> val it = ["the end"] : string list
+
+(*) End bag.smli
