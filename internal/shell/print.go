@@ -283,6 +283,11 @@ func (c *Config) typeDoc(t types.Type) pp.Doc {
 				pp.Text("-> "), result))))
 	case *types.List:
 		return c.collectionTypeDoc(t.Elem, "list")
+	case *types.Named:
+		if t.Name == bagType && len(t.Args) == 1 {
+			return c.collectionTypeDoc(t.Args[0], bagType)
+		}
+		return pp.Text(t.String())
 	case *types.Record:
 		return c.recordTypeDoc(t)
 	case *types.Tuple:
