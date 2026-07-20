@@ -56,6 +56,12 @@ from r in [{a=2,b=3},{a=2,b=1},{a=1,b=1}]
   group {} compute sum over r.b;
 > val it = [5] : int list
 
+from r in [{a=2,b=3},{a=2,b=1},{a=1,b=1}]
+  group r.a
+  yield a
+  order a;
+> val it = [1,2] : int list
+
 from r in [{a=2,b=3}]
 group r.b compute {sb = sum over r.b,
     mb = min over r.b, a = count over ()};

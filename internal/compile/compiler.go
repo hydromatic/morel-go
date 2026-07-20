@@ -331,7 +331,7 @@ func (c *compiler) compileFrom(from *core.From) (eval.Code, error) {
 			return nil, err
 		}
 	}
-	collect := c.rowCode(b.rowPats)
+	collect := c.rowCode(b.rowPats, collectionElem(from.T))
 	if b.yieldExp != nil {
 		var err error
 		collect, err = c.compileExp(b.yieldExp)
@@ -391,6 +391,14 @@ func (b *fromBuilder) add(step core.FromStep) error {
 		b.rebind(stage, []core.Pat{s.Pat})
 		return nil
 	case *core.Yield:
+		if s.Fields != nil {
+			stage, outPats, err := b.c.compileYield(s)
+			if err != nil {
+				return err
+			}
+			b.rebind(stage, outPats)
+			return nil
+		}
 		b.yieldExp = s.Exp
 		return nil
 	default:
@@ -419,7 +427,7 @@ func (b *fromBuilder) rebind(stage eval.FromStage, outPats []core.Pat) {
 // result to fresh slots.
 func (c *compiler) compileThrough(t *core.Through, rowPats []core.Pat,
 ) (eval.FromStage, error) {
-	row := c.rowCode(rowPats)
+	row := c.rowCode(rowPats, nil)
 	fn, err := c.compileExp(t.Fn)
 	if err != nil {
 		return nil, err
@@ -477,6 +485,25 @@ func (c *compiler) compileGroup(g *core.Group) (eval.FromStage,
 		outPats = append(outPats, a.Pat)
 	}
 	return &eval.GroupStage{Keys: keys, Aggs: aggs}, outPats, nil
+}
+
+// compileYield compiles a mid-query "yield" into a stage that
+// rebinds the row: each field's value is computed from the input
+// row and written to a fresh output slot that later steps read.
+func (c *compiler) compileYield(y *core.Yield) (eval.FromStage,
+	[]core.Pat, error,
+) {
+	fields := make([]eval.YieldFieldCode, len(y.Fields))
+	outPats := make([]core.Pat, len(y.Fields))
+	for i, f := range y.Fields {
+		code, err := c.compileExp(f.Exp)
+		if err != nil {
+			return nil, nil, err
+		}
+		fields[i] = eval.YieldFieldCode{Code: code, Slot: c.allocSlot(f.Pat)}
+		outPats[i] = f.Pat
+	}
+	return &eval.YieldStage{Fields: fields}, outPats, nil
 }
 
 // compileStep compiles one query step (other than a trailing
@@ -572,10 +599,15 @@ var setOpKinds = map[ast.Op]eval.SetOpKind{
 
 // rowCode is the code for a query row that has no explicit yield:
 // the sole bound variable's value, or a record (a []Val in
-// label-sorted order) of all the scan variables.
-func (c *compiler) rowCode(pats []core.Pat) eval.Code {
+// label-sorted order) of all the row variables. A single variable
+// is a bare value — unless it is the sole field of a one-field
+// record row (from "yield {x = e}"), in which case its value is
+// wrapped. That case is told apart from a lone variable that
+// happens to hold a record (a scan of records) by elem being a
+// one-field record whose label is the variable's name.
+func (c *compiler) rowCode(pats []core.Pat, elem types.Type) eval.Code {
 	ids := sortedVarIDs(pats)
-	if len(ids) == 1 {
+	if len(ids) == 1 && !singletonRecord(elem, ids[0].Name) {
 		return eval.GetSlot(c.slots[ids[0]], ids[0].Name)
 	}
 	args := make([]eval.Code, len(ids))
@@ -583,6 +615,26 @@ func (c *compiler) rowCode(pats []core.Pat) eval.Code {
 		args[i] = eval.GetSlot(c.slots[id], id.Name)
 	}
 	return eval.Tuple(args)
+}
+
+// singletonRecord reports whether elem is a record with a single
+// field of the given label.
+func singletonRecord(elem types.Type, label string) bool {
+	rec, ok := elem.(*types.Record)
+	return ok && len(rec.Fields) == 1 && rec.Fields[0].Label == label
+}
+
+// collectionElem is the element type of a list or bag type.
+func collectionElem(t types.Type) types.Type {
+	switch t := t.(type) {
+	case *types.List:
+		return t.Elem
+	case *types.Named:
+		if len(t.Args) == 1 {
+			return t.Args[0]
+		}
+	}
+	return nil
 }
 
 // sortedVarIDs is the patterns' bound variables, sorted by name —

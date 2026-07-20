@@ -250,14 +250,7 @@ func (st *fromState) step(step ast.FromStep) error {
 	case *ast.WhereStep:
 		return st.boolStep(s.Exp)
 	case *ast.YieldStep:
-		yieldFields, vYield, err := r.deduceYield(st.env, s.Exp)
-		if err != nil {
-			return err
-		}
-		st.fields = yieldFields
-		st.curElem = vYield
-		st.env = r.bindStep(st.rootEnv, st.fields, vYield)
-		return nil
+		return st.yieldStep(s)
 	default:
 		return r.unsupportedStep(step)
 	}
@@ -475,12 +468,38 @@ func (r *typeResolver) deduceScan(env typeEnv, scan *ast.Scan,
 	return fields, sourceOrd, nil
 }
 
-// deduceYield types a "yield exp" step, returning the fields the
-// yielded value exposes to later steps and its element type. A
-// record literal exposes its fields by name; any other expression
-// exposes a single field, labelled by its implicit label — the
-// name for "yield x", the field for "yield e.b" — or "current"
-// when it has none.
+// yieldStep types a "yield [binder =] exp" step, updating the
+// current fields, element type, and environment. A binder names the
+// whole row: it exposes a single field of the binder's name and the
+// value's own (unwrapped) type, so bare field names go out of scope.
+func (st *fromState) yieldStep(s *ast.YieldStep) error {
+	if s.Binder != "" {
+		vYield := st.r.u.Variable()
+		err := st.r.deduceExp(st.env, s.Exp, vYield)
+		if err != nil {
+			return err
+		}
+		st.fields = []labelTerm{{label: s.Binder, term: vYield}}
+		st.curElem = vYield
+		st.env = st.r.bindStep(st.rootEnv, st.fields, vYield)
+		return nil
+	}
+	yieldFields, vYield, err := st.r.deduceYield(st.env, s.Exp)
+	if err != nil {
+		return err
+	}
+	st.fields = yieldFields
+	st.curElem = vYield
+	st.env = st.r.bindStep(st.rootEnv, st.fields, vYield)
+	return nil
+}
+
+// deduceYield types the value a "yield" (or group key) exposes,
+// returning the fields it exposes to later steps and its element
+// type. A record literal exposes its fields by name; any other
+// expression exposes a single field, labelled by its implicit
+// label — the name for "yield x", the field for "yield e.b" — or
+// "current" when it has none.
 func (r *typeResolver) deduceYield(env typeEnv, exp ast.Expr,
 ) ([]labelTerm, unify.Term, error) {
 	if rec, ok := exp.(*ast.Record); ok && rec.With == nil {

@@ -125,7 +125,8 @@ func (p *Parser) exprStep(kind ast.Op) ([]ast.FromStep, error) {
 		return nil, err
 	}
 	binder := ""
-	if kind == ast.GroupOp || kind == ast.ComputeOp {
+	if kind == ast.GroupOp || kind == ast.ComputeOp ||
+		kind == ast.YieldOp {
 		binder, err = p.stepBinder()
 		if err != nil {
 			return nil, err
@@ -146,15 +147,17 @@ func (p *Parser) exprStep(kind ast.Op) ([]ast.FromStep, error) {
 		st.Binder = binder
 	case *ast.GroupStep:
 		st.Binder = binder
+	case *ast.YieldStep:
+		st.Binder = binder
 	default:
 	}
 	return []ast.FromStep{step}, nil
 }
 
-// stepBinder recognizes "name =" before a group or compute
-// expression.
+// stepBinder recognizes "name =" before a group, compute, or yield
+// expression. The name may be a quoted identifier.
 func (p *Parser) stepBinder() (string, error) {
-	if p.tok.Kind != token.Ident {
+	if p.tok.Kind != token.Ident && p.tok.Kind != token.QuotedIdent {
 		return "", nil
 	}
 	kind, err := p.peek()
@@ -165,6 +168,9 @@ func (p *Parser) stepBinder() (string, error) {
 		return "", nil
 	}
 	binder := p.tok.Text
+	if p.tok.Kind == token.QuotedIdent {
+		binder = unquoteIdent(binder)
+	}
 	err = p.next()
 	if err != nil {
 		return "", err

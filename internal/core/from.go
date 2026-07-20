@@ -85,9 +85,19 @@ func (*Where) Op() ast.Op { return ast.WhereOp }
 
 func (*Where) fromStep() {}
 
-// Yield is "yield exp": it replaces each row with the value of
-// exp.
+// Yield is "yield exp". As the final step it replaces each row with
+// the value of Exp, which the query collects. As an earlier step it
+// rebinds: Fields are the variables the yielded value exposes to
+// later steps, and Exp is nil.
 type Yield struct {
+	Exp    Exp
+	Fields []YieldField
+}
+
+// YieldField is one variable a mid-query "yield" rebinds: Pat binds
+// its output variable, Exp computes its value from an input row.
+type YieldField struct {
+	Pat *IDPat
 	Exp Exp
 }
 

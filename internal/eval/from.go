@@ -87,6 +87,46 @@ func (s *WhereStage) transform(q *fromCode, f *Frame, rows [][]Val,
 	return out, nil
 }
 
+// YieldStage rebinds each row to the fields a mid-query "yield"
+// exposes: it computes every field from the input row, then clears
+// the query's slots and writes the new field values, so later
+// steps see the yielded variables in place of the old ones.
+type YieldStage struct {
+	Fields []YieldFieldCode
+}
+
+// YieldFieldCode is one field a mid-query "yield" rebinds: Code
+// computes it from an input row, Slot is where its value is written.
+type YieldFieldCode struct {
+	Code Code
+	Slot int
+}
+
+func (s *YieldStage) transform(q *fromCode, f *Frame, rows [][]Val,
+) ([][]Val, error) {
+	out := make([][]Val, 0, len(rows))
+	for i, row := range rows {
+		q.restore(f, row)
+		q.setOrdinal(f, i)
+		vals := make([]Val, len(s.Fields))
+		for j, fld := range s.Fields {
+			v, err := fld.Code.Eval(f)
+			if err != nil {
+				return nil, err
+			}
+			vals[j] = v
+		}
+		for _, slot := range q.slots {
+			f.Slots[slot] = nil
+		}
+		for j, fld := range s.Fields {
+			f.Slots[fld.Slot] = vals[j]
+		}
+		out = append(out, q.snapshot(f))
+	}
+	return out, nil
+}
+
 // OrderStage sorts the rows by the value of Key (ascending).
 type OrderStage struct {
 	Key Code

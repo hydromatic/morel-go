@@ -84,11 +84,13 @@ func NewWhereStep(span token.Span, exp Expr) *WhereStep {
 // Op implements Node.
 func (*WhereStep) Op() Op { return WhereOp }
 
-// YieldStep is a "yield exp" step.
+// YieldStep is a "yield [binder =] exp" step. A binder names the
+// whole output row, a scan-variable-like name.
 type YieldStep struct {
 	stepBase
 
-	Exp Expr
+	Exp    Expr
+	Binder string
 }
 
 // NewYieldStep returns a yield step.

@@ -1162,6 +1162,19 @@ from i in [1, 2],
 >
 > val it : {i:int, j:string} list
 
+(* Single anonymous field. Current is an atom. *)
+from i in [1, 2, 3]
+  yield i mod 2
+  yield current;
+> val it = [1,0,1] : int list
+
+(* Compute the set of distinct rolls of two dice. *)
+from i in [1, 2, 3, 4, 5, 6],
+    j in [1, 2, 3, 4, 5, 6]
+  yield i + j
+  distinct;
+> val it = [2,3,4,5,6,7,8,9,10,11,12] : int list
+
 (* I have two sodas and three candies and give my friend
    one soda and two candies. What do I have left? *)
 from i in ["candy", "soda", "soda", "candy", "candy"]

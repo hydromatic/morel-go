@@ -390,15 +390,22 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 	steps := make([]core.FromStep, 0, len(from.Steps))
 	cur := env
 	var rowVars []*core.IDPat
-	yielded := false
 	for i := 0; i < len(from.Steps); i++ {
 		step := from.Steps[i]
-		if yielded {
-			// A step after a yield reads the yielded row's fields,
-			// which are not yet rebound in Core.
-			return nil, unsupported
-		}
 		r.currentRow = r.buildRow(rowVars)
+		// A "yield" that is not the last step rebinds the row's
+		// variables to the fields the yielded value exposes.
+		if y, ok := step.(*ast.YieldStep); ok &&
+			i < len(from.Steps)-1 {
+			yieldStep, newCur, newVars, err := r.toYieldStep(cur, y)
+			if err != nil {
+				return nil, err
+			}
+			steps = append(steps, yieldStep)
+			cur = newCur
+			rowVars = newVars
+			continue
+		}
 		// A "group" absorbs the "compute" that follows it, so the
 		// aggregates are typed over the pre-group rows.
 		if g, ok := step.(*ast.GroupStep); ok {
@@ -418,13 +425,12 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 			rowVars = groupVars(groupStep)
 			continue
 		}
-		newSteps, newCur, y, err := r.toQueryStep(env, cur, step)
+		newSteps, newCur, _, err := r.toQueryStep(env, cur, step)
 		if err != nil {
 			return nil, err
 		}
 		steps = append(steps, newSteps...)
 		cur = newCur
-		yielded = y
 		rowVars = updateRowVars(rowVars, newSteps)
 	}
 	if _, ok := steps[0].(*core.Scan); !ok {
@@ -558,6 +564,39 @@ func (r *resolver) toGroupStep(cur *coreEnv, group *ast.GroupStep,
 		newCur = newCur.bind(a.Pat)
 	}
 	return &core.Group{Keys: keys, Aggs: aggs}, newCur, nil
+}
+
+// toYieldStep converts a "yield" that is not the last step: each
+// field the yielded value exposes becomes an output variable that
+// later steps see, computed from the input row. A binder exposes a
+// single variable of that name, bound to the whole yielded value.
+func (r *resolver) toYieldStep(cur *coreEnv, s *ast.YieldStep) (
+	core.FromStep, *coreEnv, []*core.IDPat, error,
+) {
+	if s.Binder != "" {
+		exp, err := r.toExp(cur, s.Exp)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		pat := &core.IDPat{T: exp.Type(), Name: s.Binder}
+		field := core.YieldField{Pat: pat, Exp: exp}
+		return &core.Yield{Fields: []core.YieldField{field}},
+			cur.bind(pat), []*core.IDPat{pat}, nil
+	}
+	var fields []core.YieldField
+	newCur := cur
+	var rowVars []*core.IDPat
+	for _, f := range r.stepFields(s.Exp) {
+		exp, err := r.toExp(cur, f.exp)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		pat := &core.IDPat{T: exp.Type(), Name: f.label}
+		fields = append(fields, core.YieldField{Pat: pat, Exp: exp})
+		newCur = newCur.bind(pat)
+		rowVars = append(rowVars, pat)
+	}
+	return &core.Yield{Fields: fields}, newCur, rowVars, nil
 }
 
 // toGroupAgg converts one aggregate field "label = fn over arg" (or

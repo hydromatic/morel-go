@@ -442,6 +442,7 @@ func unparseFrom(b *strings.Builder, f *From) {
 			unparseExpr(b, n.Exp, 0)
 		case *YieldStep:
 			b.WriteString(" yield ")
+			unparseBinder(b, n.Binder)
 			unparseExpr(b, n.Exp, 0)
 		}
 	}

@@ -48,6 +48,15 @@ Char;
 >       succ:char -> char, toCString:char -> string, toLower:char -> char,
 >       toString:char -> string, toUpper:char -> char}
 
+(* Utility function used to test the functions below. *)
+fun testChar (p: char -> bool) =
+  from c in String.explode "Abz0! \t\128\255"
+    yield {b = p c, s = Char.toString c}
+    group b compute concat over s
+    order b
+    yield (b, concat);
+> val testChar = fn : (char -> bool) -> (bool * string) list
+
 Char.ord;
 > val it = fn : char -> int
 
