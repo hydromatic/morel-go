@@ -1149,6 +1149,19 @@ from i in [1, 2, 3, 4, 5],
 >
 > val it : {i:int, odd:bool} list
 
+(* Multiple fields. Current is a record. *)
+from i in [1, 2],
+    j in ["a", "b"]
+  yield current;
+> i j
+> - -
+> 1 a
+> 1 b
+> 2 a
+> 2 b
+>
+> val it : {i:int, j:string} list
+
 (* I have two sodas and three candies and give my friend
    one soda and two candies. What do I have left? *)
 from i in ["candy", "soda", "soda", "candy", "candy"]

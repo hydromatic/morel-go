@@ -42,6 +42,20 @@ func (f *From) Type() types.Type { return f.T }
 
 func (*From) exp() {}
 
+// Ordinal is the query keyword "ordinal": the position of the
+// current row in its collection, an int.
+type Ordinal struct {
+	T types.Type
+}
+
+// Op implements Exp.
+func (*Ordinal) Op() ast.Op { return ast.OrdinalOp }
+
+// Type implements Exp.
+func (o *Ordinal) Type() types.Type { return o.T }
+
+func (*Ordinal) exp() {}
+
 // FromStep is one step of a query.
 type FromStep interface {
 	Op() ast.Op

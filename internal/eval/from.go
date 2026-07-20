@@ -48,8 +48,9 @@ type ScanStage struct {
 func (s *ScanStage) transform(q *fromCode, f *Frame, rows [][]Val,
 ) ([][]Val, error) {
 	var out [][]Val
-	for _, row := range rows {
+	for i, row := range rows {
 		q.restore(f, row)
+		q.setOrdinal(f, i)
 		coll, err := s.Source.Eval(f)
 		if err != nil {
 			return nil, err
@@ -72,8 +73,9 @@ type WhereStage struct {
 func (s *WhereStage) transform(q *fromCode, f *Frame, rows [][]Val,
 ) ([][]Val, error) {
 	out := rows[:0:0]
-	for _, row := range rows {
+	for i, row := range rows {
 		q.restore(f, row)
+		q.setOrdinal(f, i)
 		v, err := s.Cond.Eval(f)
 		if err != nil {
 			return nil, err
@@ -95,6 +97,7 @@ func (s *OrderStage) transform(q *fromCode, f *Frame, rows [][]Val,
 	keys := make([]Val, len(rows))
 	for i, row := range rows {
 		q.restore(f, row)
+		q.setOrdinal(f, i)
 		k, err := s.Key.Eval(f)
 		if err != nil {
 			return nil, err
@@ -616,15 +619,25 @@ func (c *quantCode) Describe() string {
 // over the rows, then collects the value of collect for each — a
 // list or a bag (the same representation). slots are the frame
 // slots the query's variables occupy, saved and restored as each
-// row flows through the stages.
-func From(slots []int, stages []FromStage, collect Code) Code {
-	return &fromCode{slots: slots, stages: stages, collect: collect}
+// row flows through the stages. ordinalSlot is the frame slot that
+// "ordinal" reads, holding each row's position at the current step,
+// or -1 when the query does not use "ordinal".
+func From(slots []int, stages []FromStage, collect Code,
+	ordinalSlot int,
+) Code {
+	return &fromCode{
+		slots:       slots,
+		stages:      stages,
+		collect:     collect,
+		ordinalSlot: ordinalSlot,
+	}
 }
 
 type fromCode struct {
-	collect Code
-	slots   []int
-	stages  []FromStage
+	collect     Code
+	slots       []int
+	stages      []FromStage
+	ordinalSlot int
 }
 
 func (c *fromCode) Eval(f *Frame) (Val, error) {
@@ -637,8 +650,9 @@ func (c *fromCode) Eval(f *Frame) (Val, error) {
 		}
 	}
 	out := []Val{}
-	for _, row := range rows {
+	for i, row := range rows {
 		c.restore(f, row)
+		c.setOrdinal(f, i)
 		v, err := c.collect.Eval(f)
 		if err != nil {
 			return nil, err
@@ -658,6 +672,15 @@ func (c *fromCode) snapshot(f *Frame) []Val {
 		row[i] = f.Slots[slot]
 	}
 	return row
+}
+
+// setOrdinal records a row's position at the current step in the
+// "ordinal" slot, when the query uses "ordinal".
+func (c *fromCode) setOrdinal(f *Frame, i int) {
+	if c.ordinalSlot >= 0 {
+		//nolint:gosec // row counts are far below int32 range
+		f.Slots[c.ordinalSlot] = int32(i)
+	}
 }
 
 func (c *fromCode) restore(f *Frame, row []Val) {

@@ -55,9 +55,10 @@ func Statement(decl core.Decl,
 	values map[string]eval.Val, sys *types.System,
 ) (*Compiled, error) {
 	c := &compiler{
-		values: values,
-		slots:  map[*core.IDPat]int{},
-		sys:    sys,
+		values:      values,
+		slots:       map[*core.IDPat]int{},
+		ordinalSlot: -1,
+		sys:         sys,
 	}
 	var code, plan eval.Code
 	var ids []*core.IDPat
@@ -111,6 +112,10 @@ type compiler struct {
 	sys      *types.System
 	captures []eval.Capture
 	nSlots   int
+	// ordinalSlot is the frame slot holding the current query row's
+	// position, allocated on the first use of "ordinal" in a query,
+	// or -1 when the query does not use it.
+	ordinalSlot int
 }
 
 // resolveSlot returns the frame slot of a variable. A variable
@@ -196,6 +201,12 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 		return eval.Tuple(args), nil
 	case *core.Literal:
 		return eval.Constant(e.Value), nil
+	case *core.Ordinal:
+		if c.ordinalSlot < 0 {
+			c.ordinalSlot = c.nSlots
+			c.nSlots++
+		}
+		return eval.GetSlot(c.ordinalSlot, ordinalName), nil
 	case *core.Selector:
 		return eval.Constant(eval.Nth(e.Index)), nil
 	case *core.Tuple:
@@ -308,6 +319,11 @@ func builtinArity(t types.Type) int {
 // bound variable, or a record of all the scan variables in label
 // order.
 func (c *compiler) compileFrom(from *core.From) (eval.Code, error) {
+	// "ordinal" allocates a slot on first use within this query; a
+	// nested query has its own, so save and restore the outer slot.
+	savedOrdinal := c.ordinalSlot
+	c.ordinalSlot = -1
+	defer func() { c.ordinalSlot = savedOrdinal }()
 	b := &fromBuilder{c: c}
 	for _, step := range from.Steps {
 		err := b.add(step)
@@ -323,7 +339,7 @@ func (c *compiler) compileFrom(from *core.From) (eval.Code, error) {
 			return nil, err
 		}
 	}
-	query := eval.From(b.allSlots, b.stages, collect)
+	query := eval.From(b.allSlots, b.stages, collect, c.ordinalSlot)
 	if b.intoFn != nil {
 		fn, err := c.compileExp(b.intoFn)
 		if err != nil {
@@ -588,10 +604,11 @@ func sortedVarIDs(pats []core.Pat) []*core.IDPat {
 // body referenced from enclosing scopes.
 func (c *compiler) compileFn(fn *core.Fn) (eval.Code, error) {
 	inner := &compiler{
-		values: c.values,
-		slots:  map[*core.IDPat]int{},
-		parent: c,
-		sys:    c.sys,
+		values:      c.values,
+		slots:       map[*core.IDPat]int{},
+		ordinalSlot: -1,
+		parent:      c,
+		sys:         c.sys,
 	}
 	param, err := inner.compilePat(fn.IDPat)
 	if err != nil {

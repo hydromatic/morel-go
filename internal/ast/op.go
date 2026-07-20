@@ -130,6 +130,7 @@ const (
 	IntersectOp
 	ExceptOp
 	OverOp
+	OrdinalOp
 )
 
 var opNames = map[Op]string{
@@ -226,6 +227,7 @@ var opNames = map[Op]string{
 	IntersectOp: "intersect",
 	ExceptOp:    "except",
 	OverOp:      "over",
+	OrdinalOp:   "ordinal",
 }
 
 func (o Op) String() string {

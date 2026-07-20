@@ -40,6 +40,36 @@ func Resolve(resolved *Resolved) (core.Decl, error) {
 // the TypeResolver deduced.
 type resolver struct {
 	typeMap *TypeMap
+	// currentRow is the value that "current" rewrites to inside a
+	// query step: the current row, a record of the query variables
+	// (or the sole variable). It is nil outside a query.
+	currentRow core.Exp
+	// inQuery is true while resolving a query's steps, where
+	// "ordinal" is a valid keyword.
+	inQuery bool
+}
+
+// buildRow is the value of a query row: the sole variable, or a
+// record (a sorted tuple) of the variables. It is what "current"
+// refers to.
+func (r *resolver) buildRow(rowVars []*core.IDPat) core.Exp {
+	if len(rowVars) == 0 {
+		return nil
+	}
+	if len(rowVars) == 1 {
+		return &core.ID{Pat: rowVars[0]}
+	}
+	sorted := append([]*core.IDPat(nil), rowVars...)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Name < sorted[j].Name
+	})
+	fields := make([]types.Field, len(sorted))
+	args := make([]core.Exp, len(sorted))
+	for i, v := range sorted {
+		fields[i] = types.Field{Label: v.Name, Type: v.T}
+		args[i] = &core.ID{Pat: v}
+	}
+	return &core.Tuple{T: r.typeMap.sys.Record(fields), Args: args}
 }
 
 // coreEnv maps a name in scope to the IDPat that declared it, so
@@ -221,6 +251,12 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 	case *ast.From:
 		return r.toFrom(env, e, t)
 	case *ast.ID:
+		if e.Name == currentName && r.currentRow != nil {
+			return r.currentRow, nil
+		}
+		if e.Name == ordinalName && r.inQuery {
+			return &core.Ordinal{T: r.typeMap.sys.Int}, nil
+		}
 		if pat := env.get(e.Name); pat != nil {
 			return &core.ID{Pat: pat}, nil
 		}
@@ -345,8 +381,15 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 	if len(from.Steps) == 0 {
 		return nil, unsupported
 	}
+	// "current" rewrites to the row entering each step, and
+	// "ordinal" is valid; save the outer state for a nested query,
+	// restore it on the way out.
+	savedCurrent, savedInQuery := r.currentRow, r.inQuery
+	defer func() { r.currentRow, r.inQuery = savedCurrent, savedInQuery }()
+	r.inQuery = true
 	steps := make([]core.FromStep, 0, len(from.Steps))
 	cur := env
+	var rowVars []*core.IDPat
 	yielded := false
 	for i := 0; i < len(from.Steps); i++ {
 		step := from.Steps[i]
@@ -355,6 +398,7 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 			// which are not yet rebound in Core.
 			return nil, unsupported
 		}
+		r.currentRow = r.buildRow(rowVars)
 		// A "group" absorbs the "compute" that follows it, so the
 		// aggregates are typed over the pre-group rows.
 		if g, ok := step.(*ast.GroupStep); ok {
@@ -371,6 +415,7 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 			}
 			steps = append(steps, groupStep)
 			cur = newCur
+			rowVars = groupVars(groupStep)
 			continue
 		}
 		newSteps, newCur, y, err := r.toQueryStep(env, cur, step)
@@ -380,11 +425,45 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 		steps = append(steps, newSteps...)
 		cur = newCur
 		yielded = y
+		rowVars = updateRowVars(rowVars, newSteps)
 	}
 	if _, ok := steps[0].(*core.Scan); !ok {
 		return nil, unsupported
 	}
 	return &core.From{T: t, Steps: steps, Kind: from.Kind}, nil
+}
+
+// groupVars is the output variables a group binds: its keys and
+// aggregates.
+func groupVars(step core.FromStep) []*core.IDPat {
+	g, ok := step.(*core.Group)
+	if !ok {
+		return nil
+	}
+	vars := make([]*core.IDPat, 0, len(g.Keys)+len(g.Aggs))
+	for _, k := range g.Keys {
+		vars = append(vars, k.Pat)
+	}
+	for _, a := range g.Aggs {
+		vars = append(vars, a.Pat)
+	}
+	return vars
+}
+
+// updateRowVars adjusts the current row's variables after a step: a
+// scan adds its pattern's variables, a through replaces them.
+func updateRowVars(rowVars []*core.IDPat,
+	newSteps []core.FromStep,
+) []*core.IDPat {
+	for _, s := range newSteps {
+		switch s := s.(type) {
+		case *core.Scan:
+			rowVars = append(rowVars, core.PatIDs(s.Pat)...)
+		case *core.Through:
+			rowVars = core.PatIDs(s.Pat)
+		}
+	}
+	return rowVars
 }
 
 // toQueryStep converts a query step other than a group, returning
@@ -424,6 +503,11 @@ func (r *resolver) toQueryStep(env, cur *coreEnv, step ast.FromStep,
 		return []core.FromStep{&core.Take{Exp: exp}}, cur, false, err
 	case *ast.ThroughStep:
 		return r.toThroughStep(cur, s)
+	case *ast.UnorderStep:
+		// "unorder" only changes orderedness (a bag), which the type
+		// records; the collection value is unchanged, so it produces
+		// no step.
+		return nil, cur, false, nil
 	case *ast.WhereStep:
 		exp, err := r.toExp(cur, s.Exp)
 		return []core.FromStep{&core.Where{Exp: exp}}, cur, false, err
