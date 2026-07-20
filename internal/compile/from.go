@@ -61,9 +61,6 @@ func (st *fromState) elemTerm() unify.Term {
 func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 	v *unify.Var,
 ) error {
-	if from.Kind != ast.FromOp {
-		return r.unsupportedFrom(from)
-	}
 	st := &fromState{r: r, rootEnv: rootEnv, env: rootEnv}
 	steps := from.Steps
 	for i := 0; i < len(steps); i++ {
@@ -88,6 +85,19 @@ func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 			return err
 		}
 	}
+	// "exists" and "forall" reduce a query to a boolean; the last
+	// step of a "forall" must be "require".
+	if from.Kind == ast.ForallOp {
+		err := checkForallRequire(from)
+		if err != nil {
+			return err
+		}
+	}
+	if from.Kind == ast.ExistsOp || from.Kind == ast.ForallOp {
+		r.regEquiv(from, v, r.primTerm(boolName))
+		return nil
+	}
+	// "into" and a standalone "compute" reduce the query to a scalar.
 	if st.scalar != nil {
 		r.regEquiv(from, v, st.scalar)
 		return nil
@@ -98,6 +108,26 @@ func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 		ord = r.u.Atom(orderedName)
 	}
 	r.regEquiv(from, v, r.collectionTerm(st.elemTerm(), ord))
+	return nil
+}
+
+// checkForallRequire reports an error unless a "forall" query's
+// last step is "require".
+func checkForallRequire(from *ast.From) error {
+	var last ast.FromStep
+	if len(from.Steps) > 0 {
+		last = from.Steps[len(from.Steps)-1]
+	}
+	if _, ok := last.(*ast.RequireStep); !ok {
+		span := from.Span()
+		if last != nil {
+			span = last.Span()
+		}
+		return &Error{
+			Span: span,
+			Msg:  "last step of 'forall' must be 'require'",
+		}
+	}
 	return nil
 }
 
@@ -118,6 +148,8 @@ func (st *fromState) step(step ast.FromStep) error {
 		return nil
 	case *ast.DistinctStep:
 		return nil
+	case *ast.IntoStep:
+		return st.intoStep(s)
 	case *ast.OrderStep:
 		err := r.deduceExp(st.env, s.Exp, r.u.Variable())
 		if err != nil {
@@ -125,6 +157,8 @@ func (st *fromState) step(step ast.FromStep) error {
 		}
 		st.ord = r.u.Atom(orderedName)
 		return nil
+	case *ast.RequireStep:
+		return st.boolStep(s.Exp)
 	case *ast.Scan:
 		newFields, sourceOrd, err := r.deduceScan(st.env, s)
 		if err != nil {
@@ -147,17 +181,13 @@ func (st *fromState) step(step ast.FromStep) error {
 		return r.deduceCount(st.rootEnv, s.Exp)
 	case *ast.TakeStep:
 		return r.deduceCount(st.rootEnv, s.Exp)
+	case *ast.ThroughStep:
+		return st.throughStep(s)
 	case *ast.UnorderStep:
 		st.ord = r.u.Atom(unorderedName)
 		return nil
 	case *ast.WhereStep:
-		vBool := r.u.Variable()
-		err := r.deduceExp(st.env, s.Exp, vBool)
-		if err != nil {
-			return err
-		}
-		r.equiv(vBool, r.primTerm(boolName))
-		return nil
+		return st.boolStep(s.Exp)
 	case *ast.YieldStep:
 		yieldFields, vYield, err := r.deduceYield(st.env, s.Exp)
 		if err != nil {
@@ -185,6 +215,63 @@ func (st *fromState) groupStep(g *ast.GroupStep,
 	st.fields = fields
 	st.curElem = elem
 	st.env = st.r.bindStep(st.rootEnv, fields, elem)
+	return nil
+}
+
+// boolStep types a step whose expression must be a boolean, such as
+// "where" or "require".
+func (st *fromState) boolStep(exp ast.Expr) error {
+	vBool := st.r.u.Variable()
+	err := st.r.deduceExp(st.env, exp, vBool)
+	if err != nil {
+		return err
+	}
+	st.r.equiv(vBool, st.r.primTerm(boolName))
+	return nil
+}
+
+// intoStep types "into f": f reduces the whole input collection to
+// a scalar, adapting to the input's orderedness by the function's
+// kind, exactly as an aggregate does.
+func (st *fromState) intoStep(s *ast.IntoStep) error {
+	rv := st.r.u.Variable()
+	err := st.r.deduceAggregate(st.env, s.Exp, st.elemTerm(),
+		st.r.orDefaultOrd(st.ord), rv)
+	if err != nil {
+		return err
+	}
+	st.scalar = rv
+	return nil
+}
+
+// throughStep types "through pat in f": f maps the input collection
+// to a new one, pat binds the new element, and the result's
+// orderedness comes from f's result type.
+func (st *fromState) throughStep(s *ast.ThroughStep) error {
+	r := st.r
+	elem := r.u.Variable()
+	var termMap []patTerm
+	err := r.deducePat(s.Pat, &termMap, nil, elem)
+	if err != nil {
+		return err
+	}
+	inColl := r.collectionTerm(st.elemTerm(),
+		r.asOrdVar(r.orDefaultOrd(st.ord)))
+	outOrd := r.u.Variable()
+	vFn := r.u.Variable()
+	err = r.deduceExp(st.env, s.Exp, vFn)
+	if err != nil {
+		return err
+	}
+	r.equiv(vFn, r.fnTerm(inColl, r.collectionTerm(elem, outOrd)))
+	fields := make([]labelTerm, len(termMap))
+	for i, pt := range termMap {
+		fields[i] = labelTerm{label: pt.name, term: pt.term}
+	}
+	st.fields = fields
+	st.curElem = elem
+	st.ord = outOrd
+	st.env = r.bindStep(st.rootEnv, fields, elem)
 	return nil
 }
 
@@ -420,13 +507,6 @@ func (r *typeResolver) bindStep(rootEnv typeEnv, fields []labelTerm,
 	}
 	env = bind(env, currentName, elem)
 	return bind(env, ordinalName, r.primTerm(intName))
-}
-
-func (r *typeResolver) unsupportedFrom(from *ast.From) error {
-	return &Error{
-		Span: from.Span(),
-		Msg:  "cannot deduce type for " + from.Op().String(),
-	}
 }
 
 // unsupportedStep reports a query step whose form is not yet

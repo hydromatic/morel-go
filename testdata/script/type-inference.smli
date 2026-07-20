@@ -385,6 +385,8 @@ yield i div 10;
 > val it : {sum:int} list
 :t from {c, a, ...} in [{a=1.0,b=true,c=3},{a=1.5,b=true,c=4}];
 > val it : {a:real, c:int} list
+:t from d in [{a=1,b=true}] yield d.a into sum;
+> val it : int
 
 :t
 from a in [1], b in [true] yield (b,a) where c;
@@ -538,6 +540,42 @@ in
   from r2 in records
 end;
 > val it : {i:int, j:int} list
+
+(* "map String.size" has type "string list -> int list",
+   and therefore the type of "j" is "int". *)
+:t
+from s in ["ab","c"]
+  through j in (map String.size);
+> val it : int list
+
+:t
+from s in ["ab","c"]
+ through j in (map String.size)
+ yield j + 2;
+> val it : int list
+
+:t
+from s in bag ["ab","c"]
+  through j in (Bag.map String.size)
+  yield j + 2;
+> val it : int bag
+
+(*) into
+:t from d in [{a=1,b=true}] yield d.a into List.length;
+> val it : int
+:t from d in bag [{a=1,b=true}] yield d.a into Bag.length;
+> val it : int
+
+(*) exists, forall
+:t exists d in [{a=1,b=true}] where d.a = 0;
+> val it : bool
+:t forall d in [{a=1,b=true}] require d.a = 0;
+> val it : bool
+
+:t
+forall d in [{a=1,b=true}];
+> stdIn:1.8-1.27 Error: last step of 'forall' must be 'require'
+>   raised at: stdIn:1.8-1.27
 
 (*) [MOREL-343] Same type var constrains both params to same type
 fun same (x: 'a, y: 'a) = (x, y);
