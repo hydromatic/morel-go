@@ -37,6 +37,28 @@ false implies true implies false;
 false implies (true implies false);
 > val it = true : bool
 
+(* --- Exists ----------------------------------------------------- *)
+
+(* Exists in a lambda. *)
+val g = fn f => exists i in [1, 2, 3] where f i;
+> val g = fn : (int -> bool) -> bool
+g (fn i => i mod 2 = 0);
+> val it = true : bool
+g (fn i => i mod 5 = 0);
+> val it = false : bool
+
+(* Exists with a join in a lambda. *)
+val g2 = fn f => exists i in [1, 2, 3] join j in [3, 4] on f (i, j);
+> val g2 = fn : (int * int -> bool) -> bool
+g2 (fn (i, j) => j - i = 2);
+> val it = true : bool
+
+(* As previous, but with a spurious 'yield' step. *)
+val g3 = fn f => exists i in [1, 2, 3] join j in [3, 4] on f (i, j) yield i + j;
+> val g3 = fn : (int * int -> bool) -> bool
+g3 (fn (i, j) => j - i = 2);
+> val it = true : bool
+
 (*) 'exists' must not have 'into'
 exists e in scott.emps where e.deptno = 20 into sum;
 > stdIn:1.44-1.52 Error: 'into' step must not occur in 'exists'
@@ -51,6 +73,19 @@ exists e in scott.emps where e.deptno = 20 compute min over e.job;
 exists e in scott.emps where e.deptno = 20 require false;
 > stdIn:1.44-1.57 Error: 'require' step must not occur in 'exists'
 >   raised at: stdIn:1.44-1.57
+
+(* --- Forall ----------------------------------------------------- *)
+
+forall i in [2, 4, 6] require i mod 2 = 0;
+> val it = true : bool
+forall i in [2, 3, 4] require i mod 2 = 0;
+> val it = false : bool
+forall i in [] require i mod 2 = 0;
+> val it = true : bool
+forall i in [2, 3, 4, 12, 14] require i > 10 implies i mod 2 = 0;
+> val it = true : bool
+forall i in [2, 3, 4, 12, 14] where i > 10 require i mod 2 = 0;
+> val it = true : bool
 
 (*) 'forall' requires 'require'
 forall i in [2, 3, 4, 12, 14] where i > 10;

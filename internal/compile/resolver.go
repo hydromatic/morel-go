@@ -342,7 +342,7 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 		Span: from.Span(),
 		Msg:  "cannot convert to core: " + from.Op().String(),
 	}
-	if from.Kind != ast.FromOp || len(from.Steps) == 0 {
+	if len(from.Steps) == 0 {
 		return nil, unsupported
 	}
 	steps := make([]core.FromStep, 0, len(from.Steps))
@@ -384,7 +384,7 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 	if _, ok := steps[0].(*core.Scan); !ok {
 		return nil, unsupported
 	}
-	return &core.From{T: t, Steps: steps}, nil
+	return &core.From{T: t, Steps: steps, Kind: from.Kind}, nil
 }
 
 // toQueryStep converts a query step other than a group, returning
@@ -399,9 +399,17 @@ func (r *resolver) toQueryStep(env, cur *coreEnv, step ast.FromStep,
 	switch s := step.(type) {
 	case *ast.DistinctStep:
 		return []core.FromStep{&core.Distinct{}}, cur, false, nil
+	case *ast.IntoStep:
+		fn, err := r.toExp(cur, s.Exp)
+		return []core.FromStep{&core.Into{Fn: fn}}, cur, true, err
 	case *ast.OrderStep:
 		exp, err := r.toExp(cur, s.Exp)
 		return []core.FromStep{&core.Order{Exp: exp}}, cur, false, err
+	case *ast.RequireStep:
+		// "require p" in a "forall" reduces to yielding p, whose
+		// truth for every row the quantifier then checks.
+		exp, err := r.toExp(cur, s.Exp)
+		return []core.FromStep{&core.Yield{Exp: exp}}, cur, true, err
 	case *ast.Scan:
 		scanSteps, newCur, err := r.toScanStep(cur, s)
 		return scanSteps, newCur, false, err
@@ -414,6 +422,8 @@ func (r *resolver) toQueryStep(env, cur *coreEnv, step ast.FromStep,
 	case *ast.TakeStep:
 		exp, err := r.toExp(env, s.Exp)
 		return []core.FromStep{&core.Take{Exp: exp}}, cur, false, err
+	case *ast.ThroughStep:
+		return r.toThroughStep(cur, s)
 	case *ast.WhereStep:
 		exp, err := r.toExp(cur, s.Exp)
 		return []core.FromStep{&core.Where{Exp: exp}}, cur, false, err
@@ -541,6 +551,27 @@ func (r *resolver) toSetOpStep(env *coreEnv, s *ast.SetOpStep) (
 		args[i] = a
 	}
 	return &core.SetOp{Kind: s.Kind, Args: args, Distinct: s.Distinct}, nil
+}
+
+// toThroughStep converts a "through pat in f" step: f maps the
+// collection to a new one whose elements pat binds. The pattern's
+// variables become the query's variables downstream.
+func (r *resolver) toThroughStep(cur *coreEnv, s *ast.ThroughStep,
+) ([]core.FromStep, *coreEnv, bool, error) {
+	pat, err := r.toPat(s.Pat)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	fn, err := r.toExp(cur, s.Exp)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	newCur := cur
+	for _, id := range core.PatIDs(pat) {
+		newCur = newCur.bind(id)
+	}
+	return []core.FromStep{&core.Through{Pat: pat, Fn: fn}}, newCur,
+		false, nil
 }
 
 // toScanStep converts an "in" scan, returning the Core steps it

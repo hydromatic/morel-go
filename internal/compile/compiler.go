@@ -308,51 +308,111 @@ func builtinArity(t types.Type) int {
 // bound variable, or a record of all the scan variables in label
 // order.
 func (c *compiler) compileFrom(from *core.From) (eval.Code, error) {
-	var stages []eval.FromStage
-	// rowPats are the patterns whose variables make up the current
-	// row: the scans so far, or a group's output fields once a group
-	// replaces them.
-	var rowPats []core.Pat
-	// allSlots is every slot the query binds, saved and restored as
-	// rows flow through the stages.
-	var allSlots []int
-	var yieldExp core.Exp
+	b := &fromBuilder{c: c}
 	for _, step := range from.Steps {
-		// lint: sort until '^\t}' where '^\tcase '
-		switch s := step.(type) {
-		case *core.Yield:
-			yieldExp = s.Exp
-		case *core.Group:
-			stage, outPats, err := c.compileGroup(s)
-			if err != nil {
-				return nil, err
-			}
-			stages = append(stages, stage)
-			rowPats = outPats
-			allSlots = append(allSlots, c.patSlots(outPats)...)
-		default:
-			stage, err := c.compileStep(step, &rowPats)
-			if err != nil {
-				return nil, err
-			}
-			stages = append(stages, stage)
-			if scan, ok := step.(*core.Scan); ok {
-				allSlots = append(allSlots,
-					c.patSlots([]core.Pat{scan.Pat})...)
-			}
-		}
-	}
-	var collect eval.Code
-	if yieldExp != nil {
-		var err error
-		collect, err = c.compileExp(yieldExp)
+		err := b.add(step)
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		collect = c.rowCode(rowPats)
 	}
-	return eval.From(allSlots, stages, collect), nil
+	collect := c.rowCode(b.rowPats)
+	if b.yieldExp != nil {
+		var err error
+		collect, err = c.compileExp(b.yieldExp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	query := eval.From(b.allSlots, b.stages, collect)
+	if b.intoFn != nil {
+		fn, err := c.compileExp(b.intoFn)
+		if err != nil {
+			return nil, err
+		}
+		return eval.Into(query, fn), nil
+	}
+	if from.Kind == ast.ExistsOp {
+		return eval.Exists(query), nil
+	}
+	if from.Kind == ast.ForallOp {
+		return eval.Forall(query), nil
+	}
+	return query, nil
+}
+
+// fromBuilder accumulates a query's pipeline: its stages, the
+// patterns making up the current row (rowPats, replaced by a group
+// or through), every bound slot (allSlots), and a trailing yield or
+// into.
+type fromBuilder struct {
+	c        *compiler
+	stages   []eval.FromStage
+	rowPats  []core.Pat
+	allSlots []int
+	yieldExp core.Exp
+	intoFn   core.Exp
+}
+
+// add compiles one query step into the builder.
+func (b *fromBuilder) add(step core.FromStep) error {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch s := step.(type) {
+	case *core.Group:
+		stage, outPats, err := b.c.compileGroup(s)
+		if err != nil {
+			return err
+		}
+		b.rebind(stage, outPats)
+		return nil
+	case *core.Into:
+		b.intoFn = s.Fn
+		return nil
+	case *core.Through:
+		stage, err := b.c.compileThrough(s, b.rowPats)
+		if err != nil {
+			return err
+		}
+		b.rebind(stage, []core.Pat{s.Pat})
+		return nil
+	case *core.Yield:
+		b.yieldExp = s.Exp
+		return nil
+	default:
+		stage, err := b.c.compileStep(step, &b.rowPats)
+		if err != nil {
+			return err
+		}
+		b.stages = append(b.stages, stage)
+		if scan, ok := step.(*core.Scan); ok {
+			b.allSlots = append(b.allSlots,
+				b.c.patSlots([]core.Pat{scan.Pat})...)
+		}
+		return nil
+	}
+}
+
+// rebind adds a stage that replaces the current row with new fields.
+func (b *fromBuilder) rebind(stage eval.FromStage, outPats []core.Pat) {
+	b.stages = append(b.stages, stage)
+	b.rowPats = outPats
+	b.allSlots = append(b.allSlots, b.c.patSlots(outPats)...)
+}
+
+// compileThrough compiles a through step: the input row's value
+// feeds the function, and the pattern binds each element of the
+// result to fresh slots.
+func (c *compiler) compileThrough(t *core.Through, rowPats []core.Pat,
+) (eval.FromStage, error) {
+	row := c.rowCode(rowPats)
+	fn, err := c.compileExp(t.Fn)
+	if err != nil {
+		return nil, err
+	}
+	pat, err := c.compilePat(t.Pat)
+	if err != nil {
+		return nil, err
+	}
+	return &eval.ThroughStage{Row: row, Fn: fn, Pat: pat}, nil
 }
 
 // patSlots returns the frame slots of the patterns' variables.

@@ -1384,6 +1384,23 @@ in
 end;
 > val it = ["Shaggy","Scooby"] : string list
 
+(*) into and through
+from i in [1,2,3]
+  through i2 in (map (fn x => [x]));
+> val it = [[1],[2],[3]] : int list list
+
+from i in [1,2,3]
+  through i2 in (map (fn x => [x]))
+  through i3 in (map (fn x => [x]));
+> val it = [[[1]],[[2]],[[3]]] : int list list list
+
+(* The function in a 'through' may be a structure member such as
+   'List.map'; resolving it rewrites the expression, which once left the
+   step's type unregistered and threw a NullPointerException. *)
+from i in [1,2,3]
+  through xs in (List.map (fn x => x * 10));
+> val it = [10,20,30] : int list
+
 (*) "threes" is a function that groups a list into sublists of 3
 (* (or fewer) elements each. *)
 fun threes list =
@@ -1408,9 +1425,20 @@ threes [1,2,3,4];
 threes [1,2,3,4,5];
 > val it = [[4,5],[1,2,3]] : int list list
 
+from i in [0,1,2,3,4,5,6,7,8,9,10]
+  through j in threes;
+> val it = [[9,10],[6,7,8],[3,4,5],[0,1,2]] : int list list
+
 (* As "threes", but returns a bag. *)
 fun threeBag list = bag (threes list);
 > val threeBag = fn : 'a list -> 'a list bag
+
+(* When we switch the query to use "threeBag" rather than "threes",
+   the input still must be a list, but the output changes from
+   "list list" to "list bag". *)
+from i in [0,1,2,3,4,5,6,7,8,9,10]
+  through j in threeBag;
+> val it = [[9,10],[6,7,8],[3,4,5],[0,1,2]] : int list bag
 
 (* let ------------------------------------------------------------ *)
 

@@ -25,10 +25,13 @@ import (
 // From is a query expression: a sequence of steps that scan
 // collections, filter and transform rows, and produce a
 // collection. Its type gives the result's element type and
-// orderedness (a list or a bag).
+// orderedness (a list or a bag). Kind is FromOp for an ordinary
+// query, or ExistsOp/ForallOp for a quantifier that reduces to a
+// boolean.
 type From struct {
 	T     types.Type
 	Steps []FromStep
+	Kind  ast.Op
 }
 
 // Op implements Exp.
@@ -147,6 +150,29 @@ type GroupAgg struct {
 func (*Group) Op() ast.Op { return ast.GroupOp }
 
 func (*Group) fromStep() {}
+
+// Into is "into f": it applies f to the whole collection,
+// producing a scalar.
+type Into struct {
+	Fn Exp
+}
+
+// Op implements FromStep.
+func (*Into) Op() ast.Op { return ast.IntoOp }
+
+func (*Into) fromStep() {}
+
+// Through is "through pat in f": it applies f to the collection and
+// binds pat to each element of the result.
+type Through struct {
+	Pat Pat
+	Fn  Exp
+}
+
+// Op implements FromStep.
+func (*Through) Op() ast.Op { return ast.ThroughOp }
+
+func (*Through) fromStep() {}
 
 // SetOp is "union"/"intersect"/"except [distinct] exp, ...": it
 // combines the query rows so far with the argument collections.

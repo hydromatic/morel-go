@@ -1180,12 +1180,22 @@ fun evenNumbers (xs: int list) =
     where x mod 2 = 0;
 > val evenNumbers = fn : int list -> int list
 
+(* Use the table function in a query. *)
+from i in [1, 2, 3, 4, 5, 6, 7]
+  through j in evenNumbers;
+> val it = [2,4,6] : int list
+
 (* Define a table function that returns the numbers from
    a collection that are multiples of base. *)
 fun multiplesOf base (xs: int list) =
   from x in xs
     where x mod base = 0;
 > val multiplesOf = fn : int -> int list -> int list
+
+(* Use the table function to find multiples of 3. *)
+from i in [1, 2, 3, 4, 5, 6, 7]
+  through j in multiplesOf 3;
+> val it = [3,6] : int list
 
 (* I have two sodas and three candies, and my friend has
    one soda and one candy. What do we have if we combine

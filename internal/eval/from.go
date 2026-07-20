@@ -507,6 +507,111 @@ func (a *GroupAggCode) eval(q *fromCode, f *Frame, rows [][]Val,
 	return ApplyVal(fn, args)
 }
 
+// ThroughStage applies Fn to the collection of input rows (each
+// built by Row) and binds Pat to every element of the result, which
+// become the new rows.
+type ThroughStage struct {
+	Row Code
+	Fn  Code
+	Pat Pat
+}
+
+func (s *ThroughStage) transform(q *fromCode, f *Frame, rows [][]Val,
+) ([][]Val, error) {
+	in := make([]Val, len(rows))
+	for i, row := range rows {
+		q.restore(f, row)
+		v, err := s.Row.Eval(f)
+		if err != nil {
+			return nil, err
+		}
+		in[i] = v
+	}
+	fn, err := s.Fn.Eval(f)
+	if err != nil {
+		return nil, err
+	}
+	out, err := ApplyVal(fn, in)
+	if err != nil {
+		return nil, err
+	}
+	elems, _ := out.([]Val)
+	rows2 := make([][]Val, 0, len(elems))
+	for _, elem := range elems {
+		for _, slot := range q.slots {
+			f.Slots[slot] = nil
+		}
+		if s.Pat.Match(elem, f) {
+			rows2 = append(rows2, q.snapshot(f))
+		}
+	}
+	return rows2, nil
+}
+
+// Into returns code that applies fn to the collection a query
+// produces, yielding a scalar.
+func Into(query, fn Code) Code {
+	return &intoCode{query: query, fn: fn}
+}
+
+type intoCode struct {
+	query Code
+	fn    Code
+}
+
+func (c *intoCode) Eval(f *Frame) (Val, error) {
+	coll, err := c.query.Eval(f)
+	if err != nil {
+		return nil, err
+	}
+	fn, err := c.fn.Eval(f)
+	if err != nil {
+		return nil, err
+	}
+	return ApplyVal(fn, coll)
+}
+
+func (c *intoCode) Describe() string {
+	return "into(" + c.fn.Describe() + ")"
+}
+
+// Exists returns code that reduces a query to whether it has any
+// row. Forall returns whether every row's value (the "require"
+// predicate) is true.
+func Exists(query Code) Code { return &quantCode{query: query} }
+
+// Forall returns code that reduces a query to whether every row's
+// value is true.
+func Forall(query Code) Code {
+	return &quantCode{query: query, forall: true}
+}
+
+type quantCode struct {
+	query  Code
+	forall bool
+}
+
+func (c *quantCode) Eval(f *Frame) (Val, error) {
+	v, err := c.query.Eval(f)
+	if err != nil {
+		return nil, err
+	}
+	rows, _ := v.([]Val)
+	if !c.forall {
+		return len(rows) > 0, nil
+	}
+	for _, row := range rows {
+		if b, _ := row.(bool); !b {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (c *quantCode) Describe() string {
+	return "quant(" + c.query.Describe() + ")"
+}
+
 // From returns code that evaluates a query: it runs the stages
 // over the rows, then collects the value of collect for each — a
 // list or a bag (the same representation). slots are the frame
