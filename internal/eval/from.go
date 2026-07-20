@@ -17,49 +17,46 @@
 
 package eval
 
-// From returns code that evaluates a query: it scans a source
-// collection, binding pat to each element, keeps the elements the
-// where conditions accept, and collects the value of collect for
-// each — a list or a bag, the same representation either way.
-func From(source Code, pat Pat, wheres []Code, collect Code) Code {
-	return &fromCode{
-		source:  source,
-		pat:     pat,
-		wheres:  wheres,
-		collect: collect,
-	}
+// FromStage is one stage of a query pipeline: a scan that iterates
+// a collection binding a pattern, or a where that filters rows.
+type FromStage interface {
+	fromStage()
+}
+
+// ScanStage iterates Source, binding Pat to each element. Source is
+// evaluated in the current frame, so a later scan may depend on the
+// variables an earlier one bound.
+type ScanStage struct {
+	Source Code
+	Pat    Pat
+}
+
+func (*ScanStage) fromStage() {}
+
+// WhereStage keeps the rows for which Cond is true.
+type WhereStage struct {
+	Cond Code
+}
+
+func (*WhereStage) fromStage() {}
+
+// From returns code that evaluates a query: it runs the stages —
+// nested scans and filters — and collects the value of collect for
+// each surviving row, as a list or a bag (the same representation).
+func From(stages []FromStage, collect Code) Code {
+	return &fromCode{stages: stages, collect: collect}
 }
 
 type fromCode struct {
-	source  Code
-	pat     Pat
 	collect Code
-	wheres  []Code
+	stages  []FromStage
 }
 
 func (c *fromCode) Eval(f *Frame) (Val, error) {
-	coll, err := c.source.Eval(f)
+	out := []Val{}
+	err := c.run(f, 0, &out)
 	if err != nil {
 		return nil, err
-	}
-	elems, _ := coll.([]Val)
-	out := []Val{}
-	for _, elem := range elems {
-		if !c.pat.Match(elem, f) {
-			continue
-		}
-		keep, err := c.accept(f)
-		if err != nil {
-			return nil, err
-		}
-		if !keep {
-			continue
-		}
-		row, err := c.collect.Eval(f)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, row)
 	}
 	return out, nil
 }
@@ -68,17 +65,44 @@ func (c *fromCode) Describe() string {
 	return "from(" + c.collect.Describe() + ")"
 }
 
-// accept reports whether the current row passes every where
-// condition.
-func (c *fromCode) accept(f *Frame) (bool, error) {
-	for _, w := range c.wheres {
-		v, err := w.Eval(f)
+// run processes stage i, calling itself for stage i+1 per surviving
+// row; at the end it collects the row.
+func (c *fromCode) run(f *Frame, i int, out *[]Val) error {
+	if i == len(c.stages) {
+		row, err := c.collect.Eval(f)
 		if err != nil {
-			return false, err
+			return err
 		}
-		if b, _ := v.(bool); !b {
-			return false, nil
-		}
+		*out = append(*out, row)
+		return nil
 	}
-	return true, nil
+	switch s := c.stages[i].(type) {
+	case *ScanStage:
+		coll, err := s.Source.Eval(f)
+		if err != nil {
+			return err
+		}
+		elems, _ := coll.([]Val)
+		for _, elem := range elems {
+			if !s.Pat.Match(elem, f) {
+				continue
+			}
+			err := c.run(f, i+1, out)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	case *WhereStage:
+		v, err := s.Cond.Eval(f)
+		if err != nil {
+			return err
+		}
+		if b, _ := v.(bool); b {
+			return c.run(f, i+1, out)
+		}
+		return nil
+	default:
+		return nil
+	}
 }

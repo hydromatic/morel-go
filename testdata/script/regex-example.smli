@@ -64,6 +64,28 @@ epsilon "";
 epsilon "abc";
 > val it = [(0,0),(1,1),(2,2),(3,3)] : (int * int) list
 
+(* Appending regexes r1, r2 amounts to relation composition, since we wish to
+   find all substrings consisting of adjacent substrings "si . . . sj − 1" and
+   "sj . . . sk − 1" matching r1 and r2 respectively: *)
+fun seq r1 r2 s =
+    from (i, j) in (r1 s : 'a list),
+        (j2, k) in (r2 s : 'a list)
+      where j = j2 + 0
+      yield (i + 0, k + 0);
+> val seq = fn
+>   : ('a -> (int * int) list)
+>      -> ('a -> (int * int) list) -> 'a -> (int * int) list
+(*) match "l" followed by "o" in "hello"
+seq (sym #"l") (sym #"o") "hello";
+> val it = [(3,5)] : (int * int) list
+
+(*) Match a string by converting it into a sequence of character matches.
+fun syms cs s =
+    foldr (fn (c, r) => seq (sym c) r) epsilon (explode cs) s;
+> val syms = fn : string -> string -> (int * int) list
+syms "el" "hello";
+> val it = [(1,3)] : (int * int) list
+
 (* -------------------------------------------------------------------
  * The combinators in the previous section found all matches within a
  * given substring, but often we are not interested in all matches: we
@@ -91,6 +113,12 @@ epsilon "abc";
 fun range n =
     List.tabulate (n, fn i => i);
 > val range = fn : int -> int list
+fun matchStringsPos r s =
+  from i in range (size s),
+      j in (r (s, i) : 'a list)
+    yield (i, substring (s, i, j - i));
+> val matchStringsPos = fn
+>   : (string * int -> int list) -> string -> (int * string) list
 
 fun symPos c (s, i) =
     from (i2, c2) in chars s
@@ -105,10 +133,27 @@ r ("hello", 2);
 > val it = [3] : int list
 r ("hello", 3);
 > val it = [4] : int list
+matchStringsPos r "hello";
+> val it = [(2,"l"),(3,"l")] : (int * string) list
 
 fun epsilonPos (s, i) = [i];
 > val epsilonPos = fn : 'a * 'b -> 'b list
 val r = epsilonPos;
 > val r = fn : 'a * 'b -> 'b list
+matchStringsPos r "hello";
+> val it = [(0,""),(1,""),(2,""),(3,""),(4,"")] : (int * string) list
+
+(* Appending regexes "seq r1 r2" simply applies "r2" starting from every ending
+   position that "r1" can find: *)
+fun seqPos r1 r2 (s, i) =
+    from j in (r1 (s, i) : 'a list),
+        k in (r2 (s, j) : 'b list)
+      yield k;
+> val seqPos = fn
+>   : ('a * 'b -> 'c list) -> ('a * 'c -> 'd list) -> 'a * 'b -> 'd list
+val r = seqPos (symPos #"l") (symPos #"o");
+> val r = fn : string * int -> int list
+matchStringsPos r "hello";
+> val it = [(3,"lo")] : (int * string) list
 
 (*) End regex-example.smli

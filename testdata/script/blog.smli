@@ -74,6 +74,18 @@ from e in emps where e.deptno = 30 yield e.id;
 (*) is equivalent to standard ML
 map (fn e => (#id e)) (filter (fn e => (#deptno e) = 30) emps);
 > val it = [102,103] : int list
+
+(* You can iterate over more than one collection, and therefore
+ * generate a join or a cartesian product: *)
+from e in emps, d in depts
+  where e.deptno = d.deptno
+  yield {e.id, e.deptno, ename = e.name, dname = d.name};
+> val it =
+>   [{deptno=10,dname="Sales",ename="Fred",id=100},
+>    {deptno=20,dname="Marketing",ename="Velma",id=101},
+>    {deptno=30,dname="Engineering",ename="Shaggy",id=102},
+>    {deptno=30,dname="Engineering",ename="Scooby",id=103}]
+>   : {deptno:int, dname:string, ename:string, id:int} list
 (* As in any ML expression, you can define functions within a from
  * expression, and those functions can operate on lists. Thus we can
  * implement equivalents of SQL's IN and EXISTS operators: *)
@@ -246,6 +258,18 @@ from e in emps yield e;
 from e in emps where (#deptno e) = 30 yield (#id e);
 > val it = [102,103] : int list
 
+(*) Join two relations
+from e in emps, d in depts
+  where (#deptno e) = (#deptno d)
+  yield {id = (#id e), deptno = (#deptno e),
+         ename = (#name e), dname = (#name d)};
+> val it =
+>   [{deptno=10,dname="Sales",ename="Fred",id=100},
+>    {deptno=20,dname="HR",ename="Velma",id=101},
+>    {deptno=30,dname="Engineering",ename="Shaggy",id=102},
+>    {deptno=30,dname="Engineering",ename="Scooby",id=103}]
+>   : {deptno:int, dname:string, ename:string, id:int} list
+
 (* A query with "exists" and a correlated sub-query.
  * We define the "exists" function ourselves: no need for a
  * built-in!
@@ -288,6 +312,14 @@ val hr = {
 >   {depts=[{deptno=10,name="SALES"}],emps=[{deptno=10,id=100,name="SCOTT"}]}
 >   : {depts:{deptno:int, name:string} list,
 >       emps:{deptno:int, id:int, name:string} list}
+
+(*) here is a query in Morel:
+from e in hr.emps,
+    d in hr.depts
+where e.deptno = d.deptno
+yield {e.id, e.deptno, ename = e.name, dname = d.name};
+> val it = [{deptno=10,dname="SALES",ename="SCOTT",id=100}]
+>   : {deptno:int, dname:string, ename:string, id:int} list
 
 (* --- 2020/03/03: Morel: The basic language ---------------------- *)
 
@@ -509,6 +541,18 @@ from e in emps
   yield {e.id};
 > val it = [{id=100},{id=101},{id=102},{id=103}] : {id:int} list
 
+(* Joins and sub-queries. *)
+from e in emps,
+    d in depts
+  where e.deptno = d.deptno
+  yield {e.id, e.deptno, ename = e.name, dname = d.name};
+> val it =
+>   [{deptno=10,dname="Sales",ename="Fred",id=100},
+>    {deptno=20,dname="HR",ename="Velma",id=101},
+>    {deptno=30,dname="Engineering",ename="Shaggy",id=102},
+>    {deptno=30,dname="Engineering",ename="Scooby",id=103}]
+>   : {deptno:int, dname:string, ename:string, id:int} list
+
 (* The following query would, in SQL, be described as having 'EXISTS
    and a correlated sub-query'. But 'exists' is not a built-in keyword
    in Morel, just a function that we define in the query, and a
@@ -721,6 +765,22 @@ List.map
 >   [{deptno=10,name="Fred"},{deptno=20,name="Velma"},{deptno=30,name="Shaggy"},
 >    {deptno=30,name="Scooby"}] : {deptno:int, name:string} list
 
+(*) Implementing Join in Morel using `from`
+from e in emps,
+    d in depts
+  where e.deptno = d.deptno
+  yield {d.deptno, e.name};
+> val it =
+>   [{deptno=10,name="Fred"},{deptno=20,name="Velma"},{deptno=30,name="Shaggy"},
+>    {deptno=30,name="Scooby"}] : {deptno:int, name:string} list
+from e in emps,
+    d in depts
+  where #deptno e = #deptno d
+  yield {deptno = #deptno d, name = #name e};
+> val it =
+>   [{deptno=10,name="Fred"},{deptno=20,name="Velma"},{deptno=30,name="Shaggy"},
+>    {deptno=30,name="Scooby"}] : {deptno:int, name:string} list
+
 (*) Functions as views, functions as values
 fun emps2 () =
    from e in emps
@@ -856,6 +916,15 @@ val bands = [["john", "paul", "george", "ringo"], ["simon", "garfunkel"]];
 > val bands = [["john","paul","george","ringo"],["simon","garfunkel"]]
 >   : string list list
 
+(*) Lists, bags, sets in Morel
+from i in [1, 2],
+    j in ["a", "b"],
+    k in [3, 4, 5, 6]
+  where i + k < 6;
+> val it =
+>   [{i=1,j="a",k=3},{i=1,j="a",k=4},{i=1,j="b",k=3},{i=1,j="b",k=4},
+>    {i=2,j="a",k=3},{i=2,j="b",k=3}] : {i:int, j:string, k:int} list
+
 (*) Empty summary table.
 val summary = [] : {c:int, deptno:int, sum_sal:real} list;
 > val summary = [] : {c:int, deptno:int, sum_sal:real} list
@@ -927,6 +996,18 @@ from (name, age) in [("shaggy", 17), ("scooby", 7)]
 >
 > val it : {s:string} list
 
+(* If there are multiple scans, the query generates a cartesian product: *)
+from i in [2, 3],
+  s in ["ab", "cde"];
+> i s
+> - ---
+> 2 ab
+> 2 cde
+> 3 ab
+> 3 cde
+>
+> val it : {i:int, s:string} list
+
 (*) If you want scans later in a query, use the join step.
 val clients =
   [{cname = "Apple", contact = 7654, city = "BOSTON"},
@@ -956,6 +1037,31 @@ val shipments =
 >  2 cider          4      7.5
 >
 > val shipments : {id:int, items:{product:string, quantity:int} list, shipping:real} list
+
+(* Iterate over the shipments and their items. *)
+from s in shipments,
+    i in s.items
+  yield {s.id, i.product, i.quantity};
+> id product quantity
+> -- ------- --------
+>  1 soda          12
+>  1 beer           3
+>  2 cider          4
+>
+> val it : {id:int, product:string, quantity:int} list
+
+(* Equivalent using "in" and a singleton list. *)
+from i in [1, 2, 3, 4, 5],
+    odd in [(i mod 2 = 1)];
+> i odd
+> - -----
+> 1 true
+> 2 false
+> 3 true
+> 4 false
+> 5 true
+>
+> val it : {i:int, odd:bool} list
 
 (* Define a table function that returns the even numbers
    from a collection. *)

@@ -348,7 +348,7 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 	steps := make([]core.FromStep, 0, len(from.Steps))
 	cur := env
 	yielded := false
-	for i, step := range from.Steps {
+	for _, step := range from.Steps {
 		if yielded {
 			// A step after a yield reads the yielded row's fields,
 			// which are not yet rebound in Core.
@@ -357,21 +357,12 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 		// lint: sort until '^\t\t}' where '^\t\tcase '
 		switch s := step.(type) {
 		case *ast.Scan:
-			if i != 0 || s.Kind != ast.ScanIn || s.On != nil {
-				return nil, unsupported
-			}
-			pat, err := r.toPat(s.Pat)
+			scanSteps, newCur, err := r.toScanStep(cur, s)
 			if err != nil {
 				return nil, err
 			}
-			exp, err := r.toExp(cur, s.Exp)
-			if err != nil {
-				return nil, err
-			}
-			steps = append(steps, &core.Scan{Pat: pat, Exp: exp})
-			for _, id := range core.PatIDs(pat) {
-				cur = cur.bind(id)
-			}
+			steps = append(steps, scanSteps...)
+			cur = newCur
 		case *ast.WhereStep:
 			exp, err := r.toExp(cur, s.Exp)
 			if err != nil {
@@ -393,6 +384,45 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 		return nil, unsupported
 	}
 	return &core.From{T: t, Steps: steps}, nil
+}
+
+// toScanStep converts an "in" scan, returning the Core steps it
+// produces (a scan, plus a where for a "join ... on" condition) and
+// the environment extended with the scan's variables. A scalar
+// ("=") scan is not yet supported.
+func (r *resolver) toScanStep(cur *coreEnv, s *ast.Scan) (
+	[]core.FromStep, *coreEnv, error,
+) {
+	if s.Kind != ast.ScanIn {
+		return nil, nil, &Error{
+			Span: s.Span(),
+			Msg:  "cannot convert to core: " + s.Op().String(),
+		}
+	}
+	pat, err := r.toPat(s.Pat)
+	if err != nil {
+		return nil, nil, err
+	}
+	// The source is in the current scope, so a later scan may
+	// depend on an earlier scan's variables.
+	exp, err := r.toExp(cur, s.Exp)
+	if err != nil {
+		return nil, nil, err
+	}
+	steps := []core.FromStep{&core.Scan{Pat: pat, Exp: exp}}
+	for _, id := range core.PatIDs(pat) {
+		cur = cur.bind(id)
+	}
+	// A "join ... on" condition filters over the scan's variables,
+	// so it lowers to a where after the scan.
+	if s.On != nil {
+		on, err := r.toExp(cur, s.On)
+		if err != nil {
+			return nil, nil, err
+		}
+		steps = append(steps, &core.Where{Exp: on})
+	}
+	return steps, cur, nil
 }
 
 // toFn converts a function. A single rule that binds one name

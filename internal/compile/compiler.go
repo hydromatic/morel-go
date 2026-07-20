@@ -297,38 +297,39 @@ func builtinArity(t types.Type) int {
 	return 1
 }
 
-// compileFrom compiles a query into code that scans its source,
-// filters by the where conditions, and collects each row. The scan
-// source is compiled in the enclosing scope; the scan pattern's
-// variables get frame slots, which the where conditions and the
-// collected value read. With a trailing yield, the collected value
-// is the yield expression; otherwise it is the row itself — the
-// sole bound variable, or a record of them in label order.
+// compileFrom compiles a query into a pipeline of stages that
+// scan collections and filter rows, then collect each surviving
+// row. A scan's source is compiled in the current scope, so a
+// later scan may depend on an earlier one's variables; its pattern
+// gets frame slots, which the following stages and the collected
+// value read. With a trailing yield, the collected value is the
+// yield expression; otherwise it is the row itself — the sole
+// bound variable, or a record of all the scan variables in label
+// order.
 func (c *compiler) compileFrom(from *core.From) (eval.Code, error) {
-	scan, ok := from.Steps[0].(*core.Scan)
-	if !ok {
-		return nil, &Error{Msg: "cannot compile " + from.Op().String()}
-	}
-	source, err := c.compileExp(scan.Exp)
-	if err != nil {
-		return nil, err
-	}
-	pat, err := c.compilePat(scan.Pat)
-	if err != nil {
-		return nil, err
-	}
-	var wheres []eval.Code
+	var stages []eval.FromStage
+	var scanPats []core.Pat
 	var yieldExp core.Exp
-	for _, step := range from.Steps[1:] {
+	for _, step := range from.Steps {
 		// lint: sort until '^\t\t}' where '^\t\tcase '
 		switch s := step.(type) {
-		case *core.Where:
-			var w eval.Code
-			w, err = c.compileExp(s.Exp)
+		case *core.Scan:
+			source, err := c.compileExp(s.Exp)
 			if err != nil {
 				return nil, err
 			}
-			wheres = append(wheres, w)
+			pat, err := c.compilePat(s.Pat)
+			if err != nil {
+				return nil, err
+			}
+			stages = append(stages, &eval.ScanStage{Source: source, Pat: pat})
+			scanPats = append(scanPats, s.Pat)
+		case *core.Where:
+			cond, err := c.compileExp(s.Exp)
+			if err != nil {
+				return nil, err
+			}
+			stages = append(stages, &eval.WhereStage{Cond: cond})
 		case *core.Yield:
 			yieldExp = s.Exp
 		default:
@@ -337,21 +338,25 @@ func (c *compiler) compileFrom(from *core.From) (eval.Code, error) {
 	}
 	var collect eval.Code
 	if yieldExp != nil {
+		var err error
 		collect, err = c.compileExp(yieldExp)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		collect = c.rowCode(scan.Pat)
+		collect = c.rowCode(scanPats)
 	}
-	return eval.From(source, pat, wheres, collect), nil
+	return eval.From(stages, collect), nil
 }
 
 // rowCode is the code for a query row that has no explicit yield:
 // the sole bound variable's value, or a record (a []Val in
-// label-sorted order) of the bound variables.
-func (c *compiler) rowCode(pat core.Pat) eval.Code {
-	ids := core.PatIDs(pat)
+// label-sorted order) of all the scan variables.
+func (c *compiler) rowCode(pats []core.Pat) eval.Code {
+	ids := make([]*core.IDPat, 0, len(pats))
+	for _, pat := range pats {
+		ids = append(ids, core.PatIDs(pat)...)
+	}
 	if len(ids) == 1 {
 		return eval.GetSlot(c.slots[ids[0]], ids[0].Name)
 	}

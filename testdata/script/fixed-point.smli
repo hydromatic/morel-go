@@ -154,6 +154,189 @@ val coastal_states = ["WA", "OR", "CA", "TX", "LA", "MS",
 > val coastal_states =
 >   ["WA","OR","CA","TX","LA","MS","AL","GA","FL","SC","NC","VA","MD","DE","NJ",
 >    "NY","CT","RI","MA","ME","NH","AK","HI"] : string list
+
+(*) Pairs of states that share a border
+val neighbors =
+  from s in adjacent_states,
+      adjacent in s.adjacents
+  yield {s.state, adjacent};
+> val neighbors =
+>   [{adjacent="MS",state="AL"},{adjacent="TN",state="AL"},
+>    {adjacent="GA",state="AL"},{adjacent="FL",state="AL"},
+>    {adjacent="MO",state="AR"},{adjacent="TN",state="AR"},
+>    {adjacent="MS",state="AR"},{adjacent="LA",state="AR"},
+>    {adjacent="TX",state="AR"},{adjacent="OK",state="AR"},
+>    {adjacent="CA",state="AZ"},{adjacent="NV",state="AZ"},
+>    {adjacent="UT",state="AZ"},{adjacent="CO",state="AZ"},
+>    {adjacent="NM",state="AZ"},{adjacent="OR",state="CA"},
+>    {adjacent="NV",state="CA"},{adjacent="AZ",state="CA"},
+>    {adjacent="WY",state="CO"},{adjacent="NE",state="CO"},
+>    {adjacent="KS",state="CO"},{adjacent="OK",state="CO"},
+>    {adjacent="NM",state="CO"},{adjacent="AZ",state="CO"},
+>    {adjacent="UT",state="CO"},{adjacent="NY",state="CT"},
+>    {adjacent="MA",state="CT"},{adjacent="RI",state="CT"},
+>    {adjacent="MD",state="DC"},{adjacent="VA",state="DC"},
+>    {adjacent="MD",state="DE"},{adjacent="PA",state="DE"},
+>    {adjacent="NJ",state="DE"},{adjacent="AL",state="FL"},
+>    {adjacent="GA",state="FL"},{adjacent="FL",state="GA"},
+>    {adjacent="AL",state="GA"},{adjacent="TN",state="GA"},
+>    {adjacent="NC",state="GA"},{adjacent="SC",state="GA"},
+>    {adjacent="MN",state="IA"},{adjacent="WI",state="IA"},
+>    {adjacent="IL",state="IA"},{adjacent="MO",state="IA"},
+>    {adjacent="NE",state="IA"},{adjacent="SD",state="IA"},
+>    {adjacent="MT",state="ID"},{adjacent="WY",state="ID"},
+>    {adjacent="UT",state="ID"},{adjacent="NV",state="ID"},
+>    {adjacent="OR",state="ID"},{adjacent="WA",state="ID"},
+>    {adjacent="IN",state="IL"},{adjacent="KY",state="IL"},
+>    {adjacent="MO",state="IL"},{adjacent="IA",state="IL"},
+>    {adjacent="WI",state="IL"},{adjacent="MI",state="IN"},
+>    {adjacent="OH",state="IN"},{adjacent="KY",state="IN"},
+>    {adjacent="IL",state="IN"},{adjacent="NE",state="KS"},
+>    {adjacent="MO",state="KS"},{adjacent="OK",state="KS"},
+>    {adjacent="CO",state="KS"},{adjacent="IN",state="KY"},
+>    {adjacent="OH",state="KY"},{adjacent="WV",state="KY"},
+>    {adjacent="VA",state="KY"},{adjacent="TN",state="KY"},
+>    {adjacent="MO",state="KY"},{adjacent="IL",state="KY"},
+>    {adjacent="TX",state="LA"},{adjacent="AR",state="LA"},
+>    {adjacent="MS",state="LA"},{adjacent="RI",state="MA"},
+>    {adjacent="CT",state="MA"},{adjacent="NY",state="MA"},
+>    {adjacent="NH",state="MA"},{adjacent="VT",state="MA"},
+>    {adjacent="VA",state="MD"},{adjacent="WV",state="MD"},
+>    {adjacent="PA",state="MD"},{adjacent="DC",state="MD"},
+>    {adjacent="DE",state="MD"},{adjacent="NH",state="ME"},
+>    {adjacent="WI",state="MI"},{adjacent="IN",state="MI"},
+>    {adjacent="OH",state="MI"},{adjacent="WI",state="MN"},
+>    {adjacent="IA",state="MN"},{adjacent="SD",state="MN"},
+>    {adjacent="ND",state="MN"},{adjacent="IA",state="MO"},
+>    {adjacent="IL",state="MO"},{adjacent="KY",state="MO"},
+>    {adjacent="TN",state="MO"},{adjacent="AR",state="MO"},
+>    {adjacent="OK",state="MO"},{adjacent="KS",state="MO"},
+>    {adjacent="NE",state="MO"},{adjacent="LA",state="MS"},
+>    {adjacent="AR",state="MS"},{adjacent="TN",state="MS"},
+>    {adjacent="AL",state="MS"},{adjacent="ND",state="MT"},
+>    {adjacent="SD",state="MT"},{adjacent="WY",state="MT"},
+>    {adjacent="ID",state="MT"},{adjacent="VA",state="NC"},
+>    {adjacent="TN",state="NC"},{adjacent="GA",state="NC"},
+>    {adjacent="SC",state="NC"},{adjacent="MN",state="ND"},
+>    {adjacent="SD",state="ND"},{adjacent="MT",state="ND"},
+>    {adjacent="SD",state="NE"},{adjacent="IA",state="NE"},
+>    {adjacent="MO",state="NE"},{adjacent="KS",state="NE"},
+>    {adjacent="CO",state="NE"},{adjacent="WY",state="NE"},
+>    {adjacent="VT",state="NH"},{adjacent="ME",state="NH"},
+>    {adjacent="MA",state="NH"},{adjacent="DE",state="NJ"},
+>    {adjacent="PA",state="NJ"},{adjacent="NY",state="NJ"},
+>    {adjacent="AZ",state="NM"},{adjacent="UT",state="NM"},
+>    {adjacent="CO",state="NM"},{adjacent="OK",state="NM"},
+>    {adjacent="TX",state="NM"},{adjacent="ID",state="NV"},
+>    {adjacent="UT",state="NV"},{adjacent="AZ",state="NV"},
+>    {adjacent="CA",state="NV"},{adjacent="OR",state="NV"},
+>    {adjacent="NJ",state="NY"},{adjacent="PA",state="NY"},
+>    {adjacent="VT",state="NY"},{adjacent="MA",state="NY"},
+>    {adjacent="CT",state="NY"},{adjacent="PA",state="OH"},
+>    {adjacent="WV",state="OH"},{adjacent="KY",state="OH"},
+>    {adjacent="IN",state="OH"},{adjacent="MI",state="OH"},
+>    {adjacent="KS",state="OK"},{adjacent="MO",state="OK"},
+>    {adjacent="AR",state="OK"},{adjacent="TX",state="OK"},
+>    {adjacent="NM",state="OK"},{adjacent="CO",state="OK"},
+>    {adjacent="CA",state="OR"},{adjacent="NV",state="OR"},
+>    {adjacent="ID",state="OR"},{adjacent="WA",state="OR"},
+>    {adjacent="NY",state="PA"},{adjacent="NJ",state="PA"},
+>    {adjacent="DE",state="PA"},{adjacent="MD",state="PA"},
+>    {adjacent="WV",state="PA"},{adjacent="OH",state="PA"},
+>    {adjacent="CT",state="RI"},{adjacent="MA",state="RI"},
+>    {adjacent="GA",state="SC"},{adjacent="NC",state="SC"},
+>    {adjacent="ND",state="SD"},{adjacent="MN",state="SD"},
+>    {adjacent="IA",state="SD"},{adjacent="NE",state="SD"},
+>    {adjacent="WY",state="SD"},{adjacent="MT",state="SD"},
+>    {adjacent="KY",state="TN"},{adjacent="VA",state="TN"},
+>    {adjacent="NC",state="TN"},{adjacent="GA",state="TN"},
+>    {adjacent="AL",state="TN"},{adjacent="MS",state="TN"},
+>    {adjacent="AR",state="TN"},{adjacent="MO",state="TN"},
+>    {adjacent="NM",state="TX"},{adjacent="OK",state="TX"},
+>    {adjacent="AR",state="TX"},{adjacent="LA",state="TX"},
+>    {adjacent="ID",state="UT"},{adjacent="WY",state="UT"},
+>    {adjacent="CO",state="UT"},{adjacent="NM",state="UT"},
+>    {adjacent="AZ",state="UT"},{adjacent="NV",state="UT"},
+>    {adjacent="NC",state="VA"},{adjacent="TN",state="VA"},
+>    {adjacent="KY",state="VA"},{adjacent="WV",state="VA"},
+>    {adjacent="MD",state="VA"},{adjacent="DC",state="VA"},
+>    {adjacent="NY",state="VT"},{adjacent="NH",state="VT"},
+>    {adjacent="MA",state="VT"},{adjacent="ID",state="WA"},
+>    {adjacent="OR",state="WA"},{adjacent="MI",state="WI"},
+>    {adjacent="MN",state="WI"},{adjacent="IA",state="WI"},
+>    {adjacent="IL",state="WI"},{adjacent="OH",state="WV"},
+>    {adjacent="PA",state="WV"},{adjacent="MD",state="WV"},
+>    {adjacent="VA",state="WV"},{adjacent="KY",state="WV"},
+>    {adjacent="MT",state="WY"},{adjacent="SD",state="WY"},
+>    {adjacent="NE",state="WY"},{adjacent="CO",state="WY"},
+>    {adjacent="UT",state="WY"},{adjacent="ID",state="WY"}]
+>   : {adjacent:string, state:string} list
+
+(*) As neighbors, but a list of pairs, not a list of records.
+val pairs =
+  from n in neighbors
+    yield (n.state, n.adjacent);
+> val pairs =
+>   [("AL","MS"),("AL","TN"),("AL","GA"),("AL","FL"),("AR","MO"),("AR","TN"),
+>    ("AR","MS"),("AR","LA"),("AR","TX"),("AR","OK"),("AZ","CA"),("AZ","NV"),
+>    ("AZ","UT"),("AZ","CO"),("AZ","NM"),("CA","OR"),("CA","NV"),("CA","AZ"),
+>    ("CO","WY"),("CO","NE"),("CO","KS"),("CO","OK"),("CO","NM"),("CO","AZ"),
+>    ("CO","UT"),("CT","NY"),("CT","MA"),("CT","RI"),("DC","MD"),("DC","VA"),
+>    ("DE","MD"),("DE","PA"),("DE","NJ"),("FL","AL"),("FL","GA"),("GA","FL"),
+>    ("GA","AL"),("GA","TN"),("GA","NC"),("GA","SC"),("IA","MN"),("IA","WI"),
+>    ("IA","IL"),("IA","MO"),("IA","NE"),("IA","SD"),("ID","MT"),("ID","WY"),
+>    ("ID","UT"),("ID","NV"),("ID","OR"),("ID","WA"),("IL","IN"),("IL","KY"),
+>    ("IL","MO"),("IL","IA"),("IL","WI"),("IN","MI"),("IN","OH"),("IN","KY"),
+>    ("IN","IL"),("KS","NE"),("KS","MO"),("KS","OK"),("KS","CO"),("KY","IN"),
+>    ("KY","OH"),("KY","WV"),("KY","VA"),("KY","TN"),("KY","MO"),("KY","IL"),
+>    ("LA","TX"),("LA","AR"),("LA","MS"),("MA","RI"),("MA","CT"),("MA","NY"),
+>    ("MA","NH"),("MA","VT"),("MD","VA"),("MD","WV"),("MD","PA"),("MD","DC"),
+>    ("MD","DE"),("ME","NH"),("MI","WI"),("MI","IN"),("MI","OH"),("MN","WI"),
+>    ("MN","IA"),("MN","SD"),("MN","ND"),("MO","IA"),("MO","IL"),("MO","KY"),
+>    ("MO","TN"),("MO","AR"),("MO","OK"),("MO","KS"),("MO","NE"),("MS","LA"),
+>    ("MS","AR"),("MS","TN"),("MS","AL"),("MT","ND"),("MT","SD"),("MT","WY"),
+>    ("MT","ID"),("NC","VA"),("NC","TN"),("NC","GA"),("NC","SC"),("ND","MN"),
+>    ("ND","SD"),("ND","MT"),("NE","SD"),("NE","IA"),("NE","MO"),("NE","KS"),
+>    ("NE","CO"),("NE","WY"),("NH","VT"),("NH","ME"),("NH","MA"),("NJ","DE"),
+>    ("NJ","PA"),("NJ","NY"),("NM","AZ"),("NM","UT"),("NM","CO"),("NM","OK"),
+>    ("NM","TX"),("NV","ID"),("NV","UT"),("NV","AZ"),("NV","CA"),("NV","OR"),
+>    ("NY","NJ"),("NY","PA"),("NY","VT"),("NY","MA"),("NY","CT"),("OH","PA"),
+>    ("OH","WV"),("OH","KY"),("OH","IN"),("OH","MI"),("OK","KS"),("OK","MO"),
+>    ("OK","AR"),("OK","TX"),("OK","NM"),("OK","CO"),("OR","CA"),("OR","NV"),
+>    ("OR","ID"),("OR","WA"),("PA","NY"),("PA","NJ"),("PA","DE"),("PA","MD"),
+>    ("PA","WV"),("PA","OH"),("RI","CT"),("RI","MA"),("SC","GA"),("SC","NC"),
+>    ("SD","ND"),("SD","MN"),("SD","IA"),("SD","NE"),("SD","WY"),("SD","MT"),
+>    ("TN","KY"),("TN","VA"),("TN","NC"),("TN","GA"),("TN","AL"),("TN","MS"),
+>    ("TN","AR"),("TN","MO"),("TX","NM"),("TX","OK"),("TX","AR"),("TX","LA"),
+>    ("UT","ID"),("UT","WY"),("UT","CO"),("UT","NM"),("UT","AZ"),("UT","NV"),
+>    ("VA","NC"),("VA","TN"),("VA","KY"),("VA","WV"),("VA","MD"),("VA","DC"),
+>    ("VT","NY"),("VT","NH"),("VT","MA"),("WA","ID"),("WA","OR"),("WI","MI"),
+>    ("WI","MN"),("WI","IA"),("WI","IL"),("WV","OH"),("WV","PA"),("WV","MD"),
+>    ("WV","VA"),("WV","KY"),("WY","MT"),("WY","SD"),("WY","NE"),("WY","CO"),
+>    ("WY","UT"),("WY","ID")] : (string * string) list
+
+(*) States that border both TN and FL
+from p in neighbors,
+    q in neighbors
+  where p.state = "TN"
+    andalso p.adjacent = q.state
+    andalso q.adjacent = "FL"
+  yield p.adjacent;
+> val it = ["GA","AL"] : string list
+
+(*) Is a state adjacent to another?
+fun is_adjacent x y =
+  case (from p in neighbors where p.state = x andalso p.adjacent = y) of
+    [] => false
+  | _ => true;
+> val is_adjacent = fn : string -> string -> bool
+
+is_adjacent "CA" "NY";
+> val it = false : bool
+is_adjacent "CA" "OR";
+> val it = true : bool
+is_adjacent "OR" "OR";
+> val it = false : bool
  (*) maine is not 3 steps from itself
 
 (* Finding a square root using the Babylonian method
