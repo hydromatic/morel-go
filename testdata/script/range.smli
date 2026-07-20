@@ -150,6 +150,11 @@ Range.continuousSetOf [OPEN_CLOSED (1, 3), OPEN_CLOSED (3, 6)];
 Range.continuousSetOf [OPEN (1, 3), OPEN_CLOSED (3, 6)];
 > val it = CONTINUOUS_SET [OPEN (1,3),OPEN_CLOSED (3,6)] : int continuous_set
 
+(*) Chain merge: three ranges [1,4], [4,7], [6,9] merge into [1,9], and 8 is subsumed.
+Range.continuousSetOf [CLOSED (1, 4), POINT 0, CLOSED (6, 9), POINT 8, POINT 10, CLOSED (4, 7)];
+> val it = CONTINUOUS_SET [POINT 0,CLOSED (1,9),POINT 10]
+>   : int continuous_set
+
 (*) Ranges do not merge because the domain is discrete.
 Range.continuousSetOf [CLOSED (1, 3), POINT 0, POINT 8, CLOSED (4, 7)];
 > val it = CONTINUOUS_SET [POINT 0,CLOSED (1,3),CLOSED (4,7),POINT 8]

@@ -398,6 +398,8 @@ Real.compare (Real.negInf, nan);
 Real.compare (nan, nan);
 > uncaught exception Unordered
 >   raised at: stdIn:1.1-1.24
+Sys.plan ();
+> val it = "apply2(fnValue Real.compare, constant(NaN), constant(NaN))" : string
 
 (* "val compareReal : real * real -> IEEEReal.real_order" behaves similarly to
    "Real.compare" except that the values it returns have the extended type

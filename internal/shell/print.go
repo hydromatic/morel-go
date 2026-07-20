@@ -29,6 +29,7 @@ import (
 
 // The primitive type names, as types.Primitive.String returns them.
 const (
+	bagType    = "bag"
 	boolType   = "bool"
 	charType   = "char"
 	dateType   = "date"

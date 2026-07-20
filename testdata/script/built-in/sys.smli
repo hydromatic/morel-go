@@ -54,6 +54,12 @@ Sys.parseTree "1 + 2";
 Sys.parseTree "f x";
 > val it = "(apply (id f) (id x))" : string
 
+(*) Declaration.
+Sys.parseTree "val x = 1 + 2";
+> val it =
+>   "(val (valBind (idPat x) (plus (int_literal 1) (int_literal 2))))"
+>   : string
+
 (*) val plan : unit -> string
 Sys.plan;
 > val it = fn : unit -> string

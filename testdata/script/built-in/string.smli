@@ -284,6 +284,8 @@ String.isSubstring "" "hello";
 > val it = true : bool
 String.isSubstring "" "";
 > val it = true : bool
+Sys.plan ();
+> val it = "apply2(fnValue String.isSubstring, constant(), constant())" : string
 
 (*) val isSuffix    : string -> string -> bool
 String.isSuffix;

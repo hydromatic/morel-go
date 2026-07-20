@@ -21,6 +21,132 @@
 Sys.set ("printLength", ~1);
 > val it = () : unit
 
+(* State adjacency. Data is based on
+ * https://writeonly.wordpress.com/2009/03/20/adjacency-list-of-states-of-the-united-states-us/;
+ * the map uses the Mercator projection and is my own work.
+ *
+ *    __________________________________
+ * __;      ||              |        |  \______ ,
+ * \   WA   | \      MT     |   ND   \      __/ -_____                  ^_
+ * |________|  \            |_________| MN /  \_    _ \                /  \
+ * |         )  \   ________|         (    |    \_/ / [         ,_____/ ME }
+ * |   OR   / ID ---+       |   SD    |____\_ WI / /  |_       (   | /| __/
+ * /        |       |  WY   |---------|      \___| | MI |  ,~~-'NY |/_|/
+ * \----+-----------+       |    NE   \  IA  _)  \--+--<_/-'-----. [__`;
+ * /    |       |   +-+-----+--+_______\____/    |IN| OH  | PA  ( \===
+ * \    |   NV  | UT  |        |        \   \ IL |  |____/+->---L\/
+ *  \    \_     |     |   CO   | KS     | MO }_  <_/   (___/VA d_/
+ *   \ CA  \_   |-----+-------++--------|_____ \/___KY_/_______{
+ *    \_     \_|      |       +--+  OK  |     /___TN___/__  NC _}  __________
+ *      |__    \  AZ  |  NM   |  +-_____| AR /  |   |  \SC`\__/   /    VT NH |
+ *         \___/      |       |          ]__( MS|AL |   \ _/     /     MA    |
+ *             ---,_____~-----+    TX    \  (__ | __| GA |      /      CT RI |
+ *                        `\  __         / LA  \|_|__----|     /   DE NJ     |
+ *                           –  \     __/---~__;     `-. \     | WV DC MD    |
+ *                               \   /                 |FL\    |             |
+ *                                \__|                  \ |    | Unlabeled   |
+ *                                                       `+    | states      |
+ *                                                             |_____________|
+ *)
+val adjacent_states =
+ [{state="AK", adjacents=[]},
+  {state="AL", adjacents=["MS", "TN", "GA", "FL"]},
+  {state="AR", adjacents=["MO", "TN", "MS", "LA", "TX", "OK"]},
+  {state="AZ", adjacents=["CA", "NV", "UT", "CO", "NM"]},
+  {state="CA", adjacents=["OR", "NV", "AZ"]},
+  {state="CO", adjacents=["WY", "NE", "KS", "OK", "NM", "AZ", "UT"]},
+  {state="CT", adjacents=["NY", "MA", "RI"]},
+  {state="DC", adjacents=["MD", "VA"]},
+  {state="DE", adjacents=["MD", "PA", "NJ"]},
+  {state="FL", adjacents=["AL", "GA"]},
+  {state="GA", adjacents=["FL", "AL", "TN", "NC", "SC"]},
+  {state="HI", adjacents=[]},
+  {state="IA", adjacents=["MN", "WI", "IL", "MO", "NE", "SD"]},
+  {state="ID", adjacents=["MT", "WY", "UT", "NV", "OR", "WA"]},
+  {state="IL", adjacents=["IN", "KY", "MO", "IA", "WI"]},
+  {state="IN", adjacents=["MI", "OH", "KY", "IL"]},
+  {state="KS", adjacents=["NE", "MO", "OK", "CO"]},
+  {state="KY", adjacents=["IN", "OH", "WV", "VA", "TN", "MO", "IL"]},
+  {state="LA", adjacents=["TX", "AR", "MS"]},
+  {state="MA", adjacents=["RI", "CT", "NY", "NH", "VT"]},
+  {state="MD", adjacents=["VA", "WV", "PA", "DC", "DE"]},
+  {state="ME", adjacents=["NH"]},
+  {state="MI", adjacents=["WI", "IN", "OH"]},
+  {state="MN", adjacents=["WI", "IA", "SD", "ND"]},
+  {state="MO", adjacents=["IA", "IL", "KY", "TN", "AR", "OK", "KS", "NE"]},
+  {state="MS", adjacents=["LA", "AR", "TN", "AL"]},
+  {state="MT", adjacents=["ND", "SD", "WY", "ID"]},
+  {state="NC", adjacents=["VA", "TN", "GA", "SC"]},
+  {state="ND", adjacents=["MN", "SD", "MT"]},
+  {state="NE", adjacents=["SD", "IA", "MO", "KS", "CO", "WY"]},
+  {state="NH", adjacents=["VT", "ME", "MA"]},
+  {state="NJ", adjacents=["DE", "PA", "NY"]},
+  {state="NM", adjacents=["AZ", "UT", "CO", "OK", "TX"]},
+  {state="NV", adjacents=["ID", "UT", "AZ", "CA", "OR"]},
+  {state="NY", adjacents=["NJ", "PA", "VT", "MA", "CT"]},
+  {state="OH", adjacents=["PA", "WV", "KY", "IN", "MI"]},
+  {state="OK", adjacents=["KS", "MO", "AR", "TX", "NM", "CO"]},
+  {state="OR", adjacents=["CA", "NV", "ID", "WA"]},
+  {state="PA", adjacents=["NY", "NJ", "DE", "MD", "WV", "OH"]},
+  {state="RI", adjacents=["CT", "MA"]},
+  {state="SC", adjacents=["GA", "NC"]},
+  {state="SD", adjacents=["ND", "MN", "IA", "NE", "WY", "MT"]},
+  {state="TN", adjacents=["KY", "VA", "NC", "GA", "AL", "MS", "AR", "MO"]},
+  {state="TX", adjacents=["NM", "OK", "AR", "LA"]},
+  {state="UT", adjacents=["ID", "WY", "CO", "NM", "AZ", "NV"]},
+  {state="VA", adjacents=["NC", "TN", "KY", "WV", "MD", "DC"]},
+  {state="VT", adjacents=["NY", "NH", "MA"]},
+  {state="WA", adjacents=["ID", "OR"]},
+  {state="WI", adjacents=["MI", "MN", "IA", "IL"]},
+  {state="WV", adjacents=["OH", "PA", "MD", "VA", "KY"]},
+  {state="WY", adjacents=["MT", "SD", "NE", "CO", "UT", "ID"]}];
+> val adjacent_states =
+>   [{adjacents=[],state="AK"},{adjacents=["MS","TN","GA","FL"],state="AL"},
+>    {adjacents=["MO","TN","MS","LA","TX","OK"],state="AR"},
+>    {adjacents=["CA","NV","UT","CO","NM"],state="AZ"},
+>    {adjacents=["OR","NV","AZ"],state="CA"},
+>    {adjacents=["WY","NE","KS","OK","NM","AZ","UT"],state="CO"},
+>    {adjacents=["NY","MA","RI"],state="CT"},{adjacents=["MD","VA"],state="DC"},
+>    {adjacents=["MD","PA","NJ"],state="DE"},{adjacents=["AL","GA"],state="FL"},
+>    {adjacents=["FL","AL","TN","NC","SC"],state="GA"},{adjacents=[],state="HI"},
+>    {adjacents=["MN","WI","IL","MO","NE","SD"],state="IA"},
+>    {adjacents=["MT","WY","UT","NV","OR","WA"],state="ID"},
+>    {adjacents=["IN","KY","MO","IA","WI"],state="IL"},
+>    {adjacents=["MI","OH","KY","IL"],state="IN"},
+>    {adjacents=["NE","MO","OK","CO"],state="KS"},
+>    {adjacents=["IN","OH","WV","VA","TN","MO","IL"],state="KY"},
+>    {adjacents=["TX","AR","MS"],state="LA"},
+>    {adjacents=["RI","CT","NY","NH","VT"],state="MA"},
+>    {adjacents=["VA","WV","PA","DC","DE"],state="MD"},
+>    {adjacents=["NH"],state="ME"},{adjacents=["WI","IN","OH"],state="MI"},
+>    {adjacents=["WI","IA","SD","ND"],state="MN"},
+>    {adjacents=["IA","IL","KY","TN","AR","OK","KS","NE"],state="MO"},
+>    {adjacents=["LA","AR","TN","AL"],state="MS"},
+>    {adjacents=["ND","SD","WY","ID"],state="MT"},
+>    {adjacents=["VA","TN","GA","SC"],state="NC"},
+>    {adjacents=["MN","SD","MT"],state="ND"},
+>    {adjacents=["SD","IA","MO","KS","CO","WY"],state="NE"},
+>    {adjacents=["VT","ME","MA"],state="NH"},
+>    {adjacents=["DE","PA","NY"],state="NJ"},
+>    {adjacents=["AZ","UT","CO","OK","TX"],state="NM"},
+>    {adjacents=["ID","UT","AZ","CA","OR"],state="NV"},
+>    {adjacents=["NJ","PA","VT","MA","CT"],state="NY"},
+>    {adjacents=["PA","WV","KY","IN","MI"],state="OH"},
+>    {adjacents=["KS","MO","AR","TX","NM","CO"],state="OK"},
+>    {adjacents=["CA","NV","ID","WA"],state="OR"},
+>    {adjacents=["NY","NJ","DE","MD","WV","OH"],state="PA"},
+>    {adjacents=["CT","MA"],state="RI"},{adjacents=["GA","NC"],state="SC"},
+>    {adjacents=["ND","MN","IA","NE","WY","MT"],state="SD"},
+>    {adjacents=["KY","VA","NC","GA","AL","MS","AR","MO"],state="TN"},
+>    {adjacents=["NM","OK","AR","LA"],state="TX"},
+>    {adjacents=["ID","WY","CO","NM","AZ","NV"],state="UT"},
+>    {adjacents=["NC","TN","KY","WV","MD","DC"],state="VA"},
+>    {adjacents=["NY","NH","MA"],state="VT"},{adjacents=["ID","OR"],state="WA"},
+>    {adjacents=["MI","MN","IA","IL"],state="WI"},
+>    {adjacents=["OH","PA","MD","VA","KY"],state="WV"},
+>    {adjacents=["MT","SD","NE","CO","UT","ID"],state="WY"}]
+>   : {adjacents:string list, state:string} list
+
 (*) Coastal states
 val coastal_states = ["WA", "OR", "CA", "TX", "LA", "MS",
   "AL", "GA", "FL", "SC", "NC", "VA", "MD", "DE", "NJ",
@@ -94,6 +220,20 @@ val edges =
 >    {source="b",target="c",weight=3},{source="c",target="d",weight=2},
 >    {source="d",target="b",weight=~1}]
 >   : {source:string, target:string, weight:int} list
+
+(* -- Graph algorithms -----------------------------------------------
+ * The paper "EmptyHeaded: A Relational Engine for Graph Processing"
+ * (Aberger, Tu, Olukotun, Ré, 2016) gives a list of important graph
+ * algorithms expressed in an extended version of Datalog. They are
+ * Triangle, 4-Clique, Lollipop, Barball, Count-Triangle, PageRank,
+ * SSSP. In the following, we translate those algorithms to Morel and
+ * apply them to the graph of state adjacency.
+ *)
+
+(*) Western U.S. states
+val western_states = ["AZ","CA","CO","ID","NM","NV","OR","UT","WA"];
+> val western_states =
+>   ["AZ","CA","CO","ID","NM","NV","OR","UT","WA"] : string list
 
 (* A 3-node graph has no 4-clique. Grounding must not delete a
  * conjunct whose generator was cached but never scanned; when it did,

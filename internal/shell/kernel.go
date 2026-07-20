@@ -170,6 +170,17 @@ func (k *Kernel) Config() *Config {
 	return &k.config
 }
 
+// EquivalentOutput reports whether an actual statement output is
+// semantically equivalent to an expected one — bag values compared
+// as multisets, whitespace normalized — unless the "matchStrict"
+// property forces exact textual comparison.
+func (k *Kernel) EquivalentOutput(actual, expected string) bool {
+	if k.config.props["matchStrict"] == "true" {
+		return false
+	}
+	return equivalentOutput(k.sys, actual, expected)
+}
+
 // Execute runs one complete statement and returns its output. A
 // statement marked ":t" is type-checked but not evaluated. Until
 // the evaluator exists, other statements are evaluated only if

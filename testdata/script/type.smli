@@ -681,4 +681,13 @@ program 30;
 >   "let  val i0 = 0; val i1 = 1; val i2 = 2; val i3 = 3; val i4 = i2 * i2; val i5 = 5; val i6 = i2 * i3; val i7 = 7; val i8 = i2 * i2 * i2; val i9 = i3 * i3; val i10 = i2 * i5; val i11 = 11; val i12 = i2 * i2 * i3; val i13 = 13; val i14 = i2 * i7; val i15 = i3 * i5; val i16 = i2 * i2 * i2 * i2; val i17 = 17; val i18 = i2 * i3 * i3; val i19 = 19; val i20 = i2 * i2 * i5; val i21 = i3 * i7; val i22 = i2 * i11; val i23 = 23; val i24 = i2 * i2 * i2 * i3; val i25 = i5 * i5; val i26 = i2 * i13; val i27 = i3 * i3 * i3; val i28 = i2 * i2 * i7; val i29 = 29; in (i0, i1, i2, i3, i4, i5, i6, i7, i8, i9, i10, i11, i12, i13, i14, i15, i16, i17, i18, i19, i20, i21, i22, i23, i24, i25, i26, i27, i28, i29) end"
 >   : string
 
+(*) Pasted from "program 30"
+let  val i0 = 0; val i1 = 1; val i2 = 2; val i3 = 3; val i4 = i2 * i2; val i5 = 5; val i6 = i2 * i3; val i7 = 7; val i8 = i2 * i2 * i2; val i9 = i3 * i3; val i10 = i2 * i5; val i11 = 11; val i12 = i2 * i2 * i3; val i13 = 13; val i14 = i2 * i7; val i15 = i3 * i5; val i16 = i2 * i2 * i2 * i2; val i17 = 17; val i18 = i2 * i3 * i3; val i19 = 19; val i20 = i2 * i2 * i5; val i21 = i3 * i7; val i22 = i2 * i11; val i23 = 23; val i24 = i2 * i2 * i2 * i3; val i25 = i5 * i5; val i26 = i2 * i13; val i27 = i3 * i3 * i3; val i28 = i2 * i2 * i7; val i29 = 29; in (i0, i1, i2, i3, i4, i5, i6, i7, i8, i9, i10, i11, i12, i13, i14, i15, i16, i17, i18, i19, i20, i21, i22, i23, i24, i25, i26, i27, i28, i29) end;
+> val it =
+>   (0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,
+>    27,28,29)
+>   : int * int * int * int * int * int * int * int * int * int * int * int
+>      * int * int * int * int * int * int * int * int * int * int * int * int
+>      * int * int * int * int * int * int
+
 (*) End type.smli

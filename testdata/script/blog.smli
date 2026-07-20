@@ -621,6 +621,16 @@ val depts = [
 >    {deptno=30,name="R&D"}] : {deptno:int, name:string} list
 fun flatMap f xs = List.concat (List.map f xs);
 > val flatMap = fn : ('a -> 'b list) -> 'a list -> 'b list
+List.map
+  (fn (d, e) => {deptno = #deptno d, name = #name e})
+  (List.filter
+    (fn (d, e) => #deptno d = #deptno e)
+    (flatMap
+      (fn e => (List.map (fn d => (d, e)) depts))
+      emps));
+> val it =
+>   [{deptno=10,name="Fred"},{deptno=20,name="Velma"},{deptno=30,name="Shaggy"},
+>    {deptno=30,name="Scooby"}] : {deptno:int, name:string} list
 
 (*) Integration with Apache Calcite - relational algebra
 Sys.set ("hybrid", true);

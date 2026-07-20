@@ -30,4 +30,12 @@ Datalog;
 >   : {execute:string -> variant, translate:string -> string option,
 >       validate:string -> string}
 
+(*) Basic validation - valid program
+val program = ".decl edge(x:int, y:int)
+edge(1,2).
+edge(2,3).
+.output edge";
+> val program = ".decl edge(x:int, y:int)\nedge(1,2).\nedge(2,3).\n.output edge"
+>   : string
+
 (*) End datalog.smli
