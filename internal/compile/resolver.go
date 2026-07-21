@@ -105,6 +105,14 @@ func (r *resolver) toDecl(env *coreEnv, decl ast.Decl) (core.Decl,
 				decl.Op().String(),
 		}
 	}
+	if d.Inst {
+		// A "val inst" instance is typed (so ":t" works within a
+		// let) but not yet compiled or evaluated.
+		return nil, nil, &Error{
+			Span: decl.Span(),
+			Msg:  "cannot convert to core: val inst",
+		}
+	}
 	if d.Rec {
 		return r.toRecDecl(env, d)
 	}
