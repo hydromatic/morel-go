@@ -501,6 +501,14 @@ func (r *typeResolver) astTypeTerm(t ast.Type) (unify.Term,
 func (r *typeResolver) astNamedTerm(t *ast.NamedType) (unify.Term,
 	error,
 ) {
+	if alias, ok := r.sys.LookupAlias(t.Name); ok &&
+		len(alias.TyVars) == len(t.Args) {
+		subst := make(map[string]ast.Type, len(alias.TyVars))
+		for i, tv := range alias.TyVars {
+			subst[tv] = t.Args[i]
+		}
+		return r.astTypeTerm(ast.SubstituteType(alias.Body, subst))
+	}
 	terms := make([]unify.Term, len(t.Args))
 	for i, arg := range t.Args {
 		term, err := r.astTypeTerm(arg)
@@ -542,6 +550,8 @@ func (r *typeResolver) deduceDecl(env typeEnv, decl ast.Decl,
 			patTerm{name: d.Pat.Name, kind: ptOver})
 		r.nodeTerm[decl] = r.primTerm("unit")
 		return decl, nil
+	case *ast.TypeDecl:
+		return r.deduceTypeDecl(d)
 	case *ast.ValDecl:
 		return r.deduceValDecl(env, d, termMap)
 	default:
@@ -700,6 +710,17 @@ func (r *typeResolver) deduceDatatypeDecl(decl *ast.DatatypeDecl,
 				term: r.typeTerm(conType, map[int]*unify.Var{}),
 			})
 		}
+	}
+	r.nodeTerm[decl] = r.primTerm("unit")
+	return decl, nil
+}
+
+// deduceTypeDecl registers each type alias so later types can use
+// it. An alias is transparent: it is expanded wherever it appears.
+func (r *typeResolver) deduceTypeDecl(decl *ast.TypeDecl,
+) (ast.Decl, error) {
+	for _, b := range decl.Binds {
+		r.sys.DeclareAlias(b.Name, b.TyVars, b.Type)
 	}
 	r.nodeTerm[decl] = r.primTerm("unit")
 	return decl, nil

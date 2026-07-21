@@ -155,6 +155,11 @@ datatype ('a, 'b) pair = PAIR of 'a * 'b;
  * type, used in the head but not the body. Standard ML allows this. *)
 datatype ('a, 'b) phantom = PHANTOM of 'a;
 > datatype ('a,'b) phantom = PHANTOM of 'a
+
+(* The valid forms. Parentheses around a single type are allowed (just
+ * like in expressions). *)
+type t = bool * int list;
+> type t = bool * int list
 fn (x: (int) list) => 1;
 > val it = fn : int list -> int
 fn (x: (int, string) either) => 1;

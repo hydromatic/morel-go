@@ -113,6 +113,10 @@ func (c *converter) convertNamed(n *ast.NamedType) (Type, error) {
 		}
 		return c.sys.List(elem), nil
 	}
+	if alias, ok := c.sys.LookupAlias(n.Name); ok &&
+		len(alias.TyVars) == len(n.Args) {
+		return c.convert(expandAlias(alias, n.Args))
+	}
 	if arity, ok := c.sys.DatatypeArity(n.Name); ok &&
 		arity == len(n.Args) {
 		args := make([]Type, len(n.Args))

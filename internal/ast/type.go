@@ -49,6 +49,49 @@ func NewTyVar(span token.Span, name string) *TyVar {
 // Op implements Node.
 func (*TyVar) Op() Op { return TyVarOp }
 
+// SubstituteType returns a copy of t with each type variable
+// replaced by the type subst maps its name to; a variable absent
+// from subst is left unchanged. It expands a type alias by
+// substituting its arguments for its parameters.
+func SubstituteType(t Type, subst map[string]Type) Type {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch n := t.(type) {
+	case *FnType:
+		return &FnType{
+			typeBase: n.typeBase,
+			Param:    SubstituteType(n.Param, subst),
+			Result:   SubstituteType(n.Result, subst),
+		}
+	case *NamedType:
+		args := make([]Type, len(n.Args))
+		for i, a := range n.Args {
+			args[i] = SubstituteType(a, subst)
+		}
+		return &NamedType{typeBase: n.typeBase, Name: n.Name, Args: args}
+	case *RecordType:
+		fields := make([]TypeField, len(n.Fields))
+		for i, f := range n.Fields {
+			fields[i] = TypeField{
+				Label: f.Label, Type: SubstituteType(f.Type, subst),
+			}
+		}
+		return &RecordType{typeBase: n.typeBase, Fields: fields}
+	case *TupleType:
+		args := make([]Type, len(n.Args))
+		for i, a := range n.Args {
+			args[i] = SubstituteType(a, subst)
+		}
+		return &TupleType{typeBase: n.typeBase, Args: args}
+	case *TyVar:
+		if r, ok := subst[n.Name]; ok {
+			return r
+		}
+		return n
+	default:
+		return t
+	}
+}
+
 // NamedType is a type constructor applied to zero or more
 // arguments: "int", "int list", "('a, 'b) pair".
 type NamedType struct {

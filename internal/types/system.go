@@ -20,6 +20,8 @@ package types
 import (
 	"sort"
 	"strings"
+
+	"github.com/hydromatic/morel-go/internal/ast"
 )
 
 // System interns types: equal types are the same pointer. It
@@ -29,6 +31,7 @@ type System struct {
 	datatypes map[string]int
 	tycons    map[string]TyCon
 	conCount  map[string]int
+	aliases   map[string]Alias
 
 	Bool   Type
 	Char   Type
@@ -57,6 +60,7 @@ func NewSystem() *System {
 		datatypes: map[string]int{},
 		tycons:    map[string]TyCon{},
 		conCount:  map[string]int{},
+		aliases:   map[string]Alias{},
 	}
 	prim := func(name string) Type {
 		t := &Primitive{typeBase{name}}
@@ -88,6 +92,37 @@ func (s *System) DeclareDatatype(name string, arity int) {
 	if arity == 0 {
 		s.Named(name)
 	}
+}
+
+// Alias is a type alias's definition: its type parameters and the
+// body they parameterize (an AST type, expanded at each use).
+type Alias struct {
+	TyVars []string
+	Body   ast.Type
+}
+
+// DeclareAlias registers a transparent type alias, e.g.
+// "type 'a my_list = 'a list".
+func (s *System) DeclareAlias(name string, tyVars []string,
+	body ast.Type,
+) {
+	s.aliases[name] = Alias{TyVars: tyVars, Body: body}
+}
+
+// LookupAlias returns the alias with the given name, if any.
+func (s *System) LookupAlias(name string) (Alias, bool) {
+	a, ok := s.aliases[name]
+	return a, ok
+}
+
+// expandAlias substitutes an alias's arguments for its parameters
+// in its body.
+func expandAlias(alias Alias, args []ast.Type) ast.Type {
+	subst := make(map[string]ast.Type, len(alias.TyVars))
+	for i, tv := range alias.TyVars {
+		subst[tv] = args[i]
+	}
+	return ast.SubstituteType(alias.Body, subst)
 }
 
 // DeclareTyCon registers a datatype constructor; arg is nil for

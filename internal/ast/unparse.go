@@ -175,6 +175,29 @@ func UnparseDatatypeDecl(d *DatatypeDecl) string {
 	return b.String()
 }
 
+// UnparseTypeDecl renders a type-alias declaration as the shell
+// echoes it: type variables normalized to 'a, 'b, ... and
+// multi-argument type applications with "," and no space, like
+// UnparseDatatypeDecl.
+func UnparseTypeDecl(d *TypeDecl) string {
+	var b strings.Builder
+	for i, bind := range d.Binds {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("type ")
+		rename := canonicalTyVars(bind.TyVars)
+		names := make([]string, len(bind.TyVars))
+		for j, tv := range bind.TyVars {
+			names[j] = rename[tv]
+		}
+		unparseDatatypeTyVars(&b, names)
+		b.WriteString(bind.Name + " = ")
+		unparseType(&b, renameTyVars(bind.Type, rename), ",")
+	}
+	return b.String()
+}
+
 // unparseDatatypeTyVars renders a datatype's type-variable head with
 // "," and no space, as the shell echo does.
 func unparseDatatypeTyVars(b *strings.Builder, tyVars []string) {

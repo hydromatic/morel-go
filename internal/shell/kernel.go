@@ -361,6 +361,10 @@ func (k *Kernel) runStatement(n ast.Node) string {
 		// constructors in the type system; the shell echoes it.
 		return ast.UnparseDatatypeDecl(datatypeDecl)
 	}
+	if typeDecl, isType := resolved.Decl.(*ast.TypeDecl); isType {
+		// The declaration registered its type aliases; echo it.
+		return ast.UnparseTypeDecl(typeDecl)
+	}
 	coreDecl, err := compile.Resolve(resolved)
 	if err != nil {
 		return k.formatCompileError(err)
