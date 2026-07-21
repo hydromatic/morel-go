@@ -30,6 +30,9 @@ import (
 // operators.
 
 func asList(v Val) []Val {
+	if r, ok := v.(Relation); ok {
+		return r.Rows
+	}
 	vals, ok := v.([]Val)
 	if !ok {
 		panic(fmt.Sprintf("expected list, got %T", v))

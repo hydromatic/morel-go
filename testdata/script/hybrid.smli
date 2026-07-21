@@ -26,6 +26,49 @@ Sys.set ("stringDepth", ~1);
 (*) Query in Hybrid mode (100% Calcite)
 Sys.set ("hybrid", true);
 > val it = () : unit
+from e in scott.emps
+where e.deptno = 20
+yield e.empno;
+> val it = [7369,7566,7788,7876,7902] : int bag
+
+(*) Query in Hybrid mode (20% Morel -> 80% Calcite)
+from e in (Bag.filter (fn e2 => e2.empno < 7700) scott.emps)
+where e.deptno = 20
+yield e.empno;
+> val it = [7369,7566] : int bag
+
+(* Query in Hybrid mode (99% Calcite; there is a variable but it is not
+ * referenced by Calcite code) *)
+let
+  val twenty = 20
+in
+  from e in scott.emps
+  where e.deptno = 20
+  yield e.empno
+end;
+> val it = [7369,7566,7788,7876,7902] : int bag
+
+(* Query in Hybrid mode (90% Calcite; Calcite code references a variable
+ * and an expression from the enclosing environment) *)
+let
+  val ten = 7 + 3
+  val deptNos = ten :: 20 :: 30 :: [40]
+in
+  from e in scott.emps
+  where e.deptno = List.nth (deptNos, 1)
+  yield e.empno + 13 mod ten
+end;
+> val it = [7372,7569,7791,7879,7905] : int bag
+
+(* Query in Hybrid mode (90% Calcite; Calcite code references a function
+ * from the enclosing environment) *)
+let
+  fun double x = x * 2
+in
+  from d in scott.depts
+  yield double d.deptno
+end;
+> val it = [20,40,60,80] : int bag
 
 (*) Query on an empty list whose element is not referenced
 from e in []
@@ -53,6 +96,36 @@ from e in [0]
 (*) Equivalent, using map
 map (fn e => {a = 1, b = true}) [0];
 > val it = [{a=1,b=true}] : {a:int, b:bool} list
+
+(*) Simple query with scan, filter, project
+from e in scott.emps where e.deptno = 30 yield e.empno;
+> val it = [7499,7521,7654,7698,7844,7900] : int bag
+
+(*) Equivalent #1; result and plan should be the same
+let
+  val emps = #emps scott
+in
+  from e in emps
+  where e.deptno = 30
+  yield e.empno
+end;
+> val it = [7499,7521,7654,7698,7844,7900] : int bag
+
+(*) Equivalent #2; result and plan should be the same
+let
+  val emps = #emps scott
+  val thirty = 30
+in
+  from e in emps
+  where e.deptno = thirty
+  yield e.empno
+end;
+> val it = [7499,7521,7654,7698,7844,7900] : int bag
+
+(*) Equivalent #3; result and plan should be the same
+Bag.map (fn e => (#empno e))
+  (Bag.filter (fn e => (#deptno e) = 30) (#emps scott));
+> val it = [7499,7521,7654,7698,7844,7900] : int bag
 
 (*) Three-way intersect
 from i in [1, 2, 3] intersect [1, 2, 3], [99];
@@ -106,6 +179,39 @@ end;
 (*) Recursive query, 3
 Sys.set ("hybrid", false);
 > val it = () : unit
+let
+  fun descendants2 descendants newDescendants =
+    if empty newDescendants then
+      descendants
+    else
+      descendants2 (from d in descendants union newDescendants)
+          (from d in newDescendants,
+              e in scott.emps
+            where e.mgr = d.e.empno
+            yield {e, level = d.level + 1})
+in
+  from d in descendants2 Bag.nil
+      (from e in scott.emps
+        where e.mgr = 0
+        yield {e, level = 0})
+    yield {d.e.empno, d.e.mgr, d.e.ename, d.level}
+end;
+> val it =
+>   [{empno=7839,ename="KING",level=0,mgr=0},
+>    {empno=7566,ename="JONES",level=1,mgr=7839},
+>    {empno=7698,ename="BLAKE",level=1,mgr=7839},
+>    {empno=7782,ename="CLARK",level=1,mgr=7839},
+>    {empno=7788,ename="SCOTT",level=2,mgr=7566},
+>    {empno=7902,ename="FORD",level=2,mgr=7566},
+>    {empno=7499,ename="ALLEN",level=2,mgr=7698},
+>    {empno=7521,ename="WARD",level=2,mgr=7698},
+>    {empno=7654,ename="MARTIN",level=2,mgr=7698},
+>    {empno=7844,ename="TURNER",level=2,mgr=7698},
+>    {empno=7900,ename="JAMES",level=2,mgr=7698},
+>    {empno=7934,ename="MILLER",level=2,mgr=7782},
+>    {empno=7876,ename="ADAMS",level=3,mgr=7788},
+>    {empno=7369,ename="SMITH",level=3,mgr=7902}]
+>   : {empno:int, ename:string, level:int, mgr:int} bag
 
 (* 'max' and 'min' over a type that the Calcite adapter cannot order the way
    Morel does -- 'word' (which Calcite compares as a signed integer) or a

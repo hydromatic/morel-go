@@ -18,6 +18,7 @@
 package shell
 
 import (
+	_ "embed"
 	"errors"
 	"fmt"
 	"maps"
@@ -165,8 +166,14 @@ func NewKernel(name string) *Kernel {
 		values[b.Name] = fields
 	}
 	k.values = values
+	k.loadScott()
 	return k
 }
+
+// scottSrc defines the global "scott" dataset.
+//
+//go:embed scott.sml
+var scottSrc string
 
 // Gaps reports what suppression hid: each not-yet-implemented
 // message with the number of statements it silenced.
@@ -237,6 +244,52 @@ func (k *Kernel) Execute(stmt string) string {
 		}
 	}
 	return k.executeStatement(n)
+}
+
+// loadScott binds the global "scott" dataset, a foreign relation
+// available to every script. It is evaluated once, and its
+// binding is added to the base environment so every statement
+// sees it.
+func (k *Kernel) loadScott() {
+	n, err := parse.Stmt(k.name, scottSrc)
+	if err != nil {
+		panic(err) // the embedded source is tested, so it parses
+	}
+	decl, ok := n.(ast.Decl)
+	if !ok {
+		panic("scott.sml is not a declaration")
+	}
+	resolved, err := compile.Deduce(k.sys, k.bindings, decl)
+	if err != nil {
+		panic(err)
+	}
+	coreDecl, err := compile.Resolve(resolved)
+	if err != nil {
+		panic(err)
+	}
+	compiled, err := compile.Statement(coreDecl, k.values, k.sys)
+	if err != nil {
+		panic(err)
+	}
+	frame := eval.NewFrame(compiled.Slots)
+	_, err = compiled.Code.Eval(frame)
+	if err != nil {
+		panic(err)
+	}
+	for _, b := range compiled.Binds {
+		val := frame.Slots[b.Slot]
+		// scott's collections are foreign relations: they behave
+		// as their rows but print opaquely as "<relation>".
+		if fields, ok := val.([]eval.Val); ok {
+			for j, f := range fields {
+				if rows, ok := f.([]eval.Val); ok {
+					fields[j] = eval.Relation{Rows: rows}
+				}
+			}
+		}
+		k.bind(b.Pat.Name, b.Pat.T)
+		k.values[b.Pat.Name] = val
+	}
 }
 
 // executeStatement compiles and evaluates a statement, prints

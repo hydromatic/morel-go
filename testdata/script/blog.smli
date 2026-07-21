@@ -676,6 +676,48 @@ from p in wordCount lines order p.word;
 >    {count=3,word="stump"},{count=2,word="stunk"},{count=3,word="the"},
 >    {count=2,word="thunk"}] : {count:int, word:string} list
 
+(* --- Aggregate functions ---------------------------------------- *)
+
+val emps = scott.emps;
+> val emps = <relation>
+>   : {comm:real, deptno:int, empno:int, ename:string, hiredate:string,
+>       job:string, mgr:int, sal:real} bag
+val depts = scott.depts;
+> val depts = <relation> : {deptno:int, dname:string, loc:string} bag
+
+from e in emps
+  group e.deptno compute {sumSal = sum over e.sal}
+  order deptno;
+> val it =
+>   [{deptno=10,sumSal=8750},{deptno=20,sumSal=10875},{deptno=30,sumSal=9400}]
+>   : {deptno:int, sumSal:real} list
+
+(*) In this example, we define our own version of the `sum` function:
+let
+  fun my_sum [] = 0
+    | my_sum (head :: tail) = head + (my_sum tail)
+  fun my_bag_sum bag = my_sum (Bag.toList bag)
+in
+  from e in emps
+    group e.deptno
+    compute {sumEmpno = my_bag_sum over e.empno}
+    order deptno
+end;
+> val it =
+>   [{deptno=10,sumEmpno=23555},{deptno=20,sumEmpno=38501},
+>    {deptno=30,sumEmpno=46116}] : {deptno:int, sumEmpno:int} list
+
+(*) The equivalent of SQL's COLLECT aggregate function is trivial
+from e in emps
+  group e.deptno
+    compute {names = (fn x => x) over e.ename}
+  order deptno;
+> val it =
+>   [{deptno=10,names=["CLARK","KING","MILLER"]},
+>    {deptno=20,names=["SMITH","JONES","SCOTT","ADAMS","FORD"]},
+>    {deptno=30,names=["ALLEN","WARD","MARTIN","BLAKE","TURNER","JAMES"]}]
+>   : {deptno:int, names:string bag} list
+
 (* --- StrangeLoop 2021 talk -------------------------------------- *)
 
 (*) Standard ML: values
@@ -913,10 +955,32 @@ from e in emps
   where s > 10
   yield c + s;
 > val it = [14] : int list
+scott;
+> val it =
+>   {bonuses=<relation>,depts=<relation>,emps=<relation>,salgrades=<relation>}
+>   : {bonuses:{comm:real, ename:string, job:string, sal:real} bag,
+>       depts:{deptno:int, dname:string, loc:string} bag,
+>       emps:{comm:real, deptno:int, empno:int, ename:string, hiredate:string,
+>              job:string, mgr:int, sal:real} bag,
+>       salgrades:{grade:int, hisal:real, losal:real} bag}
+scott.depts;
+> val it = <relation> : {deptno:int, dname:string, loc:string} bag
+from d in scott.depts
+  where empty (from e in scott.emps
+    where e.deptno = d.deptno
+    andalso e.job = "CLERK");
+> val it = [{deptno=40,dname="OPERATIONS",loc="BOSTON"}]
+>   : {deptno:int, dname:string, loc:string} bag
 
 (*) Integration with Apache Calcite - relational algebra
 Sys.set ("hybrid", true);
 > val it = () : unit
+from d in scott.depts
+  where empty (from e in scott.emps
+    where e.deptno = d.deptno
+    andalso e.job = "CLERK");
+> val it = [{deptno=40,dname="OPERATIONS",loc="BOSTON"}]
+>   : {deptno:int, dname:string, loc:string} bag
 
 (*) Functional programming <=> relational programming
 fun squareList [] = []
@@ -1051,6 +1115,20 @@ from p in produceSales
 > val it =
 >   [{c=1,item="peanuts",total=120},{c=1,item="apples",total=200},
 >    {c=1,item="almonds",total=150}] : {c:int, item:string, total:int} list
+
+(*) Billion dollar mistake
+from e in scott.emps
+  where e.deptno = 10
+    andalso
+    (forall e2 in scott.emps
+      where e2.deptno = 20
+        andalso e2.job = "PROGRAMMER"
+      require e.sal > e2.sal)
+  yield e.ename;
+> val it = ["CLARK","KING","MILLER"] : string bag
+
+val departments = scott.depts;
+> val departments = <relation> : {deptno:int, dname:string, loc:string} bag
 val primes = [2, 3, 5, 7, 11];
 > val primes = [2,3,5,7,11] : int list
 val bands = [["john", "paul", "george", "ringo"], ["simon", "garfunkel"]];
@@ -1065,6 +1143,48 @@ from i in [1, 2],
 > val it =
 >   [{i=1,j="a",k=3},{i=1,j="a",k=4},{i=1,j="b",k=3},{i=1,j="b",k=4},
 >    {i=2,j="a",k=3},{i=2,j="b",k=3}] : {i:int, j:string, k:int} list
+from dept in [10, 30],
+    e in scott.emps
+  where e.deptno = dept
+  yield e.ename;
+> val it =
+>   ["CLARK","KING","MILLER","ALLEN","WARD","MARTIN","BLAKE","TURNER","JAMES"]
+>   : string bag
+from dept in [10, 30],
+    e in scott.emps
+  where e.deptno = dept
+  order DESC e.sal
+  take 3
+  yield {e.deptno, e.ename};
+> val it =
+>   [{deptno=10,ename="KING"},{deptno=30,ename="BLAKE"},
+>    {deptno=10,ename="CLARK"}] : {deptno:int, ename:string} list
+
+(*) DML
+(* Delete employees who earn more than 1,000. *)
+val emps2 =
+  from e in scott.emps
+    where not (e.sal > 1000.0);
+> val emps2 =
+>   [{comm=0,deptno=20,empno=7369,ename="SMITH",hiredate="1980-12-17",
+>     job="CLERK",mgr=7902,sal=800},
+>    {comm=0,deptno=30,empno=7900,ename="JAMES",hiredate="1981-12-03",
+>     job="CLERK",mgr=7698,sal=950}]
+>   : {comm:real, deptno:int, empno:int, ename:string, hiredate:string,
+>       job:string, mgr:int, sal:real} bag
+(* Add one employee. *)
+val emps3 = from e in emps2 union
+  [{empno = 100, deptno = 20, ename = "HYDE", job = "ANALYST",
+    sal = 1150.0, hiredate = "2023-10-01", mgr = 7902, comm = 0.0}];
+> val emps3 =
+>   [{comm=0,deptno=20,empno=7369,ename="SMITH",hiredate="1980-12-17",
+>     job="CLERK",mgr=7902,sal=800},
+>    {comm=0,deptno=30,empno=7900,ename="JAMES",hiredate="1981-12-03",
+>     job="CLERK",mgr=7698,sal=950},
+>    {comm=0,deptno=20,empno=100,ename="HYDE",hiredate="2023-10-01",
+>     job="ANALYST",mgr=7902,sal=1150}]
+>   : {comm:real, deptno:int, empno:int, ename:string, hiredate:string,
+>       job:string, mgr:int, sal:real} bag
 
 (*) Empty summary table.
 val summary = [] : {c:int, deptno:int, sum_sal:real} list;
@@ -1086,6 +1206,23 @@ from (parent, child) in parents
 > val it =
 >   [{child="arwen",parent="elrond"},{child="elladan",parent="elrond"},
 >    {child="elrohir",parent="elrond"}] : {child:string, parent:string} list
+
+(* Morel "forwards" relation *)
+(* Relation defined using algebra. *)
+fun clerks () =
+  from e in scott.emps
+    where e.job = "CLERK";
+> val clerks = fn
+>   : unit
+>      -> {comm:real, deptno:int, empno:int, ename:string, hiredate:string,
+>           job:string, mgr:int, sal:real} bag
+(* Query uses regular iteration. *)
+from e in clerks (),
+    d in scott.depts
+  where d.deptno = e.deptno
+    andalso d.loc = "DALLAS"
+  yield e.ename;
+> val it = ["SMITH","ADAMS"] : string bag
 
 (* --- GCD and LCM ------------------------------------------------ *)
 
@@ -1122,6 +1259,29 @@ Sys.set ("lineWidth", 65);
 Sys.set ("printLength", 20);
 > val it = () : unit
 
+from e in scott.emps
+  where e.deptno = 10
+  yield {e.ename, e.job};
+> ename  job
+> ------ ---------
+> CLARK  MANAGER
+> KING   PRESIDENT
+> MILLER CLERK
+>
+> val it : {ename:string, job:string} bag
+
+from e in scott.emps,
+    d in scott.depts on e.deptno = d.deptno
+  where e.deptno = 10
+  yield {d.dname, e.ename, e.job};
+> dname      ename  job
+> ---------- ------ ---------
+> ACCOUNTING CLARK  MANAGER
+> ACCOUNTING KING   PRESIDENT
+> ACCOUNTING MILLER CLERK
+>
+> val it : {dname:string, ename:string, job:string} bag
+
 (* Query over a list of integers. *)
 from i in [1, 2, 3, 4, 5]
   where i mod 2 = 0;
@@ -1149,6 +1309,19 @@ from i in [2, 3],
 >
 > val it : {i:int, s:string} list
 
+(* If you want to add a join condition, you can append an on clause: *)
+from e in scott.emps,
+    d in scott.depts on e.deptno = d.deptno
+  where e.job = "MANAGER"
+  yield {e.ename, d.dname};
+> dname      ename
+> ---------- -----
+> RESEARCH   JONES
+> SALES      BLAKE
+> ACCOUNTING CLARK
+>
+> val it : {dname:string, ename:string} bag
+
 (*) If you want scans later in a query, use the join step.
 val clients =
   [{cname = "Apple", contact = 7654, city = "BOSTON"},
@@ -1163,6 +1336,20 @@ val clients =
 > BOSTON IBM       7654
 >
 > val clients : {city:string, cname:string, contact:int} list
+
+from c in clients
+  where c.city = "BOSTON"
+  join e in scott.emps on c.contact = e.empno,
+      d in scott.depts on e.deptno = d.deptno
+  yield {c.cname, e.ename, d.dname};
+> cname  dname ename
+> ------ ----- ------
+> Apple  SALES MARTIN
+> Disney SALES ALLEN
+> Ford   SALES WARD
+> IBM    SALES MARTIN
+>
+> val it : {cname:string, dname:string, ename:string} bag
 
 (* Define the shipments data set; each shipment has one or
    more nested items. *)
@@ -1204,6 +1391,22 @@ from i in [1, 2, 3, 4, 5],
 >
 > val it : {i:int, odd:bool} list
 
+from deptno in [10, 20],
+    emp in scott.emps on emp.deptno = deptno;
+> deptno emp
+>        comm deptno empno ename  hiredate   job       mgr  sal
+> ------ ---- ------ ----- ------ ---------- --------- ---- ----
+>     10    0     10  7782 CLARK  1981-06-09 MANAGER   7839 2450
+>     10    0     10  7839 KING   1981-11-17 PRESIDENT    0 5000
+>     10    0     10  7934 MILLER 1982-01-23 CLERK     7782 1300
+>     20    0     20  7369 SMITH  1980-12-17 CLERK     7902  800
+>     20    0     20  7566 JONES  1981-02-04 MANAGER   7839 2975
+>     20    0     20  7788 SCOTT  1987-04-19 ANALYST   7566 3000
+>     20    0     20  7876 ADAMS  1987-05-23 CLERK     7788 1100
+>     20    0     20  7902 FORD   1981-12-03 ANALYST   7566 3000
+>
+> val it : {deptno:int, emp:{comm:real, deptno:int, empno:int, ename:string, hiredate:string, job:string, mgr:int, sal:real}} bag
+
 (* Multiple fields. Current is a record. *)
 from i in [1, 2],
     j in ["a", "b"]
@@ -1223,6 +1426,35 @@ from i in [1, 2, 3]
   yield current;
 > val it = [1,0,1] : int list
 
+(* Single field named "dname". Current is an atom, but you
+   can also refer to the field by name. *)
+from d in scott.depts
+  yield d.dname
+  yield current;
+> val it = ["ACCOUNTING","RESEARCH","SALES","OPERATIONS"]
+>   : string bag
+
+from d in scott.depts
+  yield d.dname
+  yield dname;
+> val it = ["ACCOUNTING","RESEARCH","SALES","OPERATIONS"]
+>   : string bag
+
+(* Print the top 5 employees by salary, and their rank. *)
+from e in scott.emps
+  order DESC e.sal
+  take 5
+  yield {e.ename, e.sal, rank = ordinal + 1};
+> ename rank sal
+> ----- ---- ----
+> KING     1 5000
+> SCOTT    2 3000
+> FORD     3 3000
+> JONES    4 2975
+> BLAKE    5 2850
+>
+> val it : {ename:string, rank:int, sal:real} list
+
 (* Compute the set of distinct rolls of two dice. *)
 from i in [1, 2, 3, 4, 5, 6],
     j in [1, 2, 3, 4, 5, 6]
@@ -1230,11 +1462,62 @@ from i in [1, 2, 3, 4, 5, 6],
   distinct;
 > val it = [2,3,4,5,6,7,8,9,10,11,12] : int list
 
+(* Which job titles exist in department 10 but not in
+   department 20 or 30? *)
+from e in scott.emps
+  where e.deptno = 10
+  yield e.job
+  except distinct
+    (from e in scott.emps
+      where e.deptno = 20
+      yield e.job),
+    (from e in scott.emps
+      where e.deptno = 30
+      yield e.job);
+> val it = ["PRESIDENT"] : string bag
+
 (* I have two sodas and three candies and give my friend
    one soda and two candies. What do I have left? *)
 from i in ["candy", "soda", "soda", "candy", "candy"]
   except ["soda", "candy"];
 > val it = ["soda","candy","candy"] : string list
+
+(* Count employees and compute total salary for each
+   department. *)
+(* The "order deptno unorder" line is added for determinism across JDK versions. *)
+from e in scott.emps
+  group e.deptno
+    compute {count over (), sumSal = sum over e.sal}
+  order deptno unorder;
+> count deptno sumSal
+> ----- ------ ------
+>     3     10   8750
+>     5     20  10875
+>     6     30   9400
+>
+> val it : {count:int, deptno:int, sumSal:real} bag
+
+(* One group key and no compute expressions gives an
+   atomic result. *)
+(* The "order deptno unorder" line is added for determinism across JDK versions. *)
+from e in scott.emps
+  group e.deptno
+  order deptno unorder;
+> val it = [10,20,30] : int bag
+
+(* Which job titles exist in department 10 and also in
+   departments 20 and 30? *)
+from e in scott.emps
+  where e.deptno = 10
+  yield e.job
+  intersect distinct
+    (from e in scott.emps
+      where e.deptno = 20
+      yield e.job),
+    (from e in scott.emps
+      where e.deptno = 30
+      yield e.job);
+> val it = ["MANAGER","CLERK"] : string bag
 
 (* I have two sodas and three candies, and my friend
    has one soda, one donut, and four candies. What do we
@@ -1243,6 +1526,54 @@ from i in ["candy", "soda", "soda", "candy", "candy"]
   intersect ["soda", "donut", "candy",
              "donut", "candy", "candy"];
 > val it = ["candy","soda","candy","candy"] : string list
+
+(* Find the name of each department and the name of all
+   employees in those departments. *)
+from d in scott.depts
+  join e in scott.emps on e.deptno = d.deptno
+  yield {d.dname, e.ename};
+> dname      ename
+> ---------- ------
+> ACCOUNTING CLARK
+> ACCOUNTING KING
+> ACCOUNTING MILLER
+> RESEARCH   SMITH
+> RESEARCH   JONES
+> RESEARCH   SCOTT
+> RESEARCH   ADAMS
+> RESEARCH   FORD
+> SALES      ALLEN
+> SALES      WARD
+> SALES      MARTIN
+> SALES      BLAKE
+> SALES      TURNER
+> SALES      JAMES
+>
+> val it : {dname:string, ename:string} bag
+
+(* List employees ordered by salary (descending) then
+   name. *)
+from e in scott.emps
+  order (DESC e.sal, e.ename)
+  yield {e.ename, e.job, e.sal};
+> ename  job       sal
+> ------ --------- ----
+> KING   PRESIDENT 5000
+> FORD   ANALYST   3000
+> SCOTT  ANALYST   3000
+> JONES  MANAGER   2975
+> BLAKE  MANAGER   2850
+> CLARK  MANAGER   2450
+> ALLEN  SALESMAN  1600
+> TURNER SALESMAN  1500
+> MILLER CLERK     1300
+> MARTIN SALESMAN  1250
+> WARD   SALESMAN  1250
+> ADAMS  CLERK     1100
+> JAMES  CLERK      950
+> SMITH  CLERK      800
+>
+> val it : {ename:string, job:string, sal:real} list
 
 (* Skip the first 3 rows of a collection. *)
 from i in [1, 2, 3, 4, 5, 6, 7]
@@ -1278,6 +1609,20 @@ from i in [1, 2, 3, 4, 5, 6, 7]
   through j in multiplesOf 3;
 > val it = [3,6] : int list
 
+(* Which job titles exist in departments 10, 20 and 30? *)
+from e in scott.emps
+  where e.deptno = 10
+  yield e.job
+  union distinct
+    (from e in scott.emps
+      where e.deptno = 20
+      yield e.job),
+    (from e in scott.emps
+      where e.deptno = 30
+      yield e.job);
+> val it = ["MANAGER","PRESIDENT","CLERK","ANALYST","SALESMAN"]
+>   : string bag
+
 (* I have two sodas and three candies, and my friend has
    one soda and one candy. What do we have if we combine
    our stashes? *)
@@ -1285,6 +1630,105 @@ from i in ["candy", "soda", "soda", "candy", "candy"]
   union ["soda", "candy"];
 > val it = ["candy","soda","soda","candy","candy","soda","candy"]
 >   : string list
+
+(* Find the top 3 employees by salary, as an unordered
+   collection. *)
+from e in scott.emps
+  order DESC e.sal
+  take 3
+  unorder
+  yield {e.ename, e.job, e.sal};
+> ename job       sal
+> ----- --------- ----
+> KING  PRESIDENT 5000
+> SCOTT ANALYST   3000
+> FORD  ANALYST   3000
+>
+> val it : {ename:string, job:string, sal:real} bag
+
+(* Find employees who work in department 20. *)
+from e in scott.emps
+  where e.deptno = 20
+  yield {e.ename, e.job};
+> ename job
+> ----- -------
+> SMITH CLERK
+> JONES MANAGER
+> SCOTT ANALYST
+> ADAMS CLERK
+> FORD  ANALYST
+>
+> val it : {ename:string, job:string} bag
+
+(* Create a new record from each employee with modified
+   fields. *)
+from e in scott.emps
+  yield {name = String.map Char.toUpper e.ename,
+      position = String.map Char.toLower e.job,
+      annualSalary = e.sal * 12.0};
+> annualSalary name   position
+> ------------ ------ ---------
+>         9600 SMITH  clerk
+>        19200 ALLEN  salesman
+>        15000 WARD   salesman
+>        35700 JONES  manager
+>        15000 MARTIN salesman
+>        34200 BLAKE  manager
+>        29400 CLARK  manager
+>        36000 SCOTT  analyst
+>        60000 KING   president
+>        18000 TURNER salesman
+>        13200 ADAMS  clerk
+>        11400 JAMES  clerk
+>        36000 FORD   analyst
+>        15600 MILLER clerk
+>
+> val it : {annualSalary:real, name:string, position:string} bag
+
+(* Return a list of strings describing each employee in
+   department 20. *)
+from e in scott.emps
+  where e.deptno = 20
+  yield e.ename ^ " is a " ^ e.job;
+> val it =
+>   ["SMITH is a CLERK","JONES is a MANAGER","SCOTT is a ANALYST",
+>    "ADAMS is a CLERK","FORD is a ANALYST"] : string bag
+
+(* Check whether all employees earn more than $2000. *)
+forall e in scott.emps
+  require e.sal > 2000.0;
+> val it = false : bool
+
+(* Check whether all managers earn more than $2000. *)
+forall e in scott.emps
+  where e.job = "MANAGER"
+  require e.sal > 2000.0;
+> val it = true : bool
+
+(* Do any employees earn more than $3,000? *)
+exists e in scott.emps
+  where e.sal > 3000.0;
+> val it = true : bool
+
+(* Do all employees have a job title of clerk, manager or
+   president? *)
+forall e in scott.emps
+  require e.job elem ["CLERK", "MANAGER", "PRESIDENT"];
+> val it = false : bool
+
+(* Do all employees in department 10 have a job title of
+   clerk, manager or president? *)
+forall e in scott.emps
+  where e.deptno = 10
+  require e.job elem ["CLERK", "MANAGER", "PRESIDENT"];
+> val it = true : bool
+
+(* Are all employees in department 10 and have a job
+   title of clerk, manager or president? *)
+forall e in scott.emps
+  require e.deptno = 10
+    andalso e.job elem ["CLERK", "MANAGER", "PRESIDENT"];
+> val it = false : bool
 
 (* --- Datalog ---------------------------------------------------- *)
 fun edge (x, y) =

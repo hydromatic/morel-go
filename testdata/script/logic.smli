@@ -19,6 +19,108 @@
  * Tests for logical expressions.
  *)
 
+val emps = scott.emps;
+> val emps = <relation>
+>   : {comm:real, deptno:int, empno:int, ename:string, hiredate:string,
+>       job:string, mgr:int, sal:real} bag
+val depts = scott.depts;
+> val depts = <relation> : {deptno:int, dname:string, loc:string} bag
+
+(* --- Simple examples -------------------------------------------- *)
+
+(* Q1. Do any employees have a salary under 900? *)
+exists e in emps
+  where e.sal < 900.0;
+> val it = true : bool
+
+(* Answer to Q1 using 'from' and 'Bag.null'. *)
+not (Bag.null (from e in emps where e.sal < 900.0));
+> val it = true : bool
+
+(* Q2. Do all employees have a salary greater than 1,000? *)
+forall e in emps
+  require e.sal > 1000.0;
+> val it = false : bool
+
+(* Answer to Q2 using 'exists'. *)
+not (exists e in emps
+  where not (e.sal > 1000.0));
+> val it = false : bool
+
+(* Answer to Q2 using 'from' and 'Bag.null'. *)
+Bag.null (from e in emps where not (e.sal > 1000.0));
+> val it = false : bool
+
+(* Q3. Do all employees in department 10 earn over 1,000? *)
+forall e in emps
+  where e.deptno = 10
+  require e.sal > 1000.0;
+> val it = true : bool
+
+(* Not equivalent to Q3. Syntax is valid, but query
+   does not return the result the user wanted. *)
+forall e in emps
+  require e.deptno = 10 andalso e.sal > 1000.0;
+> val it = false : bool
+
+(* Answer to Q3 using 'implies'. *)
+forall e in emps
+  require e.deptno = 10 implies e.sal > 1000.0;
+> val it = true : bool
+
+(* Answer to Q3 using 'if'. *)
+forall e in emps
+  require if e.deptno = 10 then e.sal > 1000.0 else true;
+> val it = true : bool
+
+(* Answer to Q3 using 'not ... orelse'. *)
+forall e in emps
+  require not (e.deptno = 10) orelse e.sal > 1000.0;
+> val it = true : bool
+
+(* Answer to Q3 using 'where'. *)
+forall e in emps
+  where e.deptno = 10
+  require e.sal > 1000.0;
+> val it = true : bool
+
+(* Answer to Q3 using unconstrained variables. *)
+(* TODO
+forall e
+  require e elem emps andalso e.deptno = 10
+    implies e.sal > 1000.0;
+> val it = true : bool
+*)
+
+(* Q4. Find all departments with at least one clerk. *)
+from d in depts
+  where (exists e in emps
+    where e.deptno = d.deptno
+    andalso e.job = "CLERK");
+> val it =
+>   [{deptno=10,dname="ACCOUNTING",loc="NEW YORK"},
+>    {deptno=20,dname="RESEARCH",loc="DALLAS"},
+>    {deptno=30,dname="SALES",loc="CHICAGO"}]
+>   : {deptno:int, dname:string, loc:string} bag
+
+(* Q5. Find all departments with no clerks. *)
+from d in depts
+  where not (exists e in emps
+    where e.deptno = d.deptno
+    andalso e.job = "CLERK");
+> val it = [{deptno=40,dname="OPERATIONS",loc="BOSTON"}]
+>   : {deptno:int, dname:string, loc:string} bag
+
+(* Q6. Find all departments where all employees earn more than 1,000. *)
+from d in depts
+  where (forall e in emps
+    require e.deptno = d.deptno
+    implies e.sal > 1000.0);
+> val it =
+>   [{deptno=10,dname="ACCOUNTING",loc="NEW YORK"},
+>    {deptno=40,dname="OPERATIONS",loc="BOSTON"}]
+>   : {deptno:int, dname:string, loc:string} bag
+
 (* --- Implies ---------------------------------------------------- *)
 false implies false;
 > val it = true : bool
@@ -36,6 +138,27 @@ false implies true implies false;
 > val it = false : bool
 false implies (true implies false);
 > val it = true : bool
+
+(* All departments are not department 30 or are called
+   "SALES". *)
+from d in scott.depts
+  where d.deptno = 30 implies d.dname = "SALES";
+> val it =
+>   [{deptno=10,dname="ACCOUNTING",loc="NEW YORK"},
+>    {deptno=20,dname="RESEARCH",loc="DALLAS"},
+>    {deptno=30,dname="SALES",loc="CHICAGO"},
+>    {deptno=40,dname="OPERATIONS",loc="BOSTON"}]
+>   : {deptno:int, dname:string, loc:string} bag
+
+(* Three departments are not department 30 or are called
+   "RESEARCH". *)
+from d in scott.depts
+  where d.deptno = 30 implies d.dname = "RESEARCH";
+> val it =
+>   [{deptno=10,dname="ACCOUNTING",loc="NEW YORK"},
+>    {deptno=20,dname="RESEARCH",loc="DALLAS"},
+>    {deptno=40,dname="OPERATIONS",loc="BOSTON"}]
+>   : {deptno:int, dname:string, loc:string} bag
 
 (* --- Exists ----------------------------------------------------- *)
 

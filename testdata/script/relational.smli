@@ -461,6 +461,44 @@ from i in [3,1,4,5,3,5,8,9,7]
   where ordinal > 1;
 > val it = [{i=7,`ordinal`=8}] : {i:int, `ordinal`:int} list
 
+(* In the following query, the query becomes unordered after
+   the join with the unordered `scott.depts` table, but we can
+   restore the same order by sorting on `i` (which is assigned
+   in a previous step from `ordinal`). *)
+from e in scott.emps
+  order e.deptno
+  yield {i = ordinal, e}
+  join d in scott.depts on d.deptno = e.deptno
+  order i
+  yield {i, d.dname, e.ename};
+> val it =
+>   [{dname="ACCOUNTING",ename="CLARK",i=0},
+>    {dname="ACCOUNTING",ename="KING",i=1},
+>    {dname="ACCOUNTING",ename="MILLER",i=2},
+>    {dname="RESEARCH",ename="SMITH",i=3},{dname="RESEARCH",ename="JONES",i=4},
+>    {dname="RESEARCH",ename="SCOTT",i=5},{dname="RESEARCH",ename="ADAMS",i=6},
+>    {dname="RESEARCH",ename="FORD",i=7},{dname="SALES",ename="ALLEN",i=8},
+>    {dname="SALES",ename="WARD",i=9},{dname="SALES",ename="MARTIN",i=10},
+>    {dname="SALES",ename="BLAKE",i=11},{dname="SALES",ename="TURNER",i=12},
+>    {dname="SALES",ename="JAMES",i=13}]
+>   : {dname:string, ename:string, i:int} list
+
+(* Morel's order step does not provide stable sorts, but you
+   can achieve stable sorts using `ordinal`. Note that employees
+   are sorted by job then empno. *)
+from e in scott.emps
+  order e.empno
+  where e.deptno > 10
+  order (e.job, ordinal)
+  yield {e.empno, e.job};
+> val it =
+>   [{empno=7788,job="ANALYST"},{empno=7902,job="ANALYST"},
+>    {empno=7369,job="CLERK"},{empno=7876,job="CLERK"},{empno=7900,job="CLERK"},
+>    {empno=7566,job="MANAGER"},{empno=7698,job="MANAGER"},
+>    {empno=7499,job="SALESMAN"},{empno=7521,job="SALESMAN"},
+>    {empno=7654,job="SALESMAN"},{empno=7844,job="SALESMAN"}]
+>   : {empno:int, job:string} list
+
 (*) Ordinal in subquery
 from i in [1,2,3,4]
   yield {i, ks = (from k in ["a","b","c","d"] where ordinal < i)};
@@ -903,6 +941,60 @@ from i in [1,2,3] group (h = i);
 from i in [1,2,3] group b = (h = i);
 > val it = [false,true] : bool list
 
+(*) Binder applied to a record.
+from d in scott.depts yield f = d take 1;
+> val it = [{deptno=10,dname="ACCOUNTING",loc="NEW YORK"}]
+>   : {deptno:int, dname:string, loc:string} bag
+from d in scott.depts yield f = d yield f.deptno;
+> val it = [10,20,30,40] : int bag
+from d in scott.depts yield f = d yield d.deptno;
+> stdIn:1.41 Error: unbound variable or constructor: d
+>   raised at: stdIn:1.41
+from d in scott.depts yield f = d yield deptno;
+> stdIn:1.41-1.47 Error: unbound variable or constructor: deptno
+>   raised at: stdIn:1.41-1.47
+
+(*) Binder followed by join, union, except, intersect, distinct, take.
+from d in scott.depts yield f = {d.deptno, two = 2} join g in ["a","b"];
+> val it =
+>   [{f={deptno=10,two=2},g="a"},{f={deptno=10,two=2},g="b"},
+>    {f={deptno=20,two=2},g="a"},{f={deptno=20,two=2},g="b"},
+>    {f={deptno=30,two=2},g="a"},{f={deptno=30,two=2},g="b"},
+>    {f={deptno=40,two=2},g="a"},{f={deptno=40,two=2},g="b"}]
+>   : {f:{deptno:int, two:int}, g:string} bag
+from d in scott.depts yield f = {d.deptno, two = 2} union [{deptno = 50, two = 1}];
+> val it =
+>   [{deptno=10,two=2},{deptno=20,two=2},{deptno=30,two=2},{deptno=40,two=2},
+>    {deptno=50,two=1}] : {deptno:int, two:int} bag
+from d in scott.depts yield f = {d.deptno, two = 2} union [{deptno = 50, two = 1}] yield f.deptno;
+> val it = [10,20,30,40,50] : int bag
+from d in scott.depts yield f = {d.deptno, two = 2} except [{deptno = 10, two = 2}];
+> val it = [{deptno=20,two=2},{deptno=30,two=2},{deptno=40,two=2}]
+>   : {deptno:int, two:int} bag
+from d in scott.depts yield f = {d.deptno, two = 2} except [{deptno = 10, two = 2}] yield f.deptno;
+> val it = [20,30,40] : int bag
+from d in scott.depts yield f = {d.deptno, two = 2} intersect [{deptno = 10, two = 2}];
+> val it = [{deptno=10,two=2}] : {deptno:int, two:int} bag
+from d in scott.depts yield f = {d.deptno, two = 2} intersect [{deptno = 10, two = 2}] yield f.deptno;
+> val it = [10] : int bag
+from e in scott.emps yield f = {e.deptno, two = 2} distinct;
+> val it = [{deptno=20,two=2},{deptno=30,two=2},{deptno=10,two=2}]
+>   : {deptno:int, two:int} bag
+from e in scott.emps yield f = {e.deptno, two = 2} distinct yield f.deptno;
+> val it = [20,30,10] : int bag
+from d in scott.depts order d.deptno yield f = d take 2;
+> val it =
+>   [{deptno=10,dname="ACCOUNTING",loc="NEW YORK"},
+>    {deptno=20,dname="RESEARCH",loc="DALLAS"}]
+>   : {deptno:int, dname:string, loc:string} list
+from d in scott.depts order d.deptno yield f = d take 2 yield f.deptno;
+> val it = [10,20] : int list
+from d in scott.depts order d.deptno yield f = d skip 3;
+> val it = [{deptno=40,dname="OPERATIONS",loc="BOSTON"}]
+>   : {deptno:int, dname:string, loc:string} list
+from d in scott.depts order d.deptno yield f = d skip 3 yield f.deptno;
+> val it = [40] : int list
+
 (*) Single-field record, possibly capturing 'h' from environment.
 from i in [1,2,3] yield h = {x = i};
 > val it = [{x=1},{x=2},{x=3}] : {x:int} list
@@ -965,6 +1057,31 @@ from e in emps
       x + y
     end;
 > val it = [200,202,204,206] : int list
+
+(* 'distinct' is equivalent to 'group' with all fields
+ * Query 1, using `distinct`
+ * (The 'order' clause is for deterministic results.) *)
+from e in scott.emps
+  yield {e.job, e.deptno}
+  distinct
+  order (job, deptno);
+> val it =
+>   [{deptno=20,job="ANALYST"},{deptno=10,job="CLERK"},{deptno=20,job="CLERK"},
+>    {deptno=30,job="CLERK"},{deptno=10,job="MANAGER"},{deptno=20,job="MANAGER"},
+>    {deptno=30,job="MANAGER"},{deptno=10,job="PRESIDENT"},
+>    {deptno=30,job="SALESMAN"}] : {deptno:int, job:string} list
+
+(* Query 2, using `group` with no aggregate functions, equivalent to query 1
+ * (The 'order' clause is for deterministic results.) *)
+from e in scott.emps
+  yield {e.job, e.deptno}
+  group {job, deptno}
+  order (job, deptno);
+> val it =
+>   [{deptno=20,job="ANALYST"},{deptno=10,job="CLERK"},{deptno=20,job="CLERK"},
+>    {deptno=30,job="CLERK"},{deptno=10,job="MANAGER"},{deptno=20,job="MANAGER"},
+>    {deptno=30,job="MANAGER"},{deptno=10,job="PRESIDENT"},
+>    {deptno=30,job="SALESMAN"}] : {deptno:int, job:string} list
 
 (*) Function defined inside query
 from e in emps
@@ -1308,6 +1425,11 @@ from i in [1, 2, 3]
   yield {a = i, b = i + 1}
   intersect [{a = 2, b = 3}];
 > val it = [{a=2,b=3}] : {a:int, b:int} list
+from e in scott.emps
+  group e.deptno compute {c = count over ()}
+  except [{c = 3, deptno = 10}]
+  order deptno;
+> val it = [{c=5,deptno=20},{c=6,deptno=30}] : {c:int, deptno:int} list
 
 (* In the morel-java implementation, the scan emits {j, i} records, which
    an adapter permutes to {i, j} to match those from except's argument. *)
@@ -1350,6 +1472,22 @@ from i in [2, 1, 2, 2, 2, 3] except [2, 2, 4], [2, 2, 2];
 (*) 2 occurs twice on left, once on right, so should be output once.
 from i in [1,2,3,4,5,1,5,1,2] except [2,4];
 > val it = [1,3,5,1,5,1,2] : int list
+
+(*) Hybrid union/intersect/except (list and bag) yields bag
+from d in scott.depts yield d.deptno;
+> val it = [10,20,30,40] : int bag
+from i in [10, 15, 20] union (from d in scott.depts yield d.deptno);
+> val it = [10,15,20,10,20,30,40] : int bag
+from i in [10, 15, 20] intersect (from d in scott.depts yield d.deptno);
+> val it = [10,20] : int bag
+from i in [10, 15, 20] except (from d in scott.depts yield d.deptno);
+> val it = [15] : int bag
+from d in scott.depts yield d.deptno union [10, 15, 20];
+> val it = [10,20,30,40,10,15,20] : int bag
+from d in scott.depts yield d.deptno intersect [10, 15, 20];
+> val it = [10,20] : int bag
+from d in scott.depts yield d.deptno except [10, 15, 20];
+> val it = [30,40] : int bag
 
 (*) Set operators are not "lateral". They can't see the "current row".
 val orders = [{id=1, items=["beer"]}, {id=2, items=[]}];
@@ -2122,6 +2260,24 @@ from i in [1,2,3]
   through xs in (List.map (fn x => x * 10));
 > val it = [10,20,30] : int list
 
+let
+  fun clean emps =
+    from e in emps
+    where e.sal > 1000.0
+
+  fun process emps =
+    from e in emps
+    group e.deptno compute {count over (), sum over e.sal}
+
+  fun pipeline emps =
+    from e in process (clean emps)
+    yield {i = e.deptno + e.count}
+    order i
+in
+  pipeline scott.emps
+end;
+> val it = [{i=13},{i=24},{i=35}] : {i:int} list
+
 (*) "threes" is a function that groups a list into sublists of 3
 (* (or fewer) elements each. *)
 fun threes list =
@@ -2160,6 +2316,36 @@ fun threeBag list = bag (threes list);
 from i in [0,1,2,3,4,5,6,7,8,9,10]
   through j in threeBag;
 > val it = [[9,10],[6,7,8],[3,4,5],[0,1,2]] : int list bag
+
+let
+  fun clean emps =
+    from e in emps
+    where e.sal > 1000.0
+
+  fun process emps =
+    from e in emps
+    group e.deptno compute {count over (), sum over e.sal}
+    order deptno
+
+  fun pipeline emps =
+    from e in emps
+      through e2 in clean
+      into process
+in
+  pipeline scott.emps
+end;
+> val it =
+>   [{count=3,deptno=10,sum=8750},{count=4,deptno=20,sum=10075},
+>    {count=5,deptno=30,sum=8450}] : {count:int, deptno:int, sum:real} list
+
+from d in scott.depts
+  through i2 in (Bag.map (fn x => [x]));
+> val it =
+>   [[{deptno=10,dname="ACCOUNTING",loc="NEW YORK"}],
+>    [{deptno=20,dname="RESEARCH",loc="DALLAS"}],
+>    [{deptno=30,dname="SALES",loc="CHICAGO"}],
+>    [{deptno=40,dname="OPERATIONS",loc="BOSTON"}]]
+>   : {deptno:int, dname:string, loc:string} list bag
 
 (* let ------------------------------------------------------------ *)
 

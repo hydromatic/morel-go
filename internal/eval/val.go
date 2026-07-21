@@ -48,6 +48,13 @@ const (
 	ExnUnequal   = "UnequalLengths"
 )
 
+// Relation is a foreign relation: a collection whose rows come
+// from outside the session (the scott dataset). It behaves as its
+// rows everywhere, but prints opaquely as "<relation>".
+type Relation struct {
+	Rows []Val
+}
+
 // MorelError is a Morel runtime error: the name of the exception
 // (e.g. "Div") and the source position it was raised at.
 type MorelError struct {

@@ -96,6 +96,10 @@ func (c *Config) valueDoc(t types.Type, v eval.Val,
 		vt, _ := vr.Type.(types.Type)
 		return c.valueDoc(vt, vr.Value, depth)
 	}
+	if _, ok := v.(eval.Relation); ok {
+		// A foreign relation prints opaquely as "<relation>".
+		return pp.Text("<relation>")
+	}
 	// lint: sort until '^\t}' where '^\tcase '
 	switch t := t.(type) {
 	case *types.Fn:
