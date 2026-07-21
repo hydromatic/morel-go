@@ -1148,6 +1148,16 @@ func (r *resolver) toPat(pat ast.Pat) (core.Pat, error) {
 		// The annotation constrained the type during inference; the
 		// core pattern is just the pattern it wraps.
 		return r.toPat(p.Pat)
+	case *ast.AsPat:
+		inner, err := r.toPat(p.Pat)
+		if err != nil {
+			return nil, err
+		}
+		return &core.AsPat{
+			T:    t,
+			Pat:  &core.IDPat{T: t, Name: p.Name},
+			Body: inner,
+		}, nil
 	case *ast.ConPat:
 		tc, ok := r.typeMap.sys.LookupTyCon(p.Name)
 		if !ok || tc.Arg == nil {

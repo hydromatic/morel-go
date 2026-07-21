@@ -48,6 +48,8 @@ ack 2 3;
 > val it = 9 : int
 ack 3 3;
 > val it = 61 : int
+fun g (l as h :: t) = 1 | g [] = 0;
+> val g = fn : 'a list -> int
 
 (* Various types, exhaustive & non-exhaustive --------------------- *)
 (*) From https://smlhelp.github.io/book/docs/start/syntax/

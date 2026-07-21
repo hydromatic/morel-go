@@ -708,6 +708,12 @@ func (c *compiler) compilePat(pat core.Pat) (eval.Pat, error) {
 func (c *compiler) patCode(pat core.Pat) (eval.Pat, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch p := pat.(type) {
+	case *core.AsPat:
+		body, err := c.patCode(p.Body)
+		if err != nil {
+			return nil, err
+		}
+		return eval.AsPat{Slot: c.slots[p.Pat], Body: body}, nil
 	case *core.Con0Pat:
 		con0Pat := eval.Con0Pat{
 			Datatype: p.Datatype,

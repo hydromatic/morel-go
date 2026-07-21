@@ -2039,6 +2039,25 @@ listFields2 [];
 listFields2 [{a = 1, b = 2}, {a = 3, b = 0}, {a = 4, b = 5}];
 > val it = [2,4,5] : int list
 
+(*) Layered patterns
+fun listHeads2 (lists: 'a list) =
+  from list as (hd :: tl) in lists
+  yield hd + 1 + (length list);
+> val listHeads2 = fn : int list list -> int list
+listHeads2 [];
+> val it = [] : int list
+listHeads2 [[1, 2], [3], [4, 5, 6]];
+> val it = [4,5,8] : int list
+
+fun sumPairs2 (pairs: 'a list) =
+  from p as (l, r) in pairs
+  yield (#1 p) + l + r;
+> val sumPairs2 = fn : (int * int) list -> int list
+sumPairs2 [];
+> val it = [] : int list
+sumPairs2 [(1, 2), (3, 4)];
+> val it = [4,10] : int list
+
 (*) Temporary functions
 let
   fun abbrev s =

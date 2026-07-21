@@ -236,6 +236,22 @@ func (p *IDPat) Type() types.Type { return p.T }
 
 func (*IDPat) pat() {}
 
+// AsPat is a layered pattern, "name as body": it binds name to the
+// whole value and also matches body against it.
+type AsPat struct {
+	T    types.Type
+	Pat  *IDPat
+	Body Pat
+}
+
+// Op implements Pat.
+func (*AsPat) Op() ast.Op { return ast.AsPatOp }
+
+// Type implements Pat.
+func (p *AsPat) Type() types.Type { return p.T }
+
+func (*AsPat) pat() {}
+
 // WildcardPat is the pattern "_".
 type WildcardPat struct {
 	T types.Type
@@ -277,6 +293,9 @@ func PatIDs(p Pat) []*IDPat {
 func walkPat(p Pat, ids *[]*IDPat) {
 	// lint: sort until '^	}' where '^	case '
 	switch p := p.(type) {
+	case *AsPat:
+		*ids = append(*ids, p.Pat)
+		walkPat(p.Body, ids)
 	case *Con0Pat:
 	case *ConPat:
 		walkPat(p.Arg, ids)

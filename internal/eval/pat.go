@@ -47,6 +47,19 @@ func (p SlotPat) Match(v Val, f *Frame) bool {
 	return true
 }
 
+// AsPat matches a layered pattern, "name as body": it binds the
+// whole value to a slot and also matches body against it.
+type AsPat struct {
+	Body Pat
+	Slot int
+}
+
+// Match implements Pat.
+func (p AsPat) Match(v Val, f *Frame) bool {
+	f.Slots[p.Slot] = v
+	return p.Body.Match(v, f)
+}
+
 // Con0Pat matches a constant constructor value.
 type Con0Pat struct {
 	Datatype string

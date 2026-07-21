@@ -701,6 +701,10 @@ val SOME i = NONE;
 > uncaught exception Bind [nonexhaustive binding failure]
 >   raised at: stdIn:1.5-1.18
 
+val SOME (q as (1, i), SOME true) = SOME ((1, 2), SOME true);
+> val q = (1,2) : int * int
+> val i = 2 : int
+
 val SOME (i, NONE) = SOME (1, SOME false);
 > uncaught exception Bind [nonexhaustive binding failure]
 >   raised at: stdIn:1.5-1.42
@@ -729,11 +733,55 @@ Sys.unset "matchCoverageEnabled";
 
 val x = (( "foo", true ), 17 );
 > val x = (("foo",true),17) : (string * bool) * int
+val ( l as (ll,lr), r ) = x;
+> val l = ("foo",true) : string * bool
+> val ll = "foo" : string
+> val lr = true : bool
+> val r = 17 : int
 
 Sys.set ("matchCoverageEnabled", false);
 > val it = () : unit
+fun f (true, []) = ~1
+  | f (true, l as (hd :: tl)) = length l
+  | f (false, list) = 0;
+> val f = fn : bool * 'a list -> int
+f (true, ["a","b","c"]);
+> val it = 3 : int
 Sys.unset "matchCoverageEnabled";
 > val it = () : unit
+
+let
+  val w as (x, y) = (1, 2)
+in
+  #1 w + #2 w + x + y
+end;
+> val it = 6 : int
+
+val x as (y, z) = (1, 2);
+> val x = (1,2) : int * int
+> val y = 1 : int
+> val z = 2 : int
+val x as h :: t = [1,2,3];
+> val x = [1,2,3] : int list
+> val h = 1 : int
+> val t = [2,3] : int list
+val x as y as (h,i) :: t = [(1,2),(3,4),(5,6)];
+> val x = [(1,2),(3,4),(5,6)] : (int * int) list
+> val y = [(1,2),(3,4),(5,6)] : (int * int) list
+> val h = 1 : int
+> val i = 2 : int
+> val t = [(3,4),(5,6)] : (int * int) list
+
+val a as SOME (b as (c, d)) = SOME (1, 2);
+> val a = SOME (1,2) : (int * int) option
+> val b = (1,2) : int * int
+> val c = 1 : int
+> val d = 2 : int
+
+val x as y as z = 3;
+> val x = 3 : int
+> val y = 3 : int
+> val z = 3 : int
 
 (* Field access --------------------------------------------------- *)
 

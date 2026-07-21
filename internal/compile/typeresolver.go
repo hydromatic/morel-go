@@ -760,6 +760,16 @@ func (r *typeResolver) deducePat(pat ast.Pat,
 		}
 		r.reg(pat, v)
 		return nil
+	case *ast.AsPat:
+		// "name as p": the name and the sub-pattern both have the
+		// matched value's type.
+		*termMap = append(*termMap, patTerm{name: p.Name, term: v})
+		err := r.deducePat(p.Pat, termMap, nil, v)
+		if err != nil {
+			return err
+		}
+		r.reg(pat, v)
+		return nil
 	case *ast.ConPat:
 		return r.deduceConPat(p, termMap, v)
 	case *ast.ConsPat:
