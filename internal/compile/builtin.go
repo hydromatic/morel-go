@@ -47,6 +47,7 @@ const (
 	intName    = "int"
 	realName   = "real"
 	wordName   = "word"
+	stringName = "string"
 )
 
 // topBuiltins are the built-in values that no structure's

@@ -132,6 +132,7 @@ const (
 	ExceptOp
 	OverOp
 	OrdinalOp
+	TypeStringOp
 )
 
 var opNames = map[Op]string{
@@ -209,27 +210,28 @@ var opNames = map[Op]string{
 	AnnotatedPatOp:   "annotated_pat",
 	ExpressionTypeOp: "expression_type",
 
-	FromOp:      "from",
-	ExistsOp:    "exists",
-	ForallOp:    "forall",
-	ScanOp:      "scan",
-	WhereOp:     "where",
-	YieldOp:     "yield",
-	GroupOp:     "group",
-	ComputeOp:   "compute",
-	OrderOp:     "order",
-	SkipOp:      "skip",
-	TakeOp:      "take",
-	IntoOp:      "into",
-	ThroughOp:   "through",
-	RequireOp:   "require",
-	DistinctOp:  "distinct",
-	UnorderOp:   "unorder",
-	UnionOp:     "union",
-	IntersectOp: "intersect",
-	ExceptOp:    "except",
-	OverOp:      "over",
-	OrdinalOp:   "ordinal",
+	FromOp:       "from",
+	ExistsOp:     "exists",
+	ForallOp:     "forall",
+	ScanOp:       "scan",
+	WhereOp:      "where",
+	YieldOp:      "yield",
+	GroupOp:      "group",
+	ComputeOp:    "compute",
+	OrderOp:      "order",
+	SkipOp:       "skip",
+	TakeOp:       "take",
+	IntoOp:       "into",
+	ThroughOp:    "through",
+	RequireOp:    "require",
+	DistinctOp:   "distinct",
+	UnorderOp:    "unorder",
+	UnionOp:      "union",
+	IntersectOp:  "intersect",
+	ExceptOp:     "except",
+	OverOp:       "over",
+	OrdinalOp:    "ordinal",
+	TypeStringOp: "type_string",
 }
 
 func (o Op) String() string {

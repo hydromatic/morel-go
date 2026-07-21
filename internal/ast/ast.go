@@ -241,6 +241,22 @@ func NewPrefixCall(span token.Span, kind Op, a Expr) *PrefixCall {
 // Op implements Node.
 func (c *PrefixCall) Op() Op { return c.Kind }
 
+// TypeStringExp is "type_string e": the inferred type of e,
+// rendered as a string.
+type TypeStringExp struct {
+	exprBase
+
+	Exp Expr
+}
+
+// NewTypeStringExp returns a type_string expression.
+func NewTypeStringExp(span token.Span, exp Expr) *TypeStringExp {
+	return &TypeStringExp{exprBase: exprBase{base{span}}, Exp: exp}
+}
+
+// Op implements Node.
+func (*TypeStringExp) Op() Op { return TypeStringOp }
+
 // If is a conditional expression.
 type If struct {
 	exprBase

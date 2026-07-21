@@ -966,6 +966,16 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 		}
 		r.regEquiv(exp, v, r.tupleTerm(terms))
 		return nil
+	case *ast.TypeStringExp:
+		// "type_string e" is a string; its operand is typed so that
+		// the resolver can render the operand's type.
+		vOperand := r.u.Variable()
+		err := r.deduceExp(env, e.Exp, vOperand)
+		if err != nil {
+			return err
+		}
+		r.regEquiv(exp, v, r.primTerm(stringName))
+		return nil
 	default:
 		return &Error{
 			Span: exp.Span(),

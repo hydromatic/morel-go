@@ -331,6 +331,16 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 			args[i] = a
 		}
 		return &core.Tuple{T: t, Args: args}, nil
+	case *ast.TypeStringExp:
+		// The operand's type is known after inference; render it as
+		// a string literal.
+		operandType, err := r.typeMap.TypeOf(e.Exp)
+		if err != nil {
+			return nil, err
+		}
+		return &core.Literal{
+			T: t, Kind: ast.StringLiteralOp, Value: operandType.String(),
+		}, nil
 	default:
 		return nil, &Error{
 			Span: exp.Span(),
