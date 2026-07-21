@@ -628,6 +628,15 @@ func (r *typeResolver) deduceDatatypeDecl(decl *ast.DatatypeDecl,
 		for _, c := range b.Cons {
 			var argType types.Type
 			if c.Of != nil {
+				// A type variable in a constructor's argument must be
+				// bound by the datatype's head.
+				if tv := unboundTyVar(c.Of, tyVars); tv != nil {
+					return nil, &Error{
+						Span: tv.Span(),
+						Msg: "unbound type variable in type " +
+							"declaration: " + tv.Name,
+					}
+				}
 				t, err := r.sys.FromAST(c.Of, tyVars)
 				if err != nil {
 					return nil, &Error{
@@ -650,6 +659,44 @@ func (r *typeResolver) deduceDatatypeDecl(decl *ast.DatatypeDecl,
 	}
 	r.nodeTerm[decl] = r.primTerm("unit")
 	return decl, nil
+}
+
+// unboundTyVar returns the first type variable in t that is not in
+// the bound set, or nil if every variable is bound. It is used to
+// reject a datatype constructor whose argument mentions a type
+// variable the datatype's head does not declare.
+func unboundTyVar(t ast.Type, bound map[string]int) *ast.TyVar {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch n := t.(type) {
+	case *ast.FnType:
+		if tv := unboundTyVar(n.Param, bound); tv != nil {
+			return tv
+		}
+		return unboundTyVar(n.Result, bound)
+	case *ast.NamedType:
+		for _, a := range n.Args {
+			if tv := unboundTyVar(a, bound); tv != nil {
+				return tv
+			}
+		}
+	case *ast.RecordType:
+		for _, f := range n.Fields {
+			if tv := unboundTyVar(f.Type, bound); tv != nil {
+				return tv
+			}
+		}
+	case *ast.TupleType:
+		for _, a := range n.Args {
+			if tv := unboundTyVar(a, bound); tv != nil {
+				return tv
+			}
+		}
+	case *ast.TyVar:
+		if _, ok := bound[n.Name]; !ok {
+			return n
+		}
+	}
+	return nil
 }
 
 func (r *typeResolver) deducePat(pat ast.Pat,

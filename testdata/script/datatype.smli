@@ -137,8 +137,24 @@ Y (1, true);
 > val it = Y (1,true) : bar
 Z;
 > val it = Z : bar
+
+(* A datatype's body may not use a type variable that is not in the head;
+ * declare it, e.g. `datatype 'a my_option = ...`. *)
+datatype my_option = MY_NONE | MY_SOME of 'a;
+> stdIn:1.43-1.45 Error: unbound type variable in type declaration: 'a
+>   raised at: stdIn:1.43-1.45
 datatype 'a my_option = MY_NONE | MY_SOME of 'a;
 > datatype 'a my_option = MY_NONE | MY_SOME of 'a
+(*) The body uses 'b, which is not in the head.
+datatype 'a pair = PAIR of 'a * 'b;
+> stdIn:1.33-1.35 Error: unbound type variable in type declaration: 'b
+>   raised at: stdIn:1.33-1.35
+datatype ('a, 'b) pair = PAIR of 'a * 'b;
+> datatype ('a,'b) pair = PAIR of 'a * 'b
+(* A head type variable need not be used in the body; here 'b is a phantom
+ * type, used in the head but not the body. Standard ML allows this. *)
+datatype ('a, 'b) phantom = PHANTOM of 'a;
+> datatype ('a,'b) phantom = PHANTOM of 'a
 fn (x: (int) list) => 1;
 > val it = fn : int list -> int
 fn (x: (int, string) either) => 1;
@@ -168,8 +184,68 @@ Node(Empty, 2, Node(Node(Empty, 3, Empty), 4, Empty));
 > val it = Node (Empty,2,Node (Node (Empty,3,Empty),4,Empty)) : inttree
 height it;
 > val it = 3 : int
+
+(*) Recursive
+datatype 'x tree = Empty | Node of 'x tree * 'x * 'x tree;
+> datatype 'a tree = Empty | Node of 'a tree * 'a * 'a tree
 fun greater (x, y) = if x < y then y else x;
 > val greater = fn : 'a * 'a -> 'a
+fun height Empty = 0
+  | height (Node (lft, _, rht)) = 1 + greater (height lft, height rht);
+> val height = fn : 'a tree -> int
+Empty;
+> val it = Empty : 'a tree
+height it;
+> val it = 0 : int
+Node(Empty, 1, Empty);
+> val it = Node (Empty,1,Empty) : int tree
+height it;
+> val it = 1 : int
+Node(Empty, 2, Node(Node(Empty, 3, Empty), 4, Empty));
+> val it = Node (Empty,2,Node (Node (Empty,3,Empty),4,Empty)) : int tree
+height it;
+> val it = 3 : int
+
+(*) Two type parameters
+datatype ('y, 'x) tree =
+   Empty
+ | Node of ('y, 'x) tree * 'x * 'y * ('y, 'x) tree;
+> datatype ('a,'b) tree = Empty | Node of ('a,'b) tree * 'b * 'a * ('a,'b) tree
+Empty;
+> val it = Empty : ('a,'b) tree
+Node (Empty, true, "yes", Empty);
+> val it = Node (Empty,true,"yes",Empty) : (string,bool) tree
+
+datatype ('a, 'b) Union = A of 'a | B of 'b;
+> datatype ('a,'b) Union = A of 'a | B of 'b
+A 1;
+> val it = A 1 : (int,'a) Union
+B true;
+> val it = B true : ('a,bool) Union
+
+(*) Mutually recursive
+datatype 'a tree = Empty | Node of 'a * 'a forest
+and      'a forest = Nil | Cons of 'a tree * 'a forest;
+> datatype 'a tree = Empty | Node of 'a * 'a forest
+> datatype 'a forest = Nil | Cons of 'a tree * 'a forest
+Empty;
+> val it = Empty : 'a tree
+Nil;
+> val it = Nil : 'a forest
+Node (1, Nil);
+> val it = Node (1,Nil) : int tree
+Node (1, Cons (Empty, Nil));
+> val it = Node (1,Cons (Empty,Nil)) : int tree
+Cons (Empty, Nil);
+> val it = Cons (Empty,Nil) : 'a forest
+Cons (Empty, Cons (Node (true, Nil), Nil));
+> val it = Cons (Empty,Cons (Node (true,Nil),Nil)) : bool forest
+
+(* Parentheses are required for 2 or more type parameters,
+ * optional for 1 type parameter,
+ * not allowed for 0 type parameters. *)
+datatype ('a, 'b) pair = Pair of 'a * 'b;
+> datatype ('a,'b) pair = Pair of 'a * 'b
 (* disabled; should throw
 datatype 'a, 'b pair = Pair of 'a * 'b; (*) not valid
 *)
@@ -185,6 +261,16 @@ datatype void = Void;
 > datatype void = Void
 datatype unitVoid = Void of unit;
 > datatype unitVoid = Void of unit
+
+(*) Recursive datatype with 2 type parameters
+datatype ('a, 'b) tree = EMPTY | NODE of 'a * 'b * ('a, 'b) tree;
+> datatype ('a,'b) tree = EMPTY | NODE of 'a * 'b * ('a,'b) tree
+EMPTY;
+> val it = EMPTY : ('a,'b) tree
+NODE (1, true, EMPTY);
+> val it = NODE (1,true,EMPTY) : (int,bool) tree
+NODE (1, true, NODE (2, false, EMPTY));
+> val it = NODE (1,true,NODE (2,false,EMPTY)) : (int,bool) tree
 
 (*
 - fun f x none = x | x some y = y;

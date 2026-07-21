@@ -19,10 +19,9 @@ package ast
 
 import "strings"
 
-// UnparsePat renders a pattern as source text: an implicit
-// record field renders expanded
-// ("{a = a}"), and a nested cons or layered pattern is
-// parenthesized where the grammar requires.
+// UnparsePat renders a pattern as source text: an implicit record
+// field renders expanded ("{a = a}"), and a nested cons or layered
+// pattern is parenthesized where the grammar requires.
 func UnparsePat(p Pat) string {
 	var b strings.Builder
 	unparsePat(&b, p)
@@ -65,22 +64,25 @@ func unparsePat(b *strings.Builder, p Pat) {
 // tuple type parenthesizes function- and tuple-type elements.
 func UnparseType(t Type) string {
 	var b strings.Builder
-	unparseType(&b, t)
+	unparseType(&b, t, ", ")
 	return b.String()
 }
 
-func unparseType(b *strings.Builder, t Type) {
+// comma is the separator between the arguments of a multi-argument
+// named type: ", " in the general (parse-tree) rendering, but ","
+// in the shell's datatype echo.
+func unparseType(b *strings.Builder, t Type, comma string) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch n := t.(type) {
 	case *ExpressionType:
 		b.WriteString("typeof ")
 		unparseExpr(b, n.Exp, applyPrec)
 	case *FnType:
-		unparseTypeArg(b, n.Param, false)
+		unparseTypeArg(b, n.Param, false, comma)
 		b.WriteString(" -> ")
-		unparseType(b, n.Result)
+		unparseType(b, n.Result, comma)
 	case *NamedType:
-		unparseNamedType(b, n)
+		unparseNamedType(b, n, comma)
 	case *RecordType:
 		b.WriteString("{")
 		for i, f := range n.Fields {
@@ -88,7 +90,7 @@ func unparseType(b *strings.Builder, t Type) {
 				b.WriteString(", ")
 			}
 			b.WriteString(f.Label + ": ")
-			unparseType(b, f.Type)
+			unparseType(b, f.Type, comma)
 		}
 		b.WriteString("}")
 	case *TupleType:
@@ -96,7 +98,7 @@ func unparseType(b *strings.Builder, t Type) {
 			if i > 0 {
 				b.WriteString(" * ")
 			}
-			unparseTypeArg(b, a, true)
+			unparseTypeArg(b, a, true, comma)
 		}
 	case *TyVar:
 		b.WriteString(n.Name)
@@ -106,45 +108,88 @@ func unparseType(b *strings.Builder, t Type) {
 // unparseTypeArg parenthesizes an operand where the grammar
 // requires: a function type always, a tuple type inside another
 // tuple type.
-func unparseTypeArg(b *strings.Builder, t Type, inTuple bool) {
+func unparseTypeArg(b *strings.Builder, t Type, inTuple bool,
+	comma string,
+) {
 	_, isFn := t.(*FnType)
 	_, isTuple := t.(*TupleType)
 	if isFn || (inTuple && isTuple) {
 		b.WriteString("(")
-		unparseType(b, t)
+		unparseType(b, t, comma)
 		b.WriteString(")")
 		return
 	}
-	unparseType(b, t)
+	unparseType(b, t, comma)
 }
 
-func unparseNamedType(b *strings.Builder, n *NamedType) {
+func unparseNamedType(b *strings.Builder, n *NamedType, comma string) {
 	switch len(n.Args) {
 	case 0:
 	case 1:
-		unparseTypeArg(b, n.Args[0], true)
+		unparseTypeArg(b, n.Args[0], true, comma)
 		b.WriteString(" ")
 	default:
 		b.WriteString("(")
 		for i, a := range n.Args {
 			if i > 0 {
-				b.WriteString(", ")
+				b.WriteString(comma)
 			}
-			unparseType(b, a)
+			unparseType(b, a, comma)
 		}
 		b.WriteString(") ")
 	}
 	b.WriteString(n.Name)
 }
 
-// UnparseDatatypeDecl renders a datatype declaration as source
-// text; the shell echoes a datatype declaration this way.
+// UnparseDatatypeDecl renders a datatype declaration as the shell
+// echoes it: each bind's type variables are normalized to 'a, 'b,
+// ... in head order (so "datatype 'x tree" echoes as "datatype 'a
+// tree"), the same renaming applies throughout the constructor
+// argument types, and multi-argument type applications use ","
+// without a space.
 func UnparseDatatypeDecl(d *DatatypeDecl) string {
-	return unparseDatatype(d)
+	var b strings.Builder
+	for i, bind := range d.Binds {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("datatype ")
+		rename := canonicalTyVars(bind.TyVars)
+		names := make([]string, len(bind.TyVars))
+		for j, tv := range bind.TyVars {
+			names[j] = rename[tv]
+		}
+		unparseDatatypeTyVars(&b, names)
+		b.WriteString(bind.Name + " = ")
+		for j, c := range bind.Cons {
+			if j > 0 {
+				b.WriteString(" | ")
+			}
+			b.WriteString(c.Name)
+			if c.Of != nil {
+				b.WriteString(" of ")
+				unparseType(&b, renameTyVars(c.Of, rename), ",")
+			}
+		}
+	}
+	return b.String()
 }
 
-// unparseDatatype renders a datatype declaration, including its
-// keyword.
+// unparseDatatypeTyVars renders a datatype's type-variable head with
+// "," and no space, as the shell echo does.
+func unparseDatatypeTyVars(b *strings.Builder, tyVars []string) {
+	switch len(tyVars) {
+	case 0:
+	case 1:
+		b.WriteString(tyVars[0] + " ")
+	default:
+		b.WriteString("(" + strings.Join(tyVars, ",") + ") ")
+	}
+}
+
+// unparseDatatype renders a datatype declaration for the parse-tree
+// dump, keeping the source's type-variable names and the general
+// ", " separator.
 func unparseDatatype(d *DatatypeDecl) string {
 	var b strings.Builder
 	b.WriteString("datatype ")
@@ -165,6 +210,54 @@ func unparseDatatype(d *DatatypeDecl) string {
 		}
 	}
 	return b.String()
+}
+
+// canonicalTyVars maps type variables to 'a, 'b, ... in order.
+func canonicalTyVars(tyVars []string) map[string]string {
+	m := make(map[string]string, len(tyVars))
+	for i, tv := range tyVars {
+		m[tv] = "'" + string(rune('a'+i))
+	}
+	return m
+}
+
+// renameTyVars returns a copy of t with each type variable renamed
+// per m; a variable absent from m is left unchanged.
+func renameTyVars(t Type, m map[string]string) Type {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch n := t.(type) {
+	case *FnType:
+		return &FnType{
+			typeBase: n.typeBase,
+			Param:    renameTyVars(n.Param, m),
+			Result:   renameTyVars(n.Result, m),
+		}
+	case *NamedType:
+		args := make([]Type, len(n.Args))
+		for i, a := range n.Args {
+			args[i] = renameTyVars(a, m)
+		}
+		return &NamedType{typeBase: n.typeBase, Name: n.Name, Args: args}
+	case *RecordType:
+		fields := make([]TypeField, len(n.Fields))
+		for i, f := range n.Fields {
+			fields[i] = TypeField{Label: f.Label, Type: renameTyVars(f.Type, m)}
+		}
+		return &RecordType{typeBase: n.typeBase, Fields: fields}
+	case *TupleType:
+		args := make([]Type, len(n.Args))
+		for i, a := range n.Args {
+			args[i] = renameTyVars(a, m)
+		}
+		return &TupleType{typeBase: n.typeBase, Args: args}
+	case *TyVar:
+		if name, ok := m[n.Name]; ok {
+			return &TyVar{typeBase: n.typeBase, Name: name}
+		}
+		return n
+	default:
+		return t
+	}
 }
 
 // unparseTypeDecl renders a type-alias declaration, including its
@@ -250,8 +343,7 @@ func unparseRecordPat(b *strings.Builder, n *RecordPat) {
 }
 
 // Operator rendering for the unparser: text with padding, and
-// precedence. Cons and at are
-// right-associative.
+// precedence. Cons and at are right-associative.
 type opInfo struct {
 	text  string
 	prec  int
