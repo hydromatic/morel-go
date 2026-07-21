@@ -407,6 +407,8 @@ end;
 > val it = () : unit
 ();
 > val it = () : unit
+{} = ();
+> val it = true : bool
 
 (* Functions are expressions, too.  `fn` makes a lambda expression.
    After we have bound the lambda value to `plusOne`, we can use

@@ -38,6 +38,10 @@
 > val it = () : unit
 ();
 > val it = () : unit
+{} = ();
+> val it = true : bool
+() = {};
+> val it = true : bool
 
 (*) Nested tuple
 (1,true,7);

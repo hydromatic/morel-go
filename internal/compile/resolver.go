@@ -970,6 +970,12 @@ func (r *resolver) toRecord(env *coreEnv, record *ast.Record,
 			Msg:  "cannot convert to core: record update",
 		}
 	}
+	// The empty record is unit, the same value as "()".
+	if len(record.Fields) == 0 {
+		return &core.Literal{
+			T: t, Kind: ast.UnitLiteralOp, Value: core.Unit{},
+		}, nil
+	}
 	type fieldExp struct {
 		label string
 		exp   ast.Expr
