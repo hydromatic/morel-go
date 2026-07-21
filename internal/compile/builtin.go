@@ -42,7 +42,6 @@ const (
 	opMod      = "op mod"
 	opNegate   = "op ~"
 	comparison = "'a * 'a -> bool"
-	bagToElem  = "'a bag -> 'a"
 	realToInt  = "real -> int"
 	boolName   = "bool"
 	intName    = "int"
@@ -62,13 +61,7 @@ var topBuiltins = map[string]topBuiltin{
 	"compare":   {"'a * 'a -> `order`", ""},
 	"concat":    {"string list -> string", ""},
 	"env":       {"unit -> (string * string) list", ""},
-	"count":     {"'a bag -> int", ""},
-	"empty":     {"'a bag -> bool", ""},
 	"explode":   {"string -> char list", ""},
-	"max":       {bagToElem, ""},
-	"min":       {bagToElem, ""},
-	"nonEmpty":  {"'a bag -> bool", ""},
-	"sum":       {bagToElem, ""},
 	"fields":    {"(char -> bool) -> string -> string list", ""},
 	"floor":     {realToInt, ""},
 	"foldl":     {"('a * 'b -> 'b) -> 'b -> 'a list -> 'b", ""},
@@ -170,12 +163,46 @@ func collectionBindings(sys *types.System) []Binding {
 	coll := sys.Collection(a)
 	// "x elem c" and "x notelem c": 'a * 'a collection -> bool.
 	elemType := sys.Fn(sys.Tuple(a, coll), sys.Bool)
-	// "only c": 'a collection -> 'a.
-	onlyType := sys.Fn(coll, a)
+	// Aggregates and "only" adapt to their input's orderedness (a
+	// list or a bag), so they take a collection of free
+	// orderedness.
+	collToElem := sys.Fn(coll, a)        // max, min, sum, only
+	collToInt := sys.Fn(coll, sys.Int)   // count
+	collToBool := sys.Fn(coll, sys.Bool) // empty, nonEmpty
 	return []Binding{
 		{Name: "op elem", Type: elemType},
 		{Name: "op notelem", Type: elemType},
-		{Name: "only", Type: onlyType},
-		{Name: "Relational.only", Type: onlyType},
+		{Name: "count", Type: collToInt},
+		{Name: "empty", Type: collToBool},
+		{Name: "nonEmpty", Type: collToBool},
+		{Name: "max", Type: collToElem},
+		{Name: "min", Type: collToElem},
+		{Name: "sum", Type: collToElem},
+		{Name: "only", Type: collToElem},
+	}
+}
+
+// CollectionAggType returns the collection-of-free-orderedness type
+// of a Relational aggregate or "only" member, or nil for any other
+// member. It lets the Relational structure adapt its aggregates to
+// a list or a bag, like the top-level aliases.
+func CollectionAggType(sys *types.System, member string,
+	field types.Type,
+) types.Type {
+	fn, ok := field.(*types.Fn)
+	if !ok {
+		return nil
+	}
+	// The member's declared parameter is "'a bag"; replace it with
+	// a collection of the same element type.
+	bag, ok := fn.Param.(*types.Named)
+	if !ok || bag.Name != bagTyCon || len(bag.Args) != 1 {
+		return nil
+	}
+	switch member {
+	case "count", "empty", "max", "min", "nonEmpty", "only", "sum":
+		return sys.Fn(sys.Collection(bag.Args[0]), fn.Result)
+	default:
+		return nil
 	}
 }

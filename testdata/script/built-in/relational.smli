@@ -126,6 +126,17 @@ Relational.min (bag [INL 1, INR "a", INL 2]);
 Relational.min (bag [false, true]);
 > val it = false : bool
 
+Relational.only [2];
+> val it = 2 : int
+Relational.only [1, 2, 3];
+> uncaught exception Size [size]
+>   raised at: stdIn:1.1-1.26
+Relational.only [];
+> uncaught exception Empty
+>   raised at: stdIn:1.1-1.19
+Sys.plan ();
+> val it = "apply(fnValue Relational.only, argCode tuple)" : string
+
 List.concat [[1, 2], [3], [], [4, 2, 5]];
 > val it = [1,2,3,4,2,5] : int list
 List.concat [[], []];

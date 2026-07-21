@@ -115,6 +115,9 @@ func NewKernel(name string) *Kernel {
 		panic(err)
 	}
 	bindings := compile.TopBindings(sys)
+	for i := range result.Bindings {
+		adaptRelationalAggregates(sys, &result.Bindings[i])
+	}
 	bindings = append(bindings, result.Bindings...)
 	config := DefaultConfig()
 	config.sys = sys
@@ -244,6 +247,29 @@ func (k *Kernel) Execute(stmt string) string {
 		}
 	}
 	return k.executeStatement(n)
+}
+
+// adaptRelationalAggregates rewrites the "Relational" structure's
+// aggregate members (count, sum, only, ...) so that each takes a
+// collection of free orderedness — a list or a bag — matching the
+// top-level aliases. Other structures and members are left
+// unchanged.
+func adaptRelationalAggregates(sys *types.System, b *compile.Binding) {
+	if b.Name != "Relational" {
+		return
+	}
+	record, ok := b.Type.(*types.Record)
+	if !ok {
+		return
+	}
+	fields := make([]types.Field, len(record.Fields))
+	for i, f := range record.Fields {
+		fields[i] = f
+		if t := compile.CollectionAggType(sys, f.Label, f.Type); t != nil {
+			fields[i].Type = t
+		}
+	}
+	b.Type = sys.Record(fields)
 }
 
 // loadScott binds the global "scott" dataset, a foreign relation
