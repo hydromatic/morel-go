@@ -588,59 +588,42 @@ func listCollateFn(f Val) (Val, error) {
 	}), nil
 }
 
-// exceptFn is "List.except [xs, ys, ...]" (a Morel extension):
-// the elements of the first list that appear in none of the
-// others.
+// exceptFn is "List.except [xs, ys, ...]" (a Morel extension): the
+// multiset difference of the first list and the others, so an
+// element is dropped once per occurrence in the others, not
+// entirely.
 func exceptFn(arg Val) (Val, error) {
-	lists := asList(arg)
-	if len(lists) == 0 {
-		return []Val{}, nil
-	}
-	out := []Val{}
-	for _, v := range asList(lists[0]) {
-		found := false
-		for _, other := range lists[1:] {
-			for _, w := range asList(other) {
-				if valsEqual(v, w) {
-					found = true
-					break
-				}
-			}
-		}
-		if !found {
-			out = append(out, v)
-		}
-	}
-	return out, nil
+	return setOpFn(arg, exceptOp)
 }
 
 // intersectFn is "List.intersect [xs, ys, ...]" (a Morel
-// extension): the elements of the first list that appear in all
-// of the others.
+// extension): the multiset meet of the lists, keeping each element
+// as many times as it appears in every list.
 func intersectFn(arg Val) (Val, error) {
+	return setOpFn(arg, intersectOp)
+}
+
+// setOpFn applies a multiset set-operation (the same one the
+// query set-op steps use) to "List.op [xs, ys, ...]".
+func setOpFn(arg Val,
+	op func(left []Val, args [][]Val, distinct bool) []Val,
+) (Val, error) {
 	lists := asList(arg)
 	if len(lists) == 0 {
 		return []Val{}, nil
 	}
-	out := []Val{}
-	for _, v := range asList(lists[0]) {
-		inAll := true
-		for _, other := range lists[1:] {
-			found := false
-			for _, w := range asList(other) {
-				if valsEqual(v, w) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				inAll = false
-				break
-			}
-		}
-		if inAll {
-			out = append(out, v)
-		}
+	first := asList(lists[0])
+	if len(lists) == 1 {
+		// A single list is its own intersection and difference.
+		return first, nil
+	}
+	args := make([][]Val, len(lists)-1)
+	for i, other := range lists[1:] {
+		args[i] = asList(other)
+	}
+	out := op(first, args, false)
+	if out == nil {
+		out = []Val{}
 	}
 	return out, nil
 }

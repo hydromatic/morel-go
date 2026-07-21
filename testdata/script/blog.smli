@@ -1482,6 +1482,11 @@ from i in ["candy", "soda", "soda", "candy", "candy"]
   except ["soda", "candy"];
 > val it = ["soda","candy","candy"] : string list
 
+(* List.except has the same semantics as a query. *)
+List.`except` [["candy", "soda", "soda", "candy", "candy"],
+   ["soda", "candy"]];
+> val it = ["soda","candy","candy"] : string list
+
 (* Count employees and compute total salary for each
    department. *)
 (* The "order deptno unorder" line is added for determinism across JDK versions. *)
@@ -1525,6 +1530,11 @@ from e in scott.emps
 from i in ["candy", "soda", "soda", "candy", "candy"]
   intersect ["soda", "donut", "candy",
              "donut", "candy", "candy"];
+> val it = ["candy","soda","candy","candy"] : string list
+
+(* List.intersect has the same semantics as a query. *)
+List.`intersect` [["candy", "soda", "soda", "candy", "candy"],
+   ["soda", "donut", "candy", "donut", "candy", "candy"]];
 > val it = ["candy","soda","candy","candy"] : string list
 
 (* Find the name of each department and the name of all
