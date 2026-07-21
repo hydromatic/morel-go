@@ -256,7 +256,18 @@ func (r *typeResolver) checkNumericOperators(m *TypeMap) error {
 type patTerm struct {
 	name string
 	term unify.Term
+	kind ptKind
 }
+
+// ptKind distinguishes an ordinary binding from an "over"
+// declaration and a "val inst" instance.
+type ptKind int
+
+const (
+	ptVal ptKind = iota
+	ptOver
+	ptInst
+)
 
 // typeResolver assigns a unification variable to every AST node,
 // generates term equivalences from the structure of the tree,
@@ -526,6 +537,11 @@ func (r *typeResolver) deduceDecl(env typeEnv, decl ast.Decl,
 		return r.deduceDatatypeDecl(d, termMap)
 	case *ast.FunDecl:
 		return r.deduceValDecl(env, funToVal(d), termMap)
+	case *ast.OverDecl:
+		*termMap = append(*termMap,
+			patTerm{name: d.Pat.Name, kind: ptOver})
+		r.nodeTerm[decl] = r.primTerm("unit")
+		return decl, nil
 	case *ast.ValDecl:
 		return r.deduceValDecl(env, d, termMap)
 	default:
@@ -540,6 +556,29 @@ func (r *typeResolver) deduceDecl(env typeEnv, decl ast.Decl,
 func (r *typeResolver) deduceValDecl(env typeEnv,
 	decl *ast.ValDecl, termMap *[]patTerm,
 ) (ast.Decl, error) {
+	// "val inst foo = e" records e as an instance of the overloaded
+	// name foo, rather than binding foo as an ordinary value.
+	if decl.Inst {
+		for _, b := range decl.Binds {
+			idPat, ok := b.Pat.(*ast.IDPat)
+			if !ok {
+				return nil, &Error{
+					Span: b.Span(),
+					Msg:  "cannot convert to core: val inst",
+				}
+			}
+			vPat := r.u.Variable()
+			err := r.deduceValBind(env, b, &[]patTerm{}, vPat)
+			if err != nil {
+				return nil, err
+			}
+			*termMap = append(*termMap, patTerm{
+				name: idPat.Name, term: vPat, kind: ptInst,
+			})
+		}
+		r.nodeTerm[decl] = r.primTerm("unit")
+		return decl, nil
+	}
 	// If recursive, bind each name (presumably a function) to
 	// its type variable before deducing the expressions' types.
 	env2 := env
@@ -790,7 +829,17 @@ func (r *typeResolver) deducePat(pat ast.Pat,
 
 func bindAll(env typeEnv, termMap []patTerm) typeEnv {
 	for _, pt := range termMap {
-		env = bind(env, pt.name, pt.term)
+		switch pt.kind {
+		case ptOver:
+			env = &overTypeEnv{parent: env, name: pt.name}
+		case ptInst:
+			//nolint:forcetypeassert // an instance term is a variable
+			env = &instTypeEnv{
+				parent: env, name: pt.name, v: pt.term.(*unify.Var),
+			}
+		default:
+			env = bind(env, pt.name, pt.term)
+		}
 	}
 	return env
 }
@@ -1012,6 +1061,9 @@ func (r *typeResolver) deduceApply(env typeEnv, apply *ast.Apply,
 	v *unify.Var,
 ) error {
 	if id, ok := apply.Fn.(*ast.ID); ok {
+		if insts := env.overloads(id.Name); insts != nil {
+			return r.deduceOverloadApply(env, apply, insts, v)
+		}
 		if _, isNumeric := numericOpDomain[id.Name]; isNumeric {
 			r.numericCalls = append(r.numericCalls,
 				numericCall{name: id.Name, apply: apply})
@@ -1290,6 +1342,33 @@ func (r *typeResolver) deduceOpCall(env typeEnv, name string,
 		return err
 	}
 	r.reg(call, v)
+	return nil
+}
+
+// deduceOverloadApply types the application of an overloaded name.
+// Each instance is a function; a constraint requires the argument
+// to match one instance's parameter type, and equates the result
+// with that instance's result type. As unification resolves the
+// argument type, candidates that cannot match are pruned; when one
+// remains, the result type is fixed.
+func (r *typeResolver) deduceOverloadApply(env typeEnv,
+	apply *ast.Apply, insts []*unify.Var, v *unify.Var,
+) error {
+	vArg := r.u.Variable()
+	err := r.deduceExp(env, apply.Arg, vArg)
+	if err != nil {
+		return err
+	}
+	argResults := make([]unify.TermPair, len(insts))
+	for i, iv := range insts {
+		vP := r.u.Variable()
+		vR := r.u.Variable()
+		r.equiv(iv, r.fnTerm(vP, vR))
+		argResults[i] = unify.TermPair{Left: vP, Right: vR}
+	}
+	r.constraints = append(r.constraints,
+		unify.Overload(vArg, v, argResults))
+	r.reg(apply, v)
 	return nil
 }
 

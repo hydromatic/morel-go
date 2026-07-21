@@ -25,6 +25,10 @@ type typeEnv interface {
 	// get returns the term bound to a name, or false if the name
 	// is not in scope.
 	get(r *typeResolver, name string) (unify.Term, bool)
+	// overloads returns the instance variables of an overloaded
+	// name (an "over" name with its "val inst" instances), or nil
+	// if the name is not overloaded.
+	overloads(name string) []*unify.Var
 }
 
 // emptyTypeEnv is the environment with no names in scope.
@@ -35,6 +39,8 @@ func (emptyTypeEnv) get(*typeResolver, string) (unify.Term,
 ) {
 	return nil, false
 }
+
+func (emptyTypeEnv) overloads(string) []*unify.Var { return nil }
 
 // bindTypeEnv binds one name in front of a parent environment.
 type bindTypeEnv struct {
@@ -50,6 +56,51 @@ func (e *bindTypeEnv) get(r *typeResolver, name string) (
 		return e.term, true
 	}
 	return e.parent.get(r, name)
+}
+
+func (e *bindTypeEnv) overloads(name string) []*unify.Var {
+	return e.parent.overloads(name)
+}
+
+// overTypeEnv marks a name as overloaded (an "over" declaration).
+// It is the boundary at which collecting instances stops.
+type overTypeEnv struct {
+	parent typeEnv
+	name   string
+}
+
+func (e *overTypeEnv) get(r *typeResolver, name string) (
+	unify.Term, bool,
+) {
+	return e.parent.get(r, name)
+}
+
+func (e *overTypeEnv) overloads(name string) []*unify.Var {
+	if name == e.name {
+		return []*unify.Var{}
+	}
+	return e.parent.overloads(name)
+}
+
+// instTypeEnv adds one instance variable of an overloaded name (a
+// "val inst" declaration).
+type instTypeEnv struct {
+	parent typeEnv
+	name   string
+	v      *unify.Var
+}
+
+func (e *instTypeEnv) get(r *typeResolver, name string) (
+	unify.Term, bool,
+) {
+	return e.parent.get(r, name)
+}
+
+func (e *instTypeEnv) overloads(name string) []*unify.Var {
+	if name == e.name {
+		return append([]*unify.Var{e.v}, e.parent.overloads(name)...)
+	}
+	return e.parent.overloads(name)
 }
 
 func bind(env typeEnv, name string, term unify.Term) typeEnv {
@@ -72,4 +123,8 @@ func (e *bindingTypeEnv) get(r *typeResolver, name string) (
 		return r.typeTerm(b.Type, map[int]*unify.Var{}), true
 	}
 	return e.parent.get(r, name)
+}
+
+func (e *bindingTypeEnv) overloads(name string) []*unify.Var {
+	return e.parent.overloads(name)
 }
