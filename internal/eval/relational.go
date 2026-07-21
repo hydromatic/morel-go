@@ -36,6 +36,22 @@ func RelationalAggregates() map[string]Fn {
 	}
 }
 
+// RelationalFunctions returns the non-aggregate Relational
+// functions, keyed by their bare names; the kernel binds each both
+// at top level and as a "Relational" member.
+func RelationalFunctions() map[string]Fn {
+	return map[string]Fn{
+		"compare": relCompareFn,
+	}
+}
+
+// relCompareFn is "compare (x, y)": LESS, EQUAL, or GREATER
+// according to the structural order of x and y.
+func relCompareFn(arg Val) (Val, error) {
+	pair := arg.([]Val) //nolint:forcetypeassert // arg is a pair
+	return orderVal(compareVals(pair[0], pair[1])), nil
+}
+
 // relCountFn is "count": the number of elements.
 func relCountFn(arg Val) (Val, error) {
 	//nolint:gosec // a collection never has more than 2^31 elements

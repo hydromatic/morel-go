@@ -867,6 +867,52 @@ from e in emps;
 >   [{deptno=10,id=100,name="Fred"},{deptno=20,id=101,name="Velma"},
 >    {deptno=30,id=102,name="Shaggy"},{deptno=30,id=103,name="Scooby"}]
 >   : {deptno:int, id:int, name:string} list
+from e in emps
+  order (e.deptno, DESC e.id);
+> val it =
+>   [{deptno=10,id=100,name="Fred"},{deptno=20,id=101,name="Velma"},
+>    {deptno=30,id=103,name="Scooby"},{deptno=30,id=102,name="Shaggy"}]
+>   : {deptno:int, id:int, name:string} list
+from e in emps
+  order (e.deptno, DESC e.id)
+  yield {e.name, nameLength = String.size e.name, e.id, e.deptno};
+> val it =
+>   [{deptno=10,id=100,name="Fred",nameLength=4},
+>    {deptno=20,id=101,name="Velma",nameLength=5},
+>    {deptno=30,id=103,name="Scooby",nameLength=6},
+>    {deptno=30,id=102,name="Shaggy",nameLength=6}]
+>   : {deptno:int, id:int, name:string, nameLength:int} list
+from e in emps
+  order (e.deptno, DESC e.id)
+  yield {e.name, nameLength = String.size e.name, e.id, e.deptno}
+  where nameLength > 4;
+> val it =
+>   [{deptno=20,id=101,name="Velma",nameLength=5},
+>    {deptno=30,id=103,name="Scooby",nameLength=6},
+>    {deptno=30,id=102,name="Shaggy",nameLength=6}]
+>   : {deptno:int, id:int, name:string, nameLength:int} list
+from e in emps
+  order (e.deptno, DESC e.id)
+  yield {e.name, nameLength = String.size e.name, e.id, e.deptno}
+  where nameLength > 4
+  group deptno compute {c = count over (), s = sum over nameLength};
+> val it = [{c=1,deptno=20,s=5},{c=2,deptno=30,s=12}]
+>   : {c:int, deptno:int, s:int} list
+from e in emps
+  order (e.deptno, DESC e.id)
+  yield {e.name, nameLength = String.size e.name, e.id, e.deptno}
+  where nameLength > 4
+  group deptno compute {c = count over (), s = sum over nameLength}
+  where s > 10;
+> val it = [{c=2,deptno=30,s=12}] : {c:int, deptno:int, s:int} list
+from e in emps
+  order (e.deptno, DESC e.id)
+  yield {e.name, nameLength = String.size e.name, e.id, e.deptno}
+  where nameLength > 4
+  group deptno compute {c = count over (), s = sum over nameLength}
+  where s > 10
+  yield c + s;
+> val it = [14] : int list
 
 (*) Integration with Apache Calcite - relational algebra
 Sys.set ("hybrid", true);

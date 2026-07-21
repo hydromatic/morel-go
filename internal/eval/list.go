@@ -230,6 +230,28 @@ func isNaNReal(v Val) bool {
 func compareVals(a, b Val) int {
 	// lint: sort until '^	}' where '^	case '
 	switch a := a.(type) {
+	case Con:
+		bc, ok := b.(Con)
+		if !ok {
+			panic(fmt.Sprintf("expected datatype, got %T", b))
+		}
+		// A "descending" value (DESC x) reverses the order of what
+		// it wraps, so "order (DESC e)" sorts by e descending.
+		if a.Datatype == descendingDatatype {
+			return -compareVals(a.Arg, bc.Arg)
+		}
+		// Other datatypes compare by constructor, then by argument;
+		// a constant constructor has no argument.
+		if a.Ordinal != bc.Ordinal {
+			if a.Ordinal < bc.Ordinal {
+				return -1
+			}
+			return 1
+		}
+		if a.Arg == nil {
+			return 0
+		}
+		return compareVals(a.Arg, bc.Arg)
 	case []Val:
 		// Tuples and records (in canonical field order) compare
 		// lexicographically.

@@ -46,6 +46,16 @@ from n in [1,2,3] where false yield n;
 > val it = [] : int list
 from n in [1,2,3] where n < 2 orelse n > 2 yield n * 3;
 > val it = [3,9] : int list
+from r in [{a=1,b=2},{a=1,b=0},{a=2,b=1}]
+  order (DESC r.a, r.b)
+  yield {r.a, b10 = r.b * 10};
+> a b10
+> - ---
+> 2  10
+> 1   0
+> 1  20
+>
+> val it : {a:int, b10:int} list
 
 from r in [{a=2,b=3},{a=2,b=1},{a=1,b=1}]
   group r.a

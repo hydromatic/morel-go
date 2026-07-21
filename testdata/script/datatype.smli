@@ -346,6 +346,24 @@ datatype 'a tree =
   | Node of 'a * 'a tree * 'a tree;
 > datatype 'a tree = Empty | Leaf of 'a | Node of 'a * 'a tree * 'a tree
 
+(* The comparison order of a datatype is determined by order of
+  constructors, not their names. Empty compares less than Leaf,
+  which compares less than Node. *)
+Relational.compare (Empty, Empty);
+> val it = EQUAL : order
+Relational.compare (Empty, Leaf 1);
+> val it = LESS : order
+Relational.compare (Leaf ~100, Empty);
+> val it = GREATER : order
+Relational.compare (Leaf (Leaf 1), Leaf Empty);
+> val it = GREATER : order
+Relational.compare (Leaf 1, Node (1, Empty, Empty));
+> val it = LESS : order
+Relational.compare (Node (2, Leaf 4, Leaf 10), Node (2, Leaf 4, Leaf 11));
+> val it = LESS : order
+Relational.compare (Node (2, Leaf 5, Leaf 10), Node (2, Leaf 4, Leaf 11));
+> val it = GREATER : order
+
 (* Equality is structural: two values are equal if they have the
  * same constructor and equal arguments. *)
 SOME 1 = SOME 1;

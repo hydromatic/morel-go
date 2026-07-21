@@ -405,6 +405,11 @@ bag;
 > val it = fn : 'a list -> 'a bag
 Bag.fromList;
 > val it = fn : 'a list -> 'a bag
+
+(* "compare" is a Morel alias for "Relational.compare". (Standard ML has no
+ * top-level "compare"; comparison is per-structure, e.g. "String.compare".) *)
+compare;
+> val it = fn : 'a * 'a -> order
 Relational.compare;
 > val it = fn : 'a * 'a -> order
 

@@ -131,9 +131,13 @@ func NewKernel(name string) *Kernel {
 	}
 	values := make(map[string]eval.Val, len(eval.Builtins))
 	maps.Copy(values, eval.Builtins)
-	// The relational aggregates are bound both at top level and as
-	// members of the Relational structure.
+	// The relational aggregates and functions are bound both at top
+	// level and as members of the Relational structure.
 	for name, fn := range eval.RelationalAggregates() {
+		values[name] = fn
+		values["Relational."+name] = fn
+	}
+	for name, fn := range eval.RelationalFunctions() {
 		values[name] = fn
 		values["Relational."+name] = fn
 	}

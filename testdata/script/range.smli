@@ -126,6 +126,13 @@ Range.contains (CLOSED (#"a", #"z")) #"e";
 Range.contains (CLOSED (#"a", #"z")) #"E";
 > val it = false : bool
 
+(*) contains on bool * DESC int ranges (exotic element type).
+Range.contains (CLOSED ((false, DESC 5), (false, DESC 3))) (false, DESC 4);
+> val it = true : bool
+
+Range.contains (CLOSED ((false, DESC 5), (false, DESC 3))) (false, DESC 6);
+> val it = false : bool
+
 (*) ALL subsumes all other ranges.
 Range.continuousSetOf [ALL, CLOSED (1, 3)];
 > val it = CONTINUOUS_SET [ALL] : int continuous_set

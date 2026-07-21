@@ -28,6 +28,10 @@ import (
 // orderDatatype names the datatype of comparison results.
 const orderDatatype = "order"
 
+// descendingDatatype is the "descending" datatype, whose sole
+// constructor DESC reverses the order of the value it wraps.
+const descendingDatatype = "descending"
+
 // Ordinals of the order constructors, in declaration order.
 const (
 	lessOrdinal = iota
