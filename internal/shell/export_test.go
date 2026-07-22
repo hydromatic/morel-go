@@ -33,3 +33,44 @@ func PrettyBindingForTest(c Config, name string, v eval.Val,
 func FormatRealForTest(f float32) string {
 	return eval.FormatReal(f)
 }
+
+// Test hooks for the structLib consistency checks.
+
+// StructLibFilesForTest returns the Morel source file (lib/*.sml) of
+// each structLib.
+func StructLibFilesForTest() []string {
+	files := make([]string, 0, len(structLibs()))
+	for _, l := range structLibs() {
+		files = append(files, l.file)
+	}
+	return files
+}
+
+// UnimplementedStructLibMembersForTest boots a kernel and returns
+// the qualified names of any structLib structure member that fell
+// through to the notImplemented placeholder — that is, one for which
+// values["Struct.member"] is absent, the same signal
+// buildStructureRecords uses.
+func UnimplementedStructLibMembersForTest() []string {
+	k := NewKernel("test")
+	var missing []string
+	for _, l := range structLibs() {
+		var record *types.Record
+		for i := range k.bindings {
+			if k.bindings[i].Name == l.name {
+				record, _ = k.bindings[i].Type.(*types.Record)
+				break
+			}
+		}
+		if record == nil {
+			missing = append(missing, l.name+" (not a structure)")
+			continue
+		}
+		for _, f := range record.Fields {
+			if _, ok := k.values[l.name+"."+f.Label]; !ok {
+				missing = append(missing, l.name+"."+f.Label)
+			}
+		}
+	}
+	return missing
+}

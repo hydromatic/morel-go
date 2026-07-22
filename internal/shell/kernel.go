@@ -372,11 +372,11 @@ func buildStructureRecords(values map[string]eval.Val,
 }
 
 // structLib is a built-in structure whose derivable members are
-// defined in embedded Morel source, evaluated at boot with the
-// structure's native members in scope.
+// defined in an embedded Morel source file (lib/<file>), evaluated
+// at boot with the structure's native members in scope.
 type structLib struct {
 	name string
-	src  string
+	file string
 }
 
 // mustReadLib reads a library Morel source (lib/*.sml) from the
@@ -395,11 +395,10 @@ func mustReadLib(name string) string {
 // primitive — and derives the rest in Morel.
 func structLibs() []structLib {
 	return []structLib{
-		{name: "Fn", src: mustReadLib("fn.sml")}, // native: id, o, repeat
-		// native: getOpt, isSome, valOf.
-		{name: "Option", src: mustReadLib("option.sml")},
+		{name: "Fn", file: "fn.sml"},         // native: id, o, repeat
+		{name: "Option", file: "option.sml"}, // native: getOpt, isSome, valOf
 		// native: the doc constructors, fillSep/fillCat, render.
-		{name: "PP", src: mustReadLib("pp.sml")},
+		{name: "PP", file: "pp.sml"},
 	}
 }
 
@@ -432,7 +431,7 @@ func (k *Kernel) loadStructLib(l structLib,
 				compile.Binding{Name: f.Label, Type: f.Type})
 		}
 	}
-	stmts, _, err := Split(l.name, l.src)
+	stmts, _, err := Split(l.name, mustReadLib(l.file))
 	if err != nil {
 		panic(err)
 	}
