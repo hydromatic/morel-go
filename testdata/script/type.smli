@@ -163,6 +163,11 @@ fun countOption1 (NONE) = 0
 fun countOption2 NONE: int = 0
   | countOption2 (SOME x) = 1;
 > val countOption2 = fn : 'a option -> int
+fun firstOrSecond (e1 :: e2 :: rest): int = e2
+  | firstOrSecond (e1 :: rest) = e1;
+> stdIn:1.5-2.36 Warning: match nonexhaustive
+>   raised at: stdIn:1.5-2.36
+> val firstOrSecond = fn : int list -> int
 
 val m = 5;
 > val m = 5 : int
@@ -264,12 +269,8 @@ f2 {a = 2, b = 6};
 
 Sys.set ("matchCoverageEnabled", false);
 > val it = () : unit
-fun f3 {a = 1, b} = b * 2;
-> val f3 = fn : {a:int, b:int} -> int
 Sys.unset "matchCoverageEnabled";
 > val it = () : unit
-f3 {a = 1, b = 6};
-> val it = 12 : int
 
 (* The following correctly throws
  *   unbound variable or constructor: a

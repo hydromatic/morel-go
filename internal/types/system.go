@@ -139,6 +139,12 @@ func (s *System) DeclareTyCon(name string, arg, result Type) {
 	}
 }
 
+// NumConstructors returns the number of constructors of a
+// datatype, or 0 if it is not a datatype.
+func (s *System) NumConstructors(datatype string) int {
+	return s.conCount[datatype]
+}
+
 // datatypeName is the name a datatype's constructors are counted
 // under.
 func datatypeName(result Type) string {

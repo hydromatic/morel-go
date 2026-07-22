@@ -203,8 +203,9 @@ func (*Case) exp() {}
 
 // Match is one rule of a Case.
 type Match struct {
-	Pat Pat
-	Exp Exp
+	Pat  Pat
+	Exp  Exp
+	Span token.Span
 }
 
 // Let binds one declaration in the scope of an expression; a

@@ -369,9 +369,17 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	if err != nil {
 		return k.formatCompileError(err)
 	}
+	warnings, covErr := compile.CheckCoverage(k.sys, coreDecl)
+	if covErr != nil {
+		return k.formatCompileError(covErr)
+	}
 	compiled, err := compile.Statement(coreDecl, k.values, k.sys)
 	if err != nil {
 		return k.formatCompileError(err)
+	}
+	var lines []string
+	for _, w := range warnings {
+		lines = append(lines, w.String())
 	}
 	frame := eval.NewFrame(compiled.Slots)
 	_, err = compiled.Code.Eval(frame)
@@ -379,13 +387,17 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	// so a Sys.plan call sees the previous statement, as java does.
 	k.lastCode = compiled.Plan
 	if err != nil {
+		// A nonexhaustive-match warning still precedes the exception
+		// its unmatched value raises.
+		var msg string
 		var morelErr *eval.MorelError
 		if errors.As(err, &morelErr) {
-			return morelErr.Describe()
+			msg = morelErr.Describe()
+		} else {
+			msg = err.Error()
 		}
-		return err.Error()
+		return strings.Join(append(lines, msg), "\n")
 	}
-	var lines []string
 	for _, b := range compiled.Binds {
 		v := frame.Slots[b.Slot]
 		k.bind(b.Pat.Name, b.Pat.T)
@@ -471,7 +483,20 @@ func (k *Kernel) executeTypeOnly(src string) string {
 	if !ok {
 		return ""
 	}
+	// A ":t" statement reports match-coverage warnings too, before
+	// its type; it is not evaluated, so a redundant match is still
+	// an error.
 	var lines []string
+	coreDecl, cerr := compile.Resolve(resolved)
+	if cerr == nil {
+		warnings, covErr := compile.CheckCoverage(k.sys, coreDecl)
+		if covErr != nil {
+			return k.formatCompileError(covErr)
+		}
+		for _, w := range warnings {
+			lines = append(lines, w.String())
+		}
+	}
 	for _, b := range valDecl.Binds {
 		pat, isID := b.Pat.(*ast.IDPat)
 		if !isID {

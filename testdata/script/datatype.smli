@@ -344,6 +344,27 @@ f (SOME NONE);
 f NONE;
 > val it = ~1 : int
 
+(*) Test cases from [MOREL-126].
+fun f ((SOME i) :: nil) = i + 1
+  | f nil = 0;
+> stdIn:1.5-2.14 Warning: match nonexhaustive
+>   raised at: stdIn:1.5-2.14
+> val f = fn : int option list -> int
+f [];
+> val it = 0 : int
+f [SOME 5];
+> val it = 6 : int
+
+fun f [(SOME i)] = i
+  | f [] = 0;
+> stdIn:1.5-2.13 Warning: match nonexhaustive
+>   raised at: stdIn:1.5-2.13
+> val f = fn : int option list -> int
+f [];
+> val it = 0 : int
+f [SOME 5];
+> val it = 5 : int
+
 (*) Ordering of user-defined datatypes.
 datatype 'a tree =
     Empty

@@ -93,6 +93,11 @@ let val c = #"a" in case c of #"a" => 1 | #"b" => 2 | _ => 3 end;
 let val r = 1.0 in case r of 0.0 => 0 | 1.0 => 1 | _ => 2 end;
 > val it = 1 : int
 
+(*) Unit case.
+let val u = () in case u of () => "unit" | _ => "not unit" end;
+> stdIn:1.44-1.59 Error: match redundant
+>   raised at: stdIn:1.44-1.59
+
 (*) Tuple case.
 let
   val t = (1, "a")

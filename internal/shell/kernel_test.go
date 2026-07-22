@@ -672,10 +672,14 @@ func TestExecuteExceptions(t *testing.T) {
 			"  raised at: stdIn:1.1-1.8"},
 		{"hd (tl [1]);", "uncaught exception Empty\n" +
 			"  raised at: stdIn:1.1-1.11"},
-		{"(fn 0 => 1) 5;", "uncaught exception Bind" +
+		{"(fn 0 => 1) 5;", "stdIn:1.2-1.11 Warning: " +
+			"match nonexhaustive\n  raised at: stdIn:1.2-1.11\n" +
+			"uncaught exception Bind" +
 			" [nonexhaustive binding failure]\n" +
-			"  raised at: stdIn:1.5-1.11"},
-		{"case 5 of 0 => 1;", "uncaught exception Bind" +
+			"  raised at: stdIn:1.2-1.11"},
+		{"case 5 of 0 => 1;", "stdIn:1.11-1.17 Warning: " +
+			"match nonexhaustive\n  raised at: stdIn:1.11-1.17\n" +
+			"uncaught exception Bind" +
 			" [nonexhaustive binding failure]\n" +
 			"  raised at: stdIn:1.11-1.17"},
 		{"val (1, x) = (2, 3);", "uncaught exception Bind" +
