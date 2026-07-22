@@ -985,16 +985,17 @@ func boolCase(sys *types.System, cond, ifTrue,
 	}
 }
 
+// cannotDeriveLabel is the error when a record field has no
+// explicit label and its expression is not an identifier.
+const cannotDeriveLabel = "cannot derive label for expression"
+
 // toRecord converts a record expression to a tuple whose
 // elements are the fields in canonical order.
 func (r *resolver) toRecord(env *coreEnv, record *ast.Record,
 	t types.Type,
 ) (core.Exp, error) {
 	if record.With != nil {
-		return nil, &Error{
-			Span: record.Span(),
-			Msg:  "cannot convert to core: record update",
-		}
+		return r.toRecordUpdate(env, record, t)
 	}
 	// The empty record is unit, the same value as "()".
 	if len(record.Fields) == 0 {
@@ -1014,7 +1015,7 @@ func (r *resolver) toRecord(env *coreEnv, record *ast.Record,
 			if label == "" {
 				return nil, &Error{
 					Span: record.Span(),
-					Msg:  "cannot derive label for expression",
+					Msg:  cannotDeriveLabel,
 				}
 			}
 		}
@@ -1032,6 +1033,74 @@ func (r *resolver) toRecord(env *coreEnv, record *ast.Record,
 		args[i] = arg
 	}
 	return &core.Tuple{T: t, Args: args}, nil
+}
+
+// toRecordUpdate converts "{base with lab = e, ...}" to a let that
+// binds the base record once and builds a new record, taking the
+// named fields from the update expressions and every other field
+// from the base by selection. The result has the base's field set
+// (typing has already unified each update with its base field).
+func (r *resolver) toRecordUpdate(env *coreEnv, record *ast.Record,
+	t types.Type,
+) (core.Exp, error) {
+	rec, ok := t.(*types.Record)
+	if !ok {
+		return nil, &Error{
+			Span: record.Span(),
+			Msg:  "record update requires a record type",
+		}
+	}
+	updates := map[string]ast.Expr{}
+	for _, f := range record.Fields {
+		label := f.Label
+		if label == "" {
+			id, isID := f.Exp.(*ast.ID)
+			if !isID {
+				return nil, &Error{
+					Span: record.Span(),
+					Msg:  cannotDeriveLabel,
+				}
+			}
+			label = id.Name
+		}
+		updates[label] = f.Exp
+	}
+	baseExp, err := r.toExp(env, record.With)
+	if err != nil {
+		return nil, err
+	}
+	// Bind the base to a fresh name so unchanged fields can be
+	// selected from it without re-evaluating the base expression.
+	// The name uses a character no source identifier can, so it
+	// cannot capture a user variable.
+	basePat := &core.IDPat{T: baseExp.Type(), Name: "$with"}
+	baseID := &core.ID{Pat: basePat}
+	args := make([]core.Exp, len(rec.Fields))
+	for i, field := range rec.Fields {
+		if upd, isUpd := updates[field.Label]; isUpd {
+			arg, err := r.toExp(env, upd)
+			if err != nil {
+				return nil, err
+			}
+			args[i] = arg
+			continue
+		}
+		args[i] = &core.Apply{
+			T: field.Type,
+			Fn: &core.Selector{
+				T:     r.typeMap.sys.Fn(rec, field.Type),
+				Name:  field.Label,
+				Index: i,
+			},
+			Arg: baseID,
+		}
+	}
+	return &core.Let{
+		Decl: &core.NonRecValDecl{
+			Pat: basePat, Exp: baseExp, Span: record.Span(),
+		},
+		Exp: &core.Tuple{T: t, Args: args},
+	}, nil
 }
 
 // toCon converts a reference to a datatype constructor. The

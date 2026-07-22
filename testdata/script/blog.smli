@@ -1187,10 +1187,79 @@ val emps3 = from e in emps2 union
 >     job="ANALYST",mgr=7902,sal=1150}]
 >   : {comm:real, deptno:int, empno:int, ename:string, hiredate:string,
 >       job:string, mgr:int, sal:real} bag
+(* Double the salary of all managers. *)
+val emps4 =
+  from e in emps3
+    yield if e.job = "MANAGER"
+      then {e with sal = e.sal * 2.0}
+      else e;
+> val emps4 =
+>   [{comm=0,deptno=20,empno=7369,ename="SMITH",hiredate="1980-12-17",
+>     job="CLERK",mgr=7902,sal=800},
+>    {comm=0,deptno=30,empno=7900,ename="JAMES",hiredate="1981-12-03",
+>     job="CLERK",mgr=7698,sal=950},
+>    {comm=0,deptno=20,empno=100,ename="HYDE",hiredate="2023-10-01",
+>     job="ANALYST",mgr=7902,sal=1150}]
+>   : {comm:real, deptno:int, empno:int, ename:string, hiredate:string,
+>       job:string, mgr:int, sal:real} bag
+(* Commit. *)
+(*) TODO commit {scott with emps = emps4};
+
+(* New and removed employees. *)
+val empsAdded = from e in emps4 except scott.emps;
+> val empsAdded =
+>   [{comm=0,deptno=20,empno=100,ename="HYDE",hiredate="2023-10-01",
+>     job="ANALYST",mgr=7902,sal=1150}]
+>   : {comm:real, deptno:int, empno:int, ename:string, hiredate:string,
+>       job:string, mgr:int, sal:real} bag
+val empsRemoved = from e in scott.emps except emps4;
+> val empsRemoved =
+>   [{comm=300,deptno=30,empno=7499,ename="ALLEN",hiredate="1981-02-20",
+>     job="SALESMAN",mgr=7698,sal=1600},
+>    {comm=500,deptno=30,empno=7521,ename="WARD",hiredate="1981-02-22",
+>     job="SALESMAN",mgr=7698,sal=1250},
+>    {comm=0,deptno=20,empno=7566,ename="JONES",hiredate="1981-02-04",
+>     job="MANAGER",mgr=7839,sal=2975},
+>    {comm=1400,deptno=30,empno=7654,ename="MARTIN",hiredate="1981-09-28",
+>     job="SALESMAN",mgr=7698,sal=1250},
+>    {comm=0,deptno=30,empno=7698,ename="BLAKE",hiredate="1981-01-05",
+>     job="MANAGER",mgr=7839,sal=2850},
+>    {comm=0,deptno=10,empno=7782,ename="CLARK",hiredate="1981-06-09",
+>     job="MANAGER",mgr=7839,sal=2450},
+>    {comm=0,deptno=20,empno=7788,ename="SCOTT",hiredate="1987-04-19",
+>     job="ANALYST",mgr=7566,sal=3000},
+>    {comm=0,deptno=10,empno=7839,ename="KING",hiredate="1981-11-17",
+>     job="PRESIDENT",mgr=0,sal=5000},
+>    {comm=0,deptno=30,empno=7844,ename="TURNER",hiredate="1981-09-08",
+>     job="SALESMAN",mgr=7698,sal=1500},
+>    {comm=0,deptno=20,empno=7876,ename="ADAMS",hiredate="1987-05-23",
+>     job="CLERK",mgr=7788,sal=1100},
+>    {comm=0,deptno=20,empno=7902,ename="FORD",hiredate="1981-12-03",
+>     job="ANALYST",mgr=7566,sal=3000},
+>    {comm=0,deptno=10,empno=7934,ename="MILLER",hiredate="1982-01-23",
+>     job="CLERK",mgr=7782,sal=1300}]
+>   : {comm:real, deptno:int, empno:int, ename:string, hiredate:string,
+>       job:string, mgr:int, sal:real} bag
 
 (*) Empty summary table.
 val summary = [] : {c:int, deptno:int, sum_sal:real} list;
 > val summary = [] : {c:int, deptno:int, sum_sal:real} list
+
+(* Compute the updated summary table. *)
+val summary2 =
+  from s in (*scott.*)summary
+    union
+      (from e in empsAdded
+        yield {e.deptno, c = 1, sum_sal = e.sal})
+    union
+      (from e in empsRemoved
+        yield {e.deptno, c = ~1, sum_sal = ~e.sal})
+    group s.deptno compute {c = sum over s.c, sum_sal = sum over s.sum_sal}
+    order deptno
+    where c <> 0;
+> val summary2 =
+>   [{c=~3,deptno=10,sum_sal=~8750},{c=~3,deptno=20,sum_sal=~8925},
+>    {c=~5,deptno=30,sum_sal=~8450}] : {c:int, deptno:int, sum_sal:real} list
 
 (* Commit. *)
 (*) TODO commit {scott with summary = summary2};
