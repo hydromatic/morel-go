@@ -19,8 +19,11 @@ package eval
 
 import "fmt"
 
-// The Option structure, and the option values that other
-// built-ins (such as Bool.fromString) return.
+// The option values that other built-ins (such as Bool.fromString)
+// return, and the Option structure's three native members. Its
+// other members are derived in Morel (lib/option.sml); getOpt,
+// isSome, and valOf stay native because they are also top-level
+// built-ins.
 
 // optionDatatype names the datatype of option values.
 const optionDatatype = "option"
@@ -78,104 +81,4 @@ func valOfFn(arg Val) (Val, error) {
 		return nil, &MorelError{Exn: "Option"}
 	}
 	return v, nil
-}
-
-// optionFilterFn is "Option.filter f a": SOME a if f a is true,
-// otherwise NONE.
-func optionFilterFn(f Val) (Val, error) {
-	return Fn(func(a Val) (Val, error) {
-		keep, err := ApplyVal(f, a)
-		if err != nil {
-			return nil, err
-		}
-		if asBool(keep) {
-			return someVal(a), nil
-		}
-		return noneVal, nil
-	}), nil
-}
-
-// optionJoinFn is "Option.join opt": flattens an option option.
-func optionJoinFn(arg Val) (Val, error) {
-	if v, isSome := asOption(arg); isSome {
-		return v, nil
-	}
-	return noneVal, nil
-}
-
-// optionAppFn is "Option.app f opt": applies f to the content
-// for its effect.
-func optionAppFn(f Val) (Val, error) {
-	return Fn(func(opt Val) (Val, error) {
-		if v, isSome := asOption(opt); isSome {
-			_, err := ApplyVal(f, v)
-			if err != nil {
-				return nil, err
-			}
-		}
-		return unitVal, nil
-	}), nil
-}
-
-// optionMapFn is "Option.map f opt".
-func optionMapFn(f Val) (Val, error) {
-	return Fn(func(opt Val) (Val, error) {
-		v, isSome := asOption(opt)
-		if !isSome {
-			return noneVal, nil
-		}
-		r, err := ApplyVal(f, v)
-		if err != nil {
-			return nil, err
-		}
-		return someVal(r), nil
-	}), nil
-}
-
-// optionMapPartialFn is "Option.mapPartial f opt".
-func optionMapPartialFn(f Val) (Val, error) {
-	return Fn(func(opt Val) (Val, error) {
-		v, isSome := asOption(opt)
-		if !isSome {
-			return noneVal, nil
-		}
-		return ApplyVal(f, v)
-	}), nil
-}
-
-// optionComposeFn is "Option.compose (f, g) a": applies g, and f
-// on its SOME content.
-func optionComposeFn(arg Val) (Val, error) {
-	f, g := asPair(arg)
-	return Fn(func(a Val) (Val, error) {
-		opt, err := ApplyVal(g, a)
-		if err != nil {
-			return nil, err
-		}
-		v, isSome := asOption(opt)
-		if !isSome {
-			return noneVal, nil
-		}
-		r, err := ApplyVal(f, v)
-		if err != nil {
-			return nil, err
-		}
-		return someVal(r), nil
-	}), nil
-}
-
-// optionComposePartialFn is "Option.composePartial (f, g) a".
-func optionComposePartialFn(arg Val) (Val, error) {
-	f, g := asPair(arg)
-	return Fn(func(a Val) (Val, error) {
-		opt, err := ApplyVal(g, a)
-		if err != nil {
-			return nil, err
-		}
-		v, isSome := asOption(opt)
-		if !isSome {
-			return noneVal, nil
-		}
-		return ApplyVal(f, v)
-	}), nil
 }

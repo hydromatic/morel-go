@@ -17,50 +17,9 @@
 
 package eval
 
-// The Fn structure: function combinators. (Fn.id reuses identityFn
-// and Fn.o reuses composeFn.)
-
-// fnConstFn is "Fn.const x": the function that ignores its argument
-// and returns x.
-func fnConstFn(x Val) (Val, error) {
-	return Fn(func(Val) (Val, error) {
-		return x, nil
-	}), nil
-}
-
-// fnApplyFn is "Fn.apply (f, x)": f x.
-func fnApplyFn(arg Val) (Val, error) {
-	f, x := asPair(arg)
-	return ApplyVal(f, x)
-}
-
-// fnCurryFn is "Fn.curry f": the curried form, fn a => fn b =>
-// f (a, b).
-func fnCurryFn(f Val) (Val, error) {
-	return Curry2(func(a, b Val) (Val, error) {
-		return ApplyVal(f, []Val{a, b})
-	}), nil
-}
-
-// fnUncurryFn is "Fn.uncurry f (a, b)": f a b.
-func fnUncurryFn(f Val) (Val, error) {
-	return Fn(func(arg Val) (Val, error) {
-		a, b := asPair(arg)
-		g, err := ApplyVal(f, a)
-		if err != nil {
-			return nil, err
-		}
-		return ApplyVal(g, b)
-	}), nil
-}
-
-// fnFlipFn is "Fn.flip f (b, a)": f (a, b).
-func fnFlipFn(f Val) (Val, error) {
-	return Fn(func(arg Val) (Val, error) {
-		b, a := asPair(arg)
-		return ApplyVal(f, []Val{a, b})
-	}), nil
-}
+// The Fn structure keeps three members native — id (identityFn),
+// o (composeFn), and the recursive repeat — while its other
+// combinators are derived in Morel (lib/fn.sml).
 
 // fnRepeatFn is "Fn.repeat n f": the function that applies f n
 // times (the identity when n is zero). A negative n raises Domain,
@@ -83,12 +42,4 @@ func fnRepeatFn(n Val) (Val, error) {
 			return x, nil
 		}), nil
 	}), nil
-}
-
-// fnEqual is "Fn.equal x y" (negate false) or "Fn.notEqual" (true),
-// the curried equality test.
-func fnEqual(negate bool) Fn {
-	return Curry2(func(a, b Val) (Val, error) {
-		return valsEqual(a, b) != negate, nil
-	})
 }

@@ -15,13 +15,15 @@
 // language governing permissions and limitations under the
 // License.
 
-// Package lib embeds the built-in library signatures, which
-// are shared verbatim across the Morel implementations.
+// Package lib embeds the built-in library sources: the signatures
+// (*.sig), which give the types of the built-ins, and the Morel
+// sources (*.sml) that define the derivable members of some
+// structures.
 package lib
 
 import "embed"
 
-// FS holds the signature files.
+// FS holds the signature and Morel-source files.
 //
-//go:embed *.sig
+//go:embed *.sig *.sml
 var FS embed.FS

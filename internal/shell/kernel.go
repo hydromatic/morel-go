@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/hydromatic/morel-go/internal/ast"
@@ -151,6 +152,13 @@ func NewKernel(name string) *Kernel {
 	// The Sys implementations read and write session state, so
 	// the kernel supplies them.
 	maps.Copy(values, k.sysBuiltins())
+	// Some structures define their derivable members in embedded
+	// Morel source over a few native primitives; this evaluates that
+	// source and fills in the derived members before the structure
+	// records are built.
+	for _, l := range structLibs() {
+		k.loadStructLib(l, values, result.Bindings)
+	}
 	// A structure is a record value whose fields are its
 	// members' implementations. A member without one gets a
 	// placeholder that fails if it is ever applied, so unpulled
@@ -280,15 +288,39 @@ func adaptRelationalAggregates(sys *types.System, b *compile.Binding) {
 // binding is added to the base environment so every statement
 // sees it.
 func (k *Kernel) loadScott() {
-	n, err := parse.Stmt(k.name, scottSrc)
-	if err != nil {
-		panic(err) // the embedded source is tested, so it parses
+	decl := parseDecl(k.name, scottSrc)
+	for _, b := range k.evalDecl(k.bindings, k.values, decl) {
+		// scott's collections are foreign relations: they behave
+		// as their rows but print opaquely as "<relation>".
+		if fields, ok := b.val.([]eval.Val); ok {
+			for i, f := range fields {
+				if rows, ok := f.([]eval.Val); ok {
+					fields[i] = eval.Relation{Rows: rows}
+				}
+			}
+		}
+		k.bind(b.name, b.typ)
+		k.values[b.name] = b.val
 	}
-	decl, ok := n.(ast.Decl)
-	if !ok {
-		panic("scott.sml is not a declaration")
-	}
-	resolved, err := compile.Deduce(k.sys, k.bindings, decl)
+}
+
+// scopeBind is a binding produced by evaluating a declaration at
+// boot: a name, its type, and its runtime value.
+type scopeBind struct {
+	name string
+	typ  types.Type
+	val  eval.Val
+}
+
+// evalDecl compiles and evaluates one declaration against the given
+// type and value environments and returns the bindings it makes. It
+// is the boot-time path shared by loadScott and loadStructLib; the
+// embedded source is tested, so any failure is a programming error
+// and panics.
+func (k *Kernel) evalDecl(bindings []compile.Binding,
+	values map[string]eval.Val, decl ast.Decl,
+) []scopeBind {
+	resolved, err := compile.Deduce(k.sys, bindings, decl)
 	if err != nil {
 		panic(err)
 	}
@@ -296,7 +328,7 @@ func (k *Kernel) loadScott() {
 	if err != nil {
 		panic(err)
 	}
-	compiled, err := compile.Statement(coreDecl, k.values, k.sys)
+	compiled, err := compile.Statement(coreDecl, values, k.sys)
 	if err != nil {
 		panic(err)
 	}
@@ -305,19 +337,109 @@ func (k *Kernel) loadScott() {
 	if err != nil {
 		panic(err)
 	}
-	for _, b := range compiled.Binds {
-		val := frame.Slots[b.Slot]
-		// scott's collections are foreign relations: they behave
-		// as their rows but print opaquely as "<relation>".
-		if fields, ok := val.([]eval.Val); ok {
-			for j, f := range fields {
-				if rows, ok := f.([]eval.Val); ok {
-					fields[j] = eval.Relation{Rows: rows}
-				}
-			}
+	binds := make([]scopeBind, len(compiled.Binds))
+	for i, b := range compiled.Binds {
+		binds[i] = scopeBind{
+			name: b.Pat.Name,
+			typ:  b.Pat.T,
+			val:  frame.Slots[b.Slot],
 		}
-		k.bind(b.Pat.Name, b.Pat.T)
-		k.values[b.Pat.Name] = val
+	}
+	return binds
+}
+
+// parseDecl parses a single embedded declaration; a parse failure
+// is a programming error and panics.
+func parseDecl(name, src string) ast.Decl {
+	n, err := parse.Stmt(name, src)
+	if err != nil {
+		panic(err)
+	}
+	decl, ok := n.(ast.Decl)
+	if !ok {
+		panic(name + ": not a declaration")
+	}
+	return decl
+}
+
+// structLib is a built-in structure whose derivable members are
+// defined in embedded Morel source, evaluated at boot with the
+// structure's native members in scope.
+type structLib struct {
+	name string
+	src  string
+}
+
+// mustReadLib reads a library Morel source (lib/*.sml) from the
+// embedded library; the files are embedded and tested, so a failure
+// is a programming error and panics.
+func mustReadLib(name string) string {
+	data, err := lib.FS.ReadFile(name)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
+}
+
+// structLibs returns the structures whose members are defined this
+// way. Each keeps a few members native — recursive, hot, or
+// primitive — and derives the rest in Morel.
+func structLibs() []structLib {
+	return []structLib{
+		{name: "Fn", src: mustReadLib("fn.sml")}, // native: id, o, repeat
+		// native: getOpt, isSome, valOf.
+		{name: "Option", src: mustReadLib("option.sml")},
+	}
+}
+
+// loadStructLib evaluates a structure's embedded Morel source and
+// wires the members it defines into values["Name.member"]. The
+// structure's already-bound native members are first placed in
+// scope under their bare names — an implicit "open" — so the source
+// can build on them; those bare bindings are local and never leak
+// to the global namespace.
+func (k *Kernel) loadStructLib(l structLib,
+	values map[string]eval.Val, bindings []compile.Binding,
+) {
+	var record *types.Record
+	for i := range bindings {
+		if bindings[i].Name == l.name {
+			record, _ = bindings[i].Type.(*types.Record)
+			break
+		}
+	}
+	if record == nil {
+		panic(l.name + ": not a structure")
+	}
+	localBindings := slices.Clone(k.bindings)
+	localValues := maps.Clone(values)
+	// Seed the native members under their bare names.
+	for _, f := range record.Fields {
+		if v, ok := values[l.name+"."+f.Label]; ok {
+			localValues[f.Label] = v
+			localBindings = append(localBindings,
+				compile.Binding{Name: f.Label, Type: f.Type})
+		}
+	}
+	stmts, _, err := Split(l.name, l.src)
+	if err != nil {
+		panic(err)
+	}
+	provided := map[string]bool{}
+	for _, stmt := range stmts {
+		decl := parseDecl(l.name, stmt)
+		for _, b := range k.evalDecl(localBindings, localValues, decl) {
+			localBindings = append(localBindings,
+				compile.Binding{Name: b.name, Type: b.typ})
+			localValues[b.name] = b.val
+			provided[b.name] = true
+		}
+	}
+	// Wire the derived members into their structure slots.
+	for _, f := range record.Fields {
+		if provided[f.Label] {
+			values[l.name+"."+f.Label] = localValues[f.Label]
+		}
 	}
 }
 
