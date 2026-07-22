@@ -22,4 +22,82 @@
 Sys.set ("printLength", 999);
 > val it = () : unit
 
+(*) `text` builds a document; `render` lays it out.
+PP.render (80, PP.text "hello");
+> val it = "hello" : string
+
+(*) `empty` renders as nothing.
+PP.render (80, PP.empty);
+> val it = "" : string
+
+(*) `beside` places documents next to each other.
+PP.render (80, PP.beside (PP.text "foo", PP.text "bar"));
+> val it = "foobar" : string
+
+(*) `hsep` separates with spaces.
+PP.render (80, PP.hsep [PP.text "a", PP.text "b", PP.text "c"]);
+> val it = "a b c" : string
+
+(*) `vsep` separates with line breaks.
+PP.render (80, PP.vsep [PP.text "a", PP.text "b", PP.text "c"]);
+> val it = "a\nb\nc" : string
+
+(*) `sep` is flat if it fits.
+PP.render (80, PP.sep [PP.text "a", PP.text "b", PP.text "c"]);
+> val it = "a b c" : string
+
+(*) `sep` breaks if it does not fit.
+PP.render (3, PP.sep [PP.text "aa", PP.text "bb"]);
+> val it = "aa\nbb" : string
+
+(*) `group` lays out on one line if it fits.
+PP.render (80, PP.`group` (PP.vsep [PP.text "a", PP.text "b"]));
+> val it = "a b" : string
+
+(*) The same group breaks when the width is too small.
+PP.render (1, PP.`group` (PP.vsep [PP.text "a", PP.text "b"]));
+> val it = "a\nb" : string
+
+(*) `nest` increases indentation after a line break.
+PP.render (3,
+  PP.nest (2, PP.vsep [PP.text "a", PP.text "b", PP.text "c"]));
+> val it = "a\n  b\n  c" : string
+
+(*) `cat` concatenates with no separator when flat.
+PP.render (80, PP.cat [PP.text "a", PP.text "b", PP.text "c"]);
+> val it = "abc" : string
+
+(*) `fillSep` fills lines, breaking only when needed.
+PP.render (5,
+  PP.fillSep [PP.text "a", PP.text "b", PP.text "c", PP.text "d"]);
+> val it = "a b c\nd" : string
+
+(*) `punctuate` inserts a separator between documents.
+PP.render (80,
+  PP.hcat (PP.punctuate (PP.text ", ",
+    [PP.text "a", PP.text "b", PP.text "c"])));
+> val it = "a, b, c" : string
+
+(*) `encloseSep` wraps a list between open and close.
+PP.render (80,
+  PP.encloseSep (PP.text "[", PP.text "]", PP.text ",",
+    [PP.text "a", PP.text "b", PP.text "c"]));
+> val it = "[a, b, c]" : string
+
+(*) `parens`, `braces` and `brackets` enclose a document.
+PP.render (80, PP.parens (PP.text "x"));
+> val it = "(x)" : string
+PP.render (80, PP.braces (PP.text "x"));
+> val it = "{x}" : string
+PP.render (80, PP.brackets (PP.text "x"));
+> val it = "[x]" : string
+
+(*) `indent` indents every line, including the first.
+PP.render (80, PP.indent (4, PP.text "x"));
+> val it = "    x" : string
+
+(*) `hardLine` always breaks, even inside a group.
+PP.render (80, PP.`group` (PP.hcat [PP.text "a", PP.hardLine, PP.text "b"]));
+> val it = "a\nb" : string
+
 (*) End pp.smli

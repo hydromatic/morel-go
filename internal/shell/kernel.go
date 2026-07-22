@@ -145,6 +145,9 @@ func NewKernel(name string) *Kernel {
 		values[name] = fn
 		values["Relational."+name] = fn
 	}
+	for name, v := range eval.PPFunctions() {
+		values["PP."+name] = v
+	}
 	// The Sys implementations read and write session state, so
 	// the kernel supplies them.
 	maps.Copy(values, k.sysBuiltins())
