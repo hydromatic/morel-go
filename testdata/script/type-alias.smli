@@ -39,4 +39,50 @@ type myInt = int and myRealList = real list;
 > type myInt = int
 > type myRealList = real list
 
+(* A name that the declaration itself rebinds means the definition
+ * being displaced, not the one being declared. A type alias is
+ * transparent, so it is expanded. *)
+type t2 = int;
+> type t2 = int
+
+(*) The bindings of a 'type ... and ...' group are simultaneous.
+type u2 = int;
+> type u2 = int
+
+(* A datatype is generative, so it cannot be expanded; the displaced
+ * type is displayed '?.d2', as in Standard ML. *)
+datatype d2 = A2 | B2;
+> datatype d2 = A2 | B2
+
+(* Shadowing the same name twice gives two distinct displaced types.
+ * Standard ML displays both '?.d3', which does not distinguish them;
+ * we expand the alias, which does. *)
+datatype d3 = A3 | B3;
+> datatype d3 = A3 | B3
+
+(*) Each displaced datatype is a separate type, though both print '?.e3'.
+datatype e3 = P3 | Q3;
+> datatype e3 = P3 | Q3
+datatype e3 = R3 | S3;
+> datatype e3 = R3 | S3
+
+(* A displaced datatype keeps its identity: its constructors still
+ * belong to it, and match against it. Whether a name still refers to
+ * a type is decided when the type is displayed, so the same value
+ * prints 'e4' before the name is taken over and '?.e4' after. *)
+datatype d4 = A4 | B4;
+> datatype d4 = A4 | B4
+case A4 of A4 => 1 | B4 => 2;
+> val it = 1 : int
+
+(*) A datatype displaced by another datatype behaves the same way.
+datatype e4 = P4 | Q4;
+> datatype e4 = P4 | Q4
+val x4 = P4;
+> val x4 = P4 : e4
+datatype e4 = R4 | S4;
+> datatype e4 = R4 | S4
+val y4 = R4;
+> val y4 = R4 : e4
+
 (*) End type-alias.smli

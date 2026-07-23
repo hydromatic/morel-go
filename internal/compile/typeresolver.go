@@ -503,6 +503,12 @@ func (r *typeResolver) astNamedTerm(t *ast.NamedType) (unify.Term,
 ) {
 	if alias, ok := r.sys.LookupAlias(t.Name); ok &&
 		len(alias.TyVars) == len(t.Args) {
+		if r.aliasRecursive(t.Name) {
+			return nil, &Error{
+				Span: t.Span(),
+				Msg:  "recursive type alias: " + t.Name,
+			}
+		}
 		subst := make(map[string]ast.Type, len(alias.TyVars))
 		for i, tv := range alias.TyVars {
 			subst[tv] = t.Args[i]
@@ -534,6 +540,59 @@ func (r *typeResolver) astNamedTerm(t *ast.NamedType) (unify.Term,
 		Span: t.Span(),
 		Msg:  "unbound type constructor: " + t.Name,
 	}
+}
+
+// aliasRecursive reports whether a type alias refers to itself,
+// directly or transitively through other aliases, so its expansion
+// would not terminate. It examines the alias bodies, not the
+// use-site arguments (so a nested use such as "int t t" of a
+// non-recursive alias is fine).
+func (r *typeResolver) aliasRecursive(name string) bool {
+	alias, ok := r.sys.LookupAlias(name)
+	if !ok {
+		return false
+	}
+	return r.aliasBodyRefers(alias.Body, name, map[string]bool{})
+}
+
+// aliasBodyRefers reports whether a type body references the target
+// alias, following the bodies of other aliases it names.
+func (r *typeResolver) aliasBodyRefers(t ast.Type, target string,
+	visited map[string]bool,
+) bool {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch n := t.(type) {
+	case *ast.FnType:
+		return r.aliasBodyRefers(n.Param, target, visited) ||
+			r.aliasBodyRefers(n.Result, target, visited)
+	case *ast.NamedType:
+		if n.Name == target {
+			return true
+		}
+		for _, a := range n.Args {
+			if r.aliasBodyRefers(a, target, visited) {
+				return true
+			}
+		}
+		alias, ok := r.sys.LookupAlias(n.Name)
+		if ok && !visited[n.Name] {
+			visited[n.Name] = true
+			return r.aliasBodyRefers(alias.Body, target, visited)
+		}
+	case *ast.RecordType:
+		for _, f := range n.Fields {
+			if r.aliasBodyRefers(f.Type, target, visited) {
+				return true
+			}
+		}
+	case *ast.TupleType:
+		for _, a := range n.Args {
+			if r.aliasBodyRefers(a, target, visited) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (r *typeResolver) deduceDecl(env typeEnv, decl ast.Decl,
