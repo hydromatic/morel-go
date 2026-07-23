@@ -42,8 +42,45 @@ func RelationalAggregates() map[string]Fn {
 func RelationalFunctions() map[string]Fn {
 	return map[string]Fn{
 		"compare": relCompareFn,
+		"iterate": relIterateFn,
 		"only":    onlyFn,
 	}
+}
+
+// relIterateFn is "iterate init update": the semi-naive fixpoint.
+// Starting from init, each round applies update to (all, frontier)
+// and keeps the rows not yet seen; it stops when a round adds
+// nothing. Deduplicating against seen rows makes cyclic inputs
+// terminate.
+func relIterateFn(init Val) (Val, error) {
+	initList := asList(init)
+	return Fn(func(update Val) (Val, error) {
+		list := initList
+		frontier := initList
+		seen := make(map[string]bool, len(initList))
+		for _, o := range initList {
+			seen[PlanString(o)] = true
+		}
+		for {
+			next, err := ApplyVal(update, []Val{list, frontier})
+			if err != nil {
+				return nil, err
+			}
+			var fresh []Val
+			for _, o := range asList(next) {
+				k := PlanString(o)
+				if !seen[k] {
+					seen[k] = true
+					fresh = append(fresh, o)
+				}
+			}
+			if len(fresh) == 0 {
+				return list, nil
+			}
+			list = append(append([]Val{}, list...), fresh...)
+			frontier = fresh
+		}
+	}), nil
 }
 
 // relCompareFn is "compare (x, y)": LESS, EQUAL, or GREATER

@@ -436,6 +436,10 @@ fields;
 > val it = fn : (char -> bool) -> string -> string list
 String.fields;
 > val it = fn : (char -> bool) -> string -> string list
+
+(* "iterate" is a Morel alias for "Relational.iterate". *)
+iterate;
+> val it = fn : 'a list -> ('a list * 'a list -> 'a list) -> 'a list
 Relational.iterate;
 > val it = fn : 'a bag -> ('a bag * 'a bag -> 'a bag) -> 'a bag
 

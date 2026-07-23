@@ -73,6 +73,7 @@ var topBuiltins = map[string]topBuiltin{
 	"hd":        {"'a list -> 'a", ""},
 	"implode":   {"char list -> string", ""},
 	"isSome":    {"'a option -> bool", ""},
+	"iterate":   {"'a list -> ('a list * 'a list -> 'a list) -> 'a list", ""},
 	"length":    {"'a list -> int", ""},
 	"map":       {"('a -> 'b) -> 'a list -> 'b list", ""},
 	"not":       {"bool -> bool", ""},
