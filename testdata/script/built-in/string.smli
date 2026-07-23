@@ -150,6 +150,10 @@ String.`^`;
 > val it = "a" : string
 "a" ^ "bc" ^ "" ^ "def";
 > val it = "abcdef" : string
+Sys.plan ();
+> val it =
+>   "apply2(fnValue String.^, apply2(fnValue String.^, apply2(fnValue String.^, constant(a), constant(bc)), constant()), constant(def))"
+>   : string
 
 (*) val concat : string list -> string
 String.concat;

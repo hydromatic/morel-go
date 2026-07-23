@@ -241,14 +241,14 @@ func (c *compiler) builtinFnInfo(fnExp core.Exp,
 		if _, ok := c.values[name]; !ok {
 			return "", 0, 0
 		}
-		return planFnName(name), builtinArity(fn.Type()),
-			curriedArity(fn.Type())
+		return planFnName(name, fn.Type()),
+			builtinArity(fn.Type()), curriedArity(fn.Type())
 	case *core.ID:
 		if !eval.IsBuiltinFn(fnCode) {
 			return "", 0, 0
 		}
-		return planFnName(fn.Pat.Name), builtinArity(fn.Pat.T),
-			curriedArity(fn.Pat.T)
+		return planFnName(fn.Pat.Name, fn.Pat.T),
+			builtinArity(fn.Pat.T), curriedArity(fn.Pat.T)
 	default:
 		return "", 0, 0
 	}
@@ -279,13 +279,84 @@ func curriedArity(t types.Type) int {
 }
 
 // planFnName is a built-in's name as the compiled plan shows it:
-// an operator (whose name begins "op ") drops the prefix and is
-// shown bare, as "+" or "@".
-func planFnName(name string) string {
-	if rest, ok := strings.CutPrefix(name, "op "); ok {
-		return rest
+// structure-qualified and type-directed. An arithmetic operator
+// resolves to its type-specific member (Int.+, Real.+, Word.+,
+// Int.mod, Real./); "@" and "^" resolve to List.@ and String.^; a
+// top-level alias resolves to the member it names (map ->
+// List.map, ignore -> General.ignore). Polymorphic operators (=,
+// <, div, elem) and already-qualified names are shown as-is.
+func planFnName(name string, t types.Type) string {
+	if strings.Contains(name, ".") {
+		return name
+	}
+	if op, isOp := strings.CutPrefix(name, "op "); isOp {
+		// lint: sort until '^\t\t}' where '^\t\tcase '
+		switch op {
+		case "*", "+", "-":
+			return arithStruct(t) + "." + op
+		case "/":
+			return "Real./"
+		case "@":
+			return "List.@"
+		case "^":
+			return "String.^"
+		case "mod":
+			return "Int.mod"
+		default:
+			return op
+		}
+	}
+	if q, ok := planAliases[name]; ok {
+		return q
 	}
 	return name
+}
+
+// arithStruct is the structure ("Int", "Real", or "Word") of an
+// arithmetic operator, taken from its operand type.
+func arithStruct(t types.Type) string {
+	if fn, ok := t.(*types.Fn); ok {
+		if tup, ok := fn.Param.(*types.Tuple); ok && len(tup.Args) > 0 {
+			// lint: sort until '^\t\t\t}' where '^\t\t\tcase '
+			switch tup.Args[0].String() {
+			case "real":
+				return "Real"
+			case "word":
+				return "Word"
+			default:
+				return "Int"
+			}
+		}
+	}
+	return "Int"
+}
+
+// planAliases maps a top-level alias to the structure member it
+// names, as the compiled plan shows it.
+var planAliases = map[string]string{
+	// lint: sort until '^}' where '^\t"'
+	"app":       "List.app",
+	"chr":       "Char.chr",
+	"explode":   "String.explode",
+	"foldl":     "List.foldl",
+	"foldr":     "List.foldr",
+	"getItem":   "List.getItem",
+	"getOpt":    "Option.getOpt",
+	"hd":        "List.hd",
+	"ignore":    "General.ignore",
+	"implode":   "String.implode",
+	"isSome":    "Option.isSome",
+	"length":    "List.length",
+	"map":       "List.map",
+	"null":      "List.null",
+	"ord":       "Char.ord",
+	"rev":       "List.rev",
+	"size":      "String.size",
+	"str":       "String.str",
+	"substring": "String.substring",
+	"tabulate":  "List.tabulate",
+	"tl":        "List.tl",
+	"valOf":     "Option.valOf",
 }
 
 // builtinArity is the number of arguments a function type takes at

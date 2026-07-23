@@ -65,6 +65,8 @@ Sys.plan;
 > val it = fn : unit -> string
 1 + 2;
 > val it = 3 : int
+Sys.plan ();
+> val it = "apply2(fnValue Int.+, constant(1), constant(2))" : string
 
 (*) val planEx : string -> string
 Sys.planEx;

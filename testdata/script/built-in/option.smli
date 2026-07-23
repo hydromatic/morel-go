@@ -84,6 +84,10 @@ Option.filter (fn x => x mod 2 = 0) 1;
 > val it = NONE : int option
 Option.filter (fn x => x mod 2 = 0) 2;
 > val it = SOME 2 : int option
+Sys.plan ();
+> val it =
+>   "apply2(fnValue Option.filter, match(x, apply2(fnValue =, apply2(fnValue Int.mod, stack(offset 1, name x), constant(2)), constant(0))), constant(2))"
+>   : string
 
 (* val join : 'a option option -> 'a option
  * (The function name is quoted using backticks because 'join' is a keyword.) *)

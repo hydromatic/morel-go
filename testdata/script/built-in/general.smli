@@ -74,5 +74,9 @@ General.ignore;
 > val it = fn : 'a -> unit
 General.ignore (1 + 2);
 > val it = () : unit
+Sys.plan ();
+> val it =
+>   "apply(fnValue General.ignore, argCode apply2(fnValue Int.+, constant(1), constant(2)))"
+>   : string
 
 (*) End general.smli
