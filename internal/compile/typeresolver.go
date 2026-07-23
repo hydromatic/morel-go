@@ -946,6 +946,8 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 	case *ast.PrefixCall:
 		return r.deduceOpCall(env, opNegate, e,
 			[]ast.Expr{e.A}, v)
+	case *ast.RangeList:
+		return r.deduceRangeList(env, e, v)
 	case *ast.Record:
 		return r.deduceRecord(env, e, v)
 	case *ast.RecordSelector:
@@ -1175,6 +1177,27 @@ func (r *typeResolver) selectorAction(sel *ast.RecordSelector,
 // deduceRecordFields types the fields of a record expression,
 // returning them sorted by label with their deduced terms. It
 // does not handle the "with" clause; the caller does.
+// deduceRangeList types a range list: every bound unifies to one
+// element type, and the result is a list of it.
+func (r *typeResolver) deduceRangeList(env typeEnv,
+	e *ast.RangeList, v *unify.Var,
+) error {
+	vElem := r.u.Variable()
+	for _, item := range e.Items {
+		for _, bound := range []ast.Expr{item.Lo, item.Hi} {
+			if bound == nil {
+				continue
+			}
+			err := r.deduceExp(env, bound, vElem)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	r.regEquiv(e, v, r.listTerm(vElem))
+	return nil
+}
+
 func (r *typeResolver) deduceRecordFields(env typeEnv,
 	record *ast.Record,
 ) ([]labelTerm, error) {

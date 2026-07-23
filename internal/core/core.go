@@ -182,6 +182,29 @@ func (l *List) Type() types.Type { return l.T }
 
 func (*List) exp() {}
 
+// RangeItem is one item of a range list; Lo and Hi are the bound
+// expressions, nil where a bound is absent.
+type RangeItem struct {
+	Kind ast.RangeKind
+	Lo   Exp
+	Hi   Exp
+}
+
+// RangeList enumerates a list from range items, "[1 .. 5, 10]". An
+// unbounded item raises Size when the list is enumerated.
+type RangeList struct {
+	T     types.Type
+	Items []RangeItem
+}
+
+// Op implements Exp.
+func (*RangeList) Op() ast.Op { return ast.RangeListOp }
+
+// Type implements Exp.
+func (r *RangeList) Type() types.Type { return r.T }
+
+func (*RangeList) exp() {}
+
 // Case matches an expression against a list of patterns; "if c
 // then a else b" becomes "case c of true => a | _ => b". Span
 // is the match list's position, where a Bind failure is

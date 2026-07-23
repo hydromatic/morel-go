@@ -17,7 +17,11 @@
 
 package eval
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/hydromatic/morel-go/internal/ast"
+)
 
 // The Range structure. A "range" value is a Con of the "range"
 // datatype, one of ten interval shapes; a "continuous_set" or
@@ -207,17 +211,28 @@ func cmpUpper(a, b bound) int {
 }
 
 // succVal and predVal step to the next or previous discrete value.
-// They succeed only for discrete types (int and char, both int32).
+// They succeed for the discrete types: int and char (both int32),
+// and bool (false < true, with no value beyond either end).
 func succVal(v Val) (Val, bool) {
-	if n, ok := v.(int32); ok {
+	switch n := v.(type) {
+	case int32:
 		return n + 1, true
+	case bool:
+		if !n {
+			return true, true
+		}
 	}
 	return nil, false
 }
 
 func predVal(v Val) (Val, bool) {
-	if n, ok := v.(int32); ok {
+	switch n := v.(type) {
+	case int32:
 		return n - 1, true
+	case bool:
+		if n {
+			return false, true
+		}
 	}
 	return nil, false
 }
@@ -446,4 +461,111 @@ func rangeComplementFn(arg Val) (Val, error) {
 		out[i] = intervalToRange(iv)
 	}
 	return continuousSetVal(out), nil
+}
+
+// RangeItem is a compiled range-list item; Lo and Hi are the bound
+// codes, nil where the bound is absent.
+type RangeItem struct {
+	Kind ast.RangeKind
+	Lo   Code
+	Hi   Code
+}
+
+// RangeList returns code that enumerates a list from range items,
+// "[1 .. 5, 10]".
+func RangeList(items []RangeItem) Code {
+	return &rangeListCode{items: items}
+}
+
+type rangeListCode struct {
+	items []RangeItem
+}
+
+func (c *rangeListCode) Eval(f *Frame) (Val, error) {
+	out := []Val{}
+	for _, item := range c.items {
+		var lo, hi Val
+		if item.Lo != nil {
+			v, err := item.Lo.Eval(f)
+			if err != nil {
+				return nil, err
+			}
+			lo = v
+		}
+		if item.Hi != nil {
+			v, err := item.Hi.Eval(f)
+			if err != nil {
+				return nil, err
+			}
+			hi = v
+		}
+		vals, err := enumerateRangeItem(item.Kind, lo, hi)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, vals...)
+	}
+	return out, nil
+}
+
+func (*rangeListCode) Describe() string { return "rangeList" }
+
+// enumerateRangeItem enumerates one range-list item: a point is a
+// single value, a bounded interval is enumerated by successor, and
+// an unbounded form raises Size (it would produce an infinite
+// list).
+func enumerateRangeItem(kind ast.RangeKind, lo, hi Val) ([]Val,
+	error,
+) {
+	switch kind {
+	case ast.RangePoint:
+		return []Val{lo}, nil
+	case ast.RangeClosed, ast.RangeClosedOpen,
+		ast.RangeOpenClosed, ast.RangeOpen:
+		// A bounded interval, enumerated below.
+	default:
+		// ALL, AT_LEAST, AT_MOST, LESS_THAN, GREATER_THAN.
+		return nil, &MorelError{Exn: ExnSize}
+	}
+	lowerClosed := kind == ast.RangeClosed ||
+		kind == ast.RangeClosedOpen
+	upperClosed := kind == ast.RangeClosed ||
+		kind == ast.RangeOpenClosed
+	first := lo
+	if !lowerClosed {
+		s, ok := succVal(lo)
+		if !ok {
+			return nil, nil
+		}
+		first = s
+	}
+	last := hi
+	if !upperClosed {
+		p, ok := predVal(hi)
+		if !ok {
+			return nil, nil
+		}
+		last = p
+	}
+	var out []Val
+	cur := first
+	for {
+		c := compareVals(cur, last)
+		if c > 0 {
+			break
+		}
+		out = append(out, cur)
+		if c == 0 {
+			// At the last element; do not step past it, which
+			// would overflow (wrap) when last is the maximum value
+			// and loop forever.
+			break
+		}
+		nxt, ok := succVal(cur)
+		if !ok {
+			break
+		}
+		cur = nxt
+	}
+	return out, nil
 }

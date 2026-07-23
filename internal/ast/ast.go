@@ -167,6 +167,51 @@ func NewListExp(span token.Span, args []Expr) *ListExp {
 // Op implements Node.
 func (*ListExp) Op() Op { return ListOp }
 
+// RangeKind is the shape of a range-list item.
+type RangeKind int
+
+// The range-list item shapes: a single point, the four bounded
+// intervals, and the five unbounded forms (which raise Size when a
+// list is enumerated from them).
+const (
+	RangePoint RangeKind = iota
+	RangeClosed
+	RangeClosedOpen
+	RangeOpenClosed
+	RangeOpen
+	RangeAll
+	RangeAtLeast
+	RangeAtMost
+	RangeLessThan
+	RangeGreaterThan
+)
+
+// RangeItem is one item of a range list: a point (Lo only), a
+// bounded interval (Lo and Hi), or an unbounded form (a missing
+// bound is nil).
+type RangeItem struct {
+	Kind RangeKind
+	Lo   Expr
+	Hi   Expr
+}
+
+// RangeList is a list built from range items, "[1 .. 5, 10]". A
+// list all of whose items are points is an ordinary ListExp; a
+// RangeList has at least one non-point item.
+type RangeList struct {
+	exprBase
+
+	Items []RangeItem
+}
+
+// NewRangeList returns a range-list expression.
+func NewRangeList(span token.Span, items []RangeItem) *RangeList {
+	return &RangeList{exprBase: exprBase{base{span}}, Items: items}
+}
+
+// Op implements Node.
+func (*RangeList) Op() Op { return RangeListOp }
+
 // Field is one field of a record expression. Label is empty for
 // an implicit label (e.g. "{x}"), which is filled in during
 // resolution.

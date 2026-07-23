@@ -391,6 +391,10 @@ var symbols = []struct {
 	kind token.Kind
 }{
 	{"...", token.Ellipsis},
+	{"..^", token.DotDotCaret},
+	{"..", token.DotDot},
+	{"^..^", token.CaretDotDotCaret},
+	{"^..", token.CaretDotDot},
 	{"::", token.Cons},
 	{"<=", token.Le},
 	{">=", token.Ge},

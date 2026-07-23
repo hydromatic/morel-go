@@ -317,6 +317,8 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 			Arg:  arg,
 			Span: e.Span(),
 		}, nil
+	case *ast.RangeList:
+		return r.toRangeList(env, e, t)
 	case *ast.Record:
 		return r.toRecord(env, e, t)
 	case *ast.RecordSelector:
@@ -1033,6 +1035,33 @@ func (r *resolver) toRecord(env *coreEnv, record *ast.Record,
 		args[i] = arg
 	}
 	return &core.Tuple{T: t, Args: args}, nil
+}
+
+// toRangeList converts a range-list expression to core, converting
+// each item's bound expressions.
+func (r *resolver) toRangeList(env *coreEnv, rl *ast.RangeList,
+	t types.Type,
+) (core.Exp, error) {
+	items := make([]core.RangeItem, len(rl.Items))
+	for i, item := range rl.Items {
+		ci := core.RangeItem{Kind: item.Kind}
+		if item.Lo != nil {
+			lo, err := r.toExp(env, item.Lo)
+			if err != nil {
+				return nil, err
+			}
+			ci.Lo = lo
+		}
+		if item.Hi != nil {
+			hi, err := r.toExp(env, item.Hi)
+			if err != nil {
+				return nil, err
+			}
+			ci.Hi = hi
+		}
+		items[i] = ci
+	}
+	return &core.RangeList{T: t, Items: items}, nil
 }
 
 // toRecordUpdate converts "{base with lab = e, ...}" to a let that

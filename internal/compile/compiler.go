@@ -207,6 +207,8 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 			c.nSlots++
 		}
 		return eval.GetSlot(c.ordinalSlot, ordinalName), nil
+	case *core.RangeList:
+		return c.compileRangeList(e)
 	case *core.Selector:
 		return eval.Constant(eval.Nth(e.Index)), nil
 	case *core.Tuple:
@@ -772,6 +774,33 @@ func (c *compiler) patCode(pat core.Pat) (eval.Pat, error) {
 			Msg: "cannot compile pattern " + pat.Op().String(),
 		}
 	}
+}
+
+// compileRangeList compiles a range-list expression, compiling
+// each item's bound expressions.
+func (c *compiler) compileRangeList(e *core.RangeList) (eval.Code,
+	error,
+) {
+	items := make([]eval.RangeItem, len(e.Items))
+	for i, item := range e.Items {
+		ri := eval.RangeItem{Kind: item.Kind}
+		if item.Lo != nil {
+			lo, err := c.compileExp(item.Lo)
+			if err != nil {
+				return nil, err
+			}
+			ri.Lo = lo
+		}
+		if item.Hi != nil {
+			hi, err := c.compileExp(item.Hi)
+			if err != nil {
+				return nil, err
+			}
+			ri.Hi = hi
+		}
+		items[i] = ri
+	}
+	return eval.RangeList(items), nil
 }
 
 func (c *compiler) compileLet(let *core.Let) (eval.Code, error) {

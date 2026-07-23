@@ -720,12 +720,132 @@ func (p *Parser) listExpr() (ast.Expr, error) {
 		}
 		return ast.NewListExp(span, nil), nil
 	}
-	args, end, err := p.exprList(token.RBracket)
+	var items []ast.RangeItem
+	for {
+		var item ast.RangeItem
+		item, err = p.rangeListItem()
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+		if p.tok.Kind != token.Comma {
+			break
+		}
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
+	}
+	err = p.expect(token.RBracket)
 	if err != nil {
 		return nil, err
 	}
-	span := token.Span{Start: start, End: end}
-	return ast.NewListExp(span, args), nil
+	span := token.Span{Start: start, End: p.tok.Span.End}
+	err = p.next()
+	if err != nil {
+		return nil, err
+	}
+	// A list whose items are all points is an ordinary list; only
+	// a list with a range item is a RangeList.
+	allPoints := true
+	for _, it := range items {
+		if it.Kind != ast.RangePoint {
+			allPoints = false
+			break
+		}
+	}
+	if allPoints {
+		args := make([]ast.Expr, len(items))
+		for i, it := range items {
+			args[i] = it.Lo
+		}
+		return ast.NewListExp(span, args), nil
+	}
+	return ast.NewRangeList(span, items), nil
+}
+
+// rangeListItem parses one item of a list: a plain expression
+// (a point), a bounded range "e .. e2" (with "..", "..^", "^..",
+// or "^..^"), or an unbounded form such as "e .." or "..^ e".
+func (p *Parser) rangeListItem() (ast.RangeItem, error) {
+	// Leading-".." forms have no lower bound.
+	if p.tok.Kind == token.DotDot || p.tok.Kind == token.DotDotCaret {
+		return p.leadingRangeItem()
+	}
+	lo, err := p.expr()
+	if err != nil {
+		return ast.RangeItem{}, err
+	}
+	return p.rangeItemAfterLo(lo)
+}
+
+// leadingRangeItem parses "[.. ]" (ALL), "[.. e]" (AT_MOST), or
+// "[..^ e]" (LESS_THAN); the current token is "..' or "..^".
+func (p *Parser) leadingRangeItem() (ast.RangeItem, error) {
+	caret := p.tok.Kind == token.DotDotCaret
+	err := p.next()
+	if err != nil {
+		return ast.RangeItem{}, err
+	}
+	if !caret && p.atRangeItemEnd() {
+		return ast.RangeItem{Kind: ast.RangeAll}, nil
+	}
+	hi, err := p.expr()
+	if err != nil {
+		return ast.RangeItem{}, err
+	}
+	kind := ast.RangeAtMost
+	if caret {
+		kind = ast.RangeLessThan
+	}
+	return ast.RangeItem{Kind: kind, Hi: hi}, nil
+}
+
+// rangeItemAfterLo parses the rest of an expression-first item,
+// given its lower bound: a point, a bounded interval, or an
+// upper-unbounded form.
+func (p *Parser) rangeItemAfterLo(lo ast.Expr) (ast.RangeItem,
+	error,
+) {
+	var bounded, unbounded ast.RangeKind
+	upperClosed := false
+	// lint: sort until '^\t}' where '^\tcase '
+	switch p.tok.Kind {
+	case token.CaretDotDot:
+		bounded = ast.RangeOpenClosed
+		unbounded = ast.RangeGreaterThan
+		upperClosed = true
+	case token.CaretDotDotCaret:
+		bounded = ast.RangeOpen
+	case token.DotDot:
+		bounded = ast.RangeClosed
+		unbounded = ast.RangeAtLeast
+		upperClosed = true
+	case token.DotDotCaret:
+		bounded = ast.RangeClosedOpen
+	default:
+		return ast.RangeItem{Kind: ast.RangePoint, Lo: lo}, nil
+	}
+	err := p.next()
+	if err != nil {
+		return ast.RangeItem{}, err
+	}
+	// ".." and "^.." may be unbounded above; "..^" and "^..^"
+	// always take an upper bound.
+	if upperClosed && p.atRangeItemEnd() {
+		return ast.RangeItem{Kind: unbounded, Lo: lo}, nil
+	}
+	hi, err := p.expr()
+	if err != nil {
+		return ast.RangeItem{}, err
+	}
+	return ast.RangeItem{Kind: bounded, Lo: lo, Hi: hi}, nil
+}
+
+// atRangeItemEnd reports whether the current token ends a range
+// item without an upper bound (a comma or the closing bracket).
+func (p *Parser) atRangeItemEnd() bool {
+	return p.tok.Kind == token.Comma || p.tok.Kind == token.RBracket
 }
 
 // exprList parses "e1, e2, ..." up to and including the closing

@@ -36,6 +36,7 @@ const (
 	RecordSelectorOp
 	TupleOp
 	ListOp
+	RangeListOp
 	RecordOp
 
 	// Infix and prefix operators, in increasing precedence.
@@ -148,6 +149,7 @@ var opNames = map[Op]string{
 	RecordSelectorOp: "record_selector",
 	TupleOp:          "tuple",
 	ListOp:           "list",
+	RangeListOp:      "range_list",
 	RecordOp:         "record",
 	ImpliesOp:        "implies",
 	OrelseOp:         "orelse",
