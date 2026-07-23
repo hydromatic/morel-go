@@ -311,7 +311,9 @@ func planFnName(name string, t types.Type) string {
 		case "^":
 			return "String.^"
 		case "mod":
-			return "Int.mod"
+			return arithStruct(t) + ".mod"
+		case "o":
+			return "General.o"
 		default:
 			return op
 		}
@@ -611,11 +613,9 @@ func (c *compiler) compileStep(step core.FromStep,
 			return nil, err
 		}
 		*scanPats = append(*scanPats, s.Pat)
-		name := ""
-		if id, ok := s.Pat.(*core.IDPat); ok {
-			name = id.Name
-		}
-		return &eval.ScanStage{Source: source, Pat: pat, Name: name}, nil
+		return &eval.ScanStage{
+			Source: source, Pat: pat, Name: corePatDesc(s.Pat),
+		}, nil
 	case *core.SetOp:
 		return c.compileSetOp(s, *scanPats)
 	case *core.Skip:
