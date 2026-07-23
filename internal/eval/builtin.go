@@ -108,19 +108,8 @@ var Builtins = map[string]Val{
 	"Bool.>": boolOp(func(a, b bool) bool {
 		return a && !b
 	}),
-	"Bool.andalso": boolOp(func(a, b bool) bool {
-		return a && b
-	}),
-	"Bool.fromString": boolFromStringFn,
-	"Bool.implies": boolOp(func(a, b bool) bool {
-		return !a || b
-	}),
 	"Bool.not": notFn,
-	"Bool.orelse": boolOp(func(a, b bool) bool {
-		return a || b
-	}),
-	"Bool.toString": boolToStringFn,
-	"Char.<":        charOp(func(a, b rune) bool { return a < b }),
+	"Char.<":   charOp(func(a, b rune) bool { return a < b }),
 	"Char.<=": charOp(func(a, b rune) bool {
 		return a <= b
 	}),
@@ -177,19 +166,6 @@ var Builtins = map[string]Val{
 	"Date.weekDay":      Fn(dateWeekDayFn),
 	"Date.year":         dateField(time.Time.Year),
 	"Date.yearDay":      dateField(dateYearDay),
-	"Either.app":        Fn(eitherAppFn),
-	"Either.appLeft":    eitherAppSide(true),
-	"Either.appRight":   eitherAppSide(false),
-	"Either.asLeft":     Fn(eitherAsLeftFn),
-	"Either.asRight":    Fn(eitherAsRightFn),
-	"Either.fold":       Fn(eitherFoldFn),
-	"Either.isLeft":     Fn(eitherIsLeftFn),
-	"Either.isRight":    Fn(eitherIsRightFn),
-	"Either.map":        Fn(eitherMapFn),
-	"Either.mapLeft":    eitherMapSide(true),
-	"Either.mapRight":   eitherMapSide(false),
-	"Either.partition":  Fn(eitherPartitionFn),
-	"Either.proj":       Fn(eitherProjFn),
 	"Fn.id":             Fn(identityFn),
 	"Fn.o":              composeFn,
 	"Fn.repeat":         Fn(fnRepeatFn),
@@ -545,26 +521,6 @@ const (
 
 // unitVal is the unit value.
 var unitVal = core.Unit{}
-
-// boolToStringFn is "Bool.toString b".
-func boolToStringFn(arg Val) (Val, error) {
-	if asBool(arg) {
-		return "true", nil
-	}
-	return "false", nil
-}
-
-// boolFromStringFn is "Bool.fromString s".
-func boolFromStringFn(arg Val) (Val, error) {
-	switch asString(arg) {
-	case "false":
-		return someVal(false), nil
-	case "true":
-		return someVal(true), nil
-	default:
-		return noneVal, nil
-	}
-}
 
 // boolOp adapts a binary bool function to a built-in. (As a
 // function value, "Bool.andalso" evaluates both operands; only

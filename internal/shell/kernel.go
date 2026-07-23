@@ -395,6 +395,9 @@ func mustReadLib(name string) string {
 // primitive — and derives the rest in Morel.
 func structLibs() []structLib {
 	return []structLib{
+		// native: not, and the comparison operators.
+		{name: "Bool", file: "bool.sml"},
+		{name: "Either", file: "either.sml"}, // no native members
 		{name: "Fn", file: "fn.sml"},         // native: id, o, repeat
 		{name: "Option", file: "option.sml"}, // native: getOpt, isSome, valOf
 		// native: the doc constructors, fillSep/fillCat, render.
