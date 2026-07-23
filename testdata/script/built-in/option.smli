@@ -152,5 +152,9 @@ Option.composePartial (fn i => if i = 0 then NONE else (SOME i),
                        fn s => if s = "" then NONE else SOME (String.size s))
                       "";
 > val it = NONE : int option
+Sys.plan ();
+> val it =
+>   "apply(fnCode apply2(fnValue Option.composePartial, match(i, tailApply(fnCode match(true, constant([NONE]), _, tailApply(fnValue tyCon, argCode stack(offset 1, name i))), argCode apply2(fnValue =, stack(offset 1, name i), constant(0)))), match(s, tailApply(fnCode match(true, constant([NONE]), _, tailApply(fnValue tyCon, argCode apply(fnValue String.size, argCode stack(offset 1, name s)))), argCode apply2(fnValue =, stack(offset 1, name s), constant())))), argCode constant())"
+>   : string
 
 (*) End option.smli

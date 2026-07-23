@@ -17,7 +17,11 @@
 
 package eval
 
-import "github.com/hydromatic/morel-go/internal/token"
+import (
+	"strings"
+
+	"github.com/hydromatic/morel-go/internal/token"
+)
 
 // Pat is a compiled pattern. Match tests a value, binding the
 // pattern's variables into the frame's slots, and reports
@@ -155,18 +159,23 @@ func (WildcardPat) Match(Val, *Frame) bool {
 type MatchClause struct {
 	Pat  Pat
 	Body Code
+	// PatDesc is the pattern as the plan shows it (e.g. "(i, s)",
+	// "true", "_"); the compiled Pat has no names of its own.
+	PatDesc string
 }
 
 // Case returns code that evaluates a scrutinee and runs the body
 // of the first clause whose pattern matches; if none matches, it
-// raises Bind at the match list's position.
+// raises Bind at the match list's position. tail is true when the
+// case is in tail position (rendered as tailApply of the match).
 func Case(scrutinee Code, clauses []MatchClause,
-	span token.Span,
+	span token.Span, tail bool,
 ) Code {
 	return &caseCode{
 		scrutinee: scrutinee,
 		clauses:   clauses,
 		span:      span,
+		tail:      tail,
 	}
 }
 
@@ -174,6 +183,7 @@ type caseCode struct {
 	scrutinee Code
 	clauses   []MatchClause
 	span      token.Span
+	tail      bool
 }
 
 func (c *caseCode) Eval(f *Frame) (Val, error) {
@@ -190,5 +200,24 @@ func (c *caseCode) Eval(f *Frame) (Val, error) {
 }
 
 func (c *caseCode) Describe() string {
-	return "case(" + c.scrutinee.Describe() + ")"
+	// A case renders as applying a match function to the
+	// scrutinee: apply(fnCode match(pat1, body1, ...), argCode
+	// scrutinee), or tailApply in tail position.
+	var b strings.Builder
+	b.WriteString("match(")
+	for i, cl := range c.clauses {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(cl.PatDesc)
+		b.WriteString(", ")
+		b.WriteString(cl.Body.Describe())
+	}
+	b.WriteString(")")
+	word := "apply"
+	if c.tail {
+		word = "tailApply"
+	}
+	return word + "(fnCode " + b.String() + ", argCode " +
+		c.scrutinee.Describe() + ")"
 }

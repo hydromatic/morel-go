@@ -18,6 +18,7 @@
 package compile
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -148,7 +149,7 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 	case *core.Apply:
 		return c.compileApply(e, false)
 	case *core.Case:
-		return c.compileCase(e)
+		return c.compileCase(e, false)
 	case *core.Con:
 		if e.Datatype == variantTypeName {
 			return c.compileVariantCon(e)
@@ -244,6 +245,10 @@ func (c *compiler) builtinFnInfo(fnExp core.Exp,
 		}
 		return planFnName(name, fn.Type()),
 			builtinArity(fn.Type()), curriedArity(fn.Type())
+	case *core.Con:
+		// A datatype constructor applied to an argument renders as
+		// "tyCon".
+		return "tyCon", 1, 1
 	case *core.ID:
 		if !eval.IsBuiltinFn(fnCode) {
 			return "", 0, 0
@@ -787,6 +792,8 @@ func (c *compiler) compileTail(exp core.Exp) (eval.Code, error) {
 	switch e := exp.(type) {
 	case *core.Apply:
 		return c.compileApply(e, true)
+	case *core.Case:
+		return c.compileCase(e, true)
 	case *core.Let:
 		return c.compileLet(e, true)
 	default:
@@ -794,8 +801,8 @@ func (c *compiler) compileTail(exp core.Exp) (eval.Code, error) {
 	}
 }
 
-func (c *compiler) compileCase(caseExp *core.Case) (eval.Code,
-	error,
+func (c *compiler) compileCase(caseExp *core.Case, tail bool) (
+	eval.Code, error,
 ) {
 	scrutinee, err := c.compileExp(caseExp.Exp)
 	if err != nil {
@@ -807,13 +814,52 @@ func (c *compiler) compileCase(caseExp *core.Case) (eval.Code,
 		if err != nil {
 			return nil, err
 		}
-		body, err := c.compileExp(m.Exp)
+		body, err := c.compileBody(m.Exp, tail)
 		if err != nil {
 			return nil, err
 		}
-		clauses[i] = eval.MatchClause{Pat: pat, Body: body}
+		clauses[i] = eval.MatchClause{
+			Pat: pat, Body: body, PatDesc: corePatDesc(m.Pat),
+		}
 	}
-	return eval.Case(scrutinee, clauses, caseExp.Span), nil
+	return eval.Case(scrutinee, clauses, caseExp.Span, tail), nil
+}
+
+// corePatDesc renders a core pattern as the compiled plan shows it,
+// keeping the variable names the compiled pattern discards.
+func corePatDesc(p core.Pat) string {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch p := p.(type) {
+	case *core.AsPat:
+		return p.Pat.Name + " as " + corePatDesc(p.Body)
+	case *core.Con0Pat:
+		return p.Name
+	case *core.ConPat:
+		return p.Name + " " + corePatDesc(p.Arg)
+	case *core.ConsPat:
+		return corePatDesc(p.Head) + " :: " + corePatDesc(p.Tail)
+	case *core.IDPat:
+		return p.Name
+	case *core.ListPat:
+		return "[" + joinPatDesc(p.Args) + "]"
+	case *core.LiteralPat:
+		return fmt.Sprintf("%v", p.Value)
+	case *core.TuplePat:
+		return "(" + joinPatDesc(p.Args) + ")"
+	case *core.WildcardPat:
+		return "_"
+	default:
+		return "_"
+	}
+}
+
+// joinPatDesc renders patterns, comma-separated.
+func joinPatDesc(pats []core.Pat) string {
+	parts := make([]string, len(pats))
+	for i, p := range pats {
+		parts[i] = corePatDesc(p)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // compilePat compiles a pattern, allocating a slot for each name
