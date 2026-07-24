@@ -484,6 +484,10 @@ Sys.plan;
  * in place. *)
 fun pf x = x + 1;
 > val pf = fn : int -> int
+Sys.plan ();
+> val it =
+>   "match(x, apply2(fnValue Int.+, stack(offset 1, name x), constant(1)))"
+>   : string
 1 + 2;
 > val it = 3 : int
 datatype color = RED | GREEN;

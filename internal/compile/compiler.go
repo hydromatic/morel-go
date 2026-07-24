@@ -86,6 +86,15 @@ func Statement(decl core.Decl,
 		for _, bind := range d.Binds {
 			ids = append(ids, core.PatIDs(bind.Pat)...)
 		}
+		// Sys.plan describes the first bound function, as it does for
+		// "val f = fn ..." (the recursive references resolve to the
+		// slots compileRec already allocated).
+		if len(d.Binds) > 0 {
+			plan, err = c.compileExp(d.Binds[0].Exp)
+			if err != nil {
+				return nil, err
+			}
+		}
 	default:
 		return nil, &Error{
 			Msg: "cannot compile " + decl.Op().String(),

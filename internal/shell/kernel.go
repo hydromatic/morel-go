@@ -522,8 +522,12 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	frame := eval.NewFrame(compiled.Slots)
 	_, err = compiled.Code.Eval(frame)
 	// Record the statement's code for Sys.plan, after evaluating —
-	// so a Sys.plan call sees the previous statement, as java does.
-	k.lastCode = compiled.Plan
+	// so a Sys.plan call sees the previous statement. A declaration
+	// with no bound expression (a datatype or type) has no plan; it
+	// leaves the previous plan in place rather than clearing it.
+	if compiled.Plan != nil {
+		k.lastCode = compiled.Plan
+	}
 	if err != nil {
 		// A nonexhaustive-match warning still precedes the exception
 		// its unmatched value raises.
