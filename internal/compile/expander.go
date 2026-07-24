@@ -562,8 +562,13 @@ func (r *rebuilder) addGeneratorScan(pat *core.IDPat) {
 		r.subsume(g)
 		r.changed = true
 	} else {
-		r.steps = append(r.steps,
-			&core.Scan{Pat: g.pat, Exp: g.exp})
+		exp := g.exp
+		if !g.unique {
+			// A non-unique generator may repeat values (several
+			// branches can produce one); scan it distinct.
+			exp = distinctScan(r.x.sys, g.pat, exp)
+		}
+		r.steps = append(r.steps, &core.Scan{Pat: g.pat, Exp: exp})
 		r.subsume(g)
 		if !r.x.isExtentScanExp(g.exp) {
 			// Re-emitting the variable's own extent scan is not
@@ -609,6 +614,23 @@ func (r *rebuilder) projectedScan(g *generator,
 		Kind:  ast.FromOp,
 	}
 	return &core.Scan{Pat: outerPat, Exp: sub}
+}
+
+// distinctScan wraps a collection in a deduplicating subquery,
+// "from p in exp distinct", with a fresh pattern.
+func distinctScan(sys *types.System, pat core.Pat,
+	exp core.Exp,
+) core.Exp {
+	fresh := map[*core.IDPat]*core.IDPat{}
+	subPat := clonePat(pat, fresh)
+	return &core.From{
+		T: sys.Named("bag", pat.Type()),
+		Steps: []core.FromStep{
+			&core.Scan{Pat: subPat, Exp: exp},
+			&core.Distinct{},
+		},
+		Kind: ast.FromOp,
+	}
 }
 
 // rowOf builds the yielded row of a projected scan and the outer

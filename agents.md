@@ -100,9 +100,20 @@ which must pass before committing:
   commit should show it decreasing.
 
 New tests originate in morel-java: add them there first, then
-propagate back — do not grow a go-only test fork. (Exception:
-`parse.smli`, temporary parser scaffolding; see `plan.md`
-task 11.)
+propagate back — do not grow a go-only test fork. Two go-local
+scripts are exceptions; the pull never touches either, and both
+are exempt from the corpus regeneration tooling (`pull-passing
+--apply`, `era_trim`, whole-file regens), which only writes files
+that have a morel-java counterpart:
+
+- `parse.smli`, temporary parser scaffolding (see `plan.md`
+  task 11); and
+- `backswing.smli`, regression tests for bugs fixed in morel-go
+  that morel-java's corpus does not yet pin. Each entry names the
+  bug and the upstream `.smli` file its statements belong in; a
+  future "backswing" task in morel-java adopts them there, after
+  which a pull returns them and they are deleted from here (see
+  `plan.md` task R45).
 
 ### Commit message
 

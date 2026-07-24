@@ -69,6 +69,21 @@ func decomposeConjuncts(e core.Exp, out *[]core.Exp) {
 	*out = append(*out, e)
 }
 
+// decomposeDisjuncts splits a predicate into the disjuncts of its
+// top-level "orelse" chain, appending them to out — "a orelse b"
+// resolves to "case a of true => true | _ => b". A predicate that
+// is not a disjunction is itself the sole disjunct.
+func decomposeDisjuncts(e core.Exp, out *[]core.Exp) {
+	if cond, ifTrue, ifFalse, ok := asBoolCase(e); ok &&
+		isBoolLiteral(ifTrue, true) &&
+		!isBoolLiteral(ifFalse, false) {
+		decomposeDisjuncts(cond, out)
+		decomposeDisjuncts(ifFalse, out)
+		return
+	}
+	*out = append(*out, e)
+}
+
 // composeConjuncts rebuilds a predicate from conjuncts: the
 // "andalso" chain of them, or a bare "true" for none.
 func composeConjuncts(sys *types.System,

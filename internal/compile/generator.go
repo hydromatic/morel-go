@@ -18,6 +18,8 @@
 package compile
 
 import (
+	"slices"
+
 	"github.com/hydromatic/morel-go/internal/ast"
 	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/types"
@@ -70,6 +72,14 @@ type generator struct {
 	// provenance is the set of original filter conjuncts the
 	// generator subsumes, identified by pointer.
 	provenance map[core.Exp]bool
+
+	// rangeExps are the range-constructor applications behind a
+	// range generator, kept so a union of ranges can merge them.
+	rangeExps []core.Exp
+
+	// pointExp is the single value behind a point generator, kept
+	// so a union can turn it into a POINT range.
+	pointExp core.Exp
 }
 
 // generatorCache accumulates the generators deduced for each
@@ -138,7 +148,10 @@ func maybeGenerator(sys *types.System, pat *core.IDPat,
 	if pointMatch != nil {
 		return pointGenerator(sys, pat, pointMatch)
 	}
-	return maybeRangeGenerator(sys, pat, constraints)
+	if g := maybeRangeGenerator(sys, pat, constraints); g != nil {
+		return g
+	}
+	return maybeUnion(sys, pat, constraints)
 }
 
 // bound is one side of a range a conjunct implies: its value, its
@@ -374,29 +387,9 @@ func rangeGenerator(sys *types.System, pat *core.IDPat,
 			T: pairT, Args: []core.Exp{lo.value, hi.value},
 		},
 	}
-	listT := sys.List(t)
-	flatten := &core.Apply{
-		T: listT,
-		Fn: &core.ID{Pat: &core.IDPat{
-			T:    sys.Fn(sys.List(rangeT), listT),
-			Name: "Range.flatten",
-		}},
-		Arg: &core.List{
-			T:    sys.List(rangeT),
-			Args: []core.Exp{ctorApply},
-		},
-	}
-	bagT := sys.Named("bag", t)
-	exp := &core.Apply{
-		T: bagT,
-		Fn: &core.ID{Pat: &core.IDPat{
-			T:    sys.Fn(listT, bagT),
-			Name: "Bag.fromList",
-		}},
-		Arg: flatten,
-	}
+	ctors := []core.Exp{ctorApply}
 	return &generator{
-		exp: exp,
+		exp: rangeScanExp(sys, t, ctors),
 		pat: pat,
 		freePats: append(freePatsOf(lo.value),
 			freePatsOf(hi.value)...),
@@ -407,6 +400,310 @@ func rangeGenerator(sys *types.System, pat *core.IDPat,
 			lo.source: true,
 			hi.source: true,
 		},
+		rangeExps: ctors,
+	}
+}
+
+// rangeScanExp builds the collection enumerating a list of
+// ranges: Bag.fromList (Range.flatten [ctors]).
+func rangeScanExp(sys *types.System, t types.Type,
+	ctors []core.Exp,
+) core.Exp {
+	rangeT := sys.Named("range", t)
+	listT := sys.List(t)
+	flatten := &core.Apply{
+		T: listT,
+		Fn: &core.ID{Pat: &core.IDPat{
+			T:    sys.Fn(sys.List(rangeT), listT),
+			Name: "Range.flatten",
+		}},
+		Arg: &core.List{T: sys.List(rangeT), Args: ctors},
+	}
+	bagT := sys.Named("bag", t)
+	return &core.Apply{
+		T: bagT,
+		Fn: &core.ID{Pat: &core.IDPat{
+			T:    sys.Fn(listT, bagT),
+			Name: "Bag.fromList",
+		}},
+		Arg: flatten,
+	}
+}
+
+// rangeSetScanExp builds the collection enumerating ranges that
+// may overlap: Range.toBag (Range.discreteSetOf [ctors]), whose
+// set semantics deduplicate and sort.
+func rangeSetScanExp(sys *types.System, t types.Type,
+	ctors []core.Exp,
+) core.Exp {
+	rangeT := sys.Named("range", t)
+	setT := sys.Named("discrete_set", t)
+	set := &core.Apply{
+		T: setT,
+		Fn: &core.ID{Pat: &core.IDPat{
+			T:    sys.Fn(sys.List(rangeT), setT),
+			Name: "Range.discreteSetOf",
+		}},
+		Arg: &core.List{T: sys.List(rangeT), Args: ctors},
+	}
+	bagT := sys.Named("bag", t)
+	return &core.Apply{
+		T: bagT,
+		Fn: &core.ID{Pat: &core.IDPat{
+			T:    sys.Fn(setT, bagT),
+			Name: "Range.toBag",
+		}},
+		Arg: set,
+	}
+}
+
+// maybeUnion inverts a disjunction: each branch of the first
+// "orelse" conjunct is inverted with only its own conjuncts in
+// scope, and the branch generators combine. If any branch fails
+// to ground the variable, the disjunction cannot be inverted.
+func maybeUnion(sys *types.System, pat *core.IDPat,
+	constraints []core.Exp,
+) *generator {
+	for _, c := range constraints {
+		var branches []core.Exp
+		decomposeDisjuncts(c, &branches)
+		if len(branches) == 1 {
+			continue
+		}
+		gens := make([]*generator, 0, len(branches))
+		ok := true
+		for _, branch := range branches {
+			var bc []core.Exp
+			decomposeConjuncts(branch, &bc)
+			g := maybeGenerator(sys, pat, bc)
+			if g == nil {
+				ok = false
+				break
+			}
+			gens = append(gens, g)
+		}
+		if ok {
+			return generateUnion(sys, pat, gens, c)
+		}
+	}
+	return nil
+}
+
+// generateUnion combines the generators of a disjunction's
+// branches. When every branch is a range or a point, the ranges
+// merge: provably disjoint ranges concatenate into one
+// Range.flatten, and possibly-overlapping ones go through
+// Range.discreteSetOf, whose set semantics deduplicate — either
+// way a sealed generator that subsumes the whole disjunction.
+// Otherwise the branch collections concatenate; the result may
+// hold duplicates (a value can satisfy several branches), so it
+// is not unique, and, being unsealed, the disjunction remains a
+// filter.
+func generateUnion(sys *types.System, pat *core.IDPat,
+	gens []*generator, orelse core.Exp,
+) *generator {
+	if ctors := mergedRangeCtors(sys, pat.T, gens); ctors != nil {
+		exp := rangeScanExp(sys, pat.T, ctors)
+		if !rangesDisjoint(ctors) {
+			exp = rangeSetScanExp(sys, pat.T, ctors)
+		}
+		return &generator{
+			exp:        exp,
+			pat:        pat,
+			freePats:   unionFreePats(gens),
+			card:       finite,
+			unique:     true,
+			sealed:     true,
+			provenance: map[core.Exp]bool{orelse: true},
+			rangeExps:  ctors,
+		}
+	}
+	exps := make([]core.Exp, len(gens))
+	for i, g := range gens {
+		exps[i] = g.exp
+	}
+	bagT := sys.Named("bag", pat.T)
+	listT := sys.List(bagT)
+	return &generator{
+		exp: &core.Apply{
+			T: bagT,
+			Fn: &core.ID{Pat: &core.IDPat{
+				T:    sys.Fn(listT, bagT),
+				Name: "Bag.concat",
+			}},
+			Arg: &core.List{T: listT, Args: exps},
+		},
+		pat:      pat,
+		freePats: unionFreePats(gens),
+		card:     finite,
+	}
+}
+
+// unionFreePats is the union of the branch generators'
+// dependencies.
+func unionFreePats(gens []*generator) []*core.IDPat {
+	var pats []*core.IDPat
+	for _, g := range gens {
+		for _, p := range g.freePats {
+			if !slices.Contains(pats, p) {
+				pats = append(pats, p)
+			}
+		}
+	}
+	return pats
+}
+
+// mergedRangeCtors collects the range constructors behind the
+// branch generators, or nil if any branch is neither a range nor
+// a point.
+func mergedRangeCtors(sys *types.System, t types.Type,
+	gens []*generator,
+) []core.Exp {
+	var ctors []core.Exp
+	for _, g := range gens {
+		switch {
+		case g.rangeExps != nil:
+			ctors = append(ctors, g.rangeExps...)
+		case g.pointExp != nil:
+			p := pointCtor(sys, t, g.pointExp)
+			if p == nil {
+				return nil
+			}
+			ctors = append(ctors, p)
+		default:
+			return nil
+		}
+	}
+	return ctors
+}
+
+// pointCtor builds "POINT v", the single-value range.
+func pointCtor(sys *types.System, t types.Type,
+	v core.Exp,
+) core.Exp {
+	tc, ok := sys.LookupTyCon("POINT")
+	if !ok {
+		return nil
+	}
+	rangeT := sys.Named("range", t)
+	return &core.Apply{
+		T: rangeT,
+		Fn: &core.Con{
+			T:        sys.Fn(t, rangeT),
+			Datatype: "range",
+			Name:     "POINT",
+			Ordinal:  tc.Ordinal,
+			HasArg:   true,
+		},
+		Arg: v,
+	}
+}
+
+// endpoints describes one range constructor for the disjointness
+// test: literal bounds and their openness.
+type endpoints struct {
+	lo, hi         float64
+	loOpen, hiOpen bool
+}
+
+// rangesDisjoint reports whether the ranges provably do not
+// overlap: every endpoint a numeric literal, and, in order of
+// lower endpoint, each range strictly below the next. Touching
+// closed endpoints count as overlapping.
+func rangesDisjoint(ctors []core.Exp) bool {
+	eps := make([]endpoints, len(ctors))
+	for i, c := range ctors {
+		ep, ok := ctorEndpoints(c)
+		if !ok {
+			return false
+		}
+		eps[i] = ep
+	}
+	slices.SortFunc(eps, func(a, b endpoints) int {
+		switch {
+		case a.lo < b.lo:
+			return -1
+		case a.lo > b.lo:
+			return 1
+		case a.loOpen != b.loOpen:
+			if b.loOpen {
+				return -1
+			}
+			return 1
+		default:
+			return 0
+		}
+	})
+	for i := 0; i+1 < len(eps); i++ {
+		a, b := eps[i], eps[i+1]
+		if a.hi > b.lo {
+			return false
+		}
+		if a.hi == b.lo && !a.hiOpen && !b.loOpen {
+			return false
+		}
+	}
+	return true
+}
+
+// ctorEndpoints extracts a constructor's literal endpoints.
+func ctorEndpoints(c core.Exp) (endpoints, bool) {
+	apply, ok := c.(*core.Apply)
+	if !ok {
+		return endpoints{}, false
+	}
+	con, ok := apply.Fn.(*core.Con)
+	if !ok {
+		return endpoints{}, false
+	}
+	if con.Name == "POINT" {
+		v, isNum := literalNumber(apply.Arg)
+		if !isNum {
+			return endpoints{}, false
+		}
+		return endpoints{lo: v, hi: v}, true
+	}
+	tuple, ok := apply.Arg.(*core.Tuple)
+	if !ok || len(tuple.Args) != 2 {
+		return endpoints{}, false
+	}
+	lo, ok := literalNumber(tuple.Args[0])
+	if !ok {
+		return endpoints{}, false
+	}
+	hi, ok := literalNumber(tuple.Args[1])
+	if !ok {
+		return endpoints{}, false
+	}
+	ep := endpoints{lo: lo, hi: hi}
+	// lint: sort until '^\t}' where '^\tcase '
+	switch con.Name {
+	case "CLOSED":
+	case "CLOSED_OPEN":
+		ep.hiOpen = true
+	case "OPEN":
+		ep.loOpen, ep.hiOpen = true, true
+	case "OPEN_CLOSED":
+		ep.loOpen = true
+	default:
+		return endpoints{}, false
+	}
+	return ep, true
+}
+
+// literalNumber extracts an int or real literal's value.
+func literalNumber(e core.Exp) (float64, bool) {
+	lit, ok := e.(*core.Literal)
+	if !ok {
+		return 0, false
+	}
+	switch v := lit.Value.(type) {
+	case int32:
+		return float64(v), true
+	case float32:
+		return float64(v), true
+	default:
+		return 0, false
 	}
 }
 
@@ -460,6 +757,7 @@ func pointGenerator(sys *types.System, pat *core.IDPat,
 		unique:     true,
 		sealed:     true,
 		provenance: map[core.Exp]bool{conjunct: true},
+		pointExp:   point,
 	}
 }
 

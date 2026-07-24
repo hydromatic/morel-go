@@ -424,6 +424,9 @@ from x in [1, 2, 3] where x < 2;
 [1.0, 2.5, 1.0];
 > val it = [1,2.5,1] : real list
 
+Range.flatten [POINT 1.0, POINT 3.0, POINT 1.0];
+> val it = [1,3,1] : real list
+
 (*) Same for string.
 ["a"];
 > val it = ["a"] : string list

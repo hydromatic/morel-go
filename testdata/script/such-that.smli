@@ -37,6 +37,9 @@ from i where i > 0 andalso i < 10;
 from i where i >= 0 andalso i <= 10;
 > val it = [0,1,2,3,4,5,6,7,8,9,10] : int bag
 
+from i where i >= 0 andalso i <= 5 orelse i = 8 orelse i > 20 andalso i < 22;
+> val it = [1,2,3,4,5,21,8,0] : int bag
+
 from i where i > 0 andalso i < 4 yield {j = i + 1};
 > j
 > -
@@ -63,6 +66,21 @@ from i where i = 0;
 
 from s where s = "abc";
 > val it = ["abc"] : string bag
+
+from i where i = 0 orelse i = 12;
+> val it = [12,0] : int bag
+
+from i where i > 0 andalso i < 10 orelse i > 12 andalso i <= 15;
+> val it = [1,2,3,4,5,6,7,8,9,13,14,15] : int bag
+
+(*) Ranges over int * bool: point constraints merged into a single discreteSetOf.
+from t where t = (1, true) orelse t = (3, false);
+> 1 2
+> - -----
+> 1 true
+> 3 false
+>
+> val it : (int * bool) bag
 
 from i
 where i > 0 andalso i < 10
@@ -264,6 +282,9 @@ fun isSmall n = n elem [1, 2];
 fun isLarge n = n elem [10, 20];
 > val isLarge = fn : int -> bool
 
+from n where isSmall n orelse isLarge n;
+> val it = [1,2,20,10] : int bag
+
 (* -- Predicate inversion ----------------------------------------- *)
 
 (* 1. Simple elem
@@ -318,6 +339,12 @@ from x where x = 3 andalso x < 10;
 
 from x where x = 3 andalso x > 10;
 > val it = [] : int bag
+
+from x where x = 3 orelse x > 0 andalso x < 5;
+> val it = [1,2,3,4] : int bag
+
+from x where x = 3 orelse x > 10 andalso x < 15;
+> val it = [3,11,12,13,14] : int bag
 
 from b where b > false;
 > val it = [true] : bool bag

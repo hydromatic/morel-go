@@ -420,19 +420,27 @@ func intervalContains(iv interval, x Val) bool {
 }
 
 // enumerateInterval lists the discrete values in a bounded
-// interval, in ascending order.
+// interval, in ascending order. A single-valued interval needs no
+// successor, so a point of any type enumerates.
 func enumerateInterval(iv interval) ([]Val, error) {
 	if iv.lo.inf || iv.hi.inf {
 		return nil, &MorelError{Exn: ExnDomain}
 	}
-	lo, ok1 := firstVal(iv.lo).(int32)
-	hi, ok2 := lastVal(iv.hi).(int32)
-	if !ok1 || !ok2 {
+	first, last := firstVal(iv.lo), lastVal(iv.hi)
+	if first == nil || last == nil {
 		return nil, &MorelError{Exn: ExnDomain}
 	}
-	out := make([]Val, 0, max(0, int(hi)-int(lo)+1))
-	for i := lo; i <= hi; i++ {
-		out = append(out, i)
+	if compareVals(first, last) > 0 {
+		return []Val{}, nil
+	}
+	out := []Val{first}
+	for cur := first; compareVals(cur, last) != 0; {
+		s, ok := succVal(cur)
+		if !ok {
+			return nil, &MorelError{Exn: ExnDomain}
+		}
+		cur = s
+		out = append(out, cur)
 	}
 	return out, nil
 }
