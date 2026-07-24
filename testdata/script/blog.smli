@@ -1318,6 +1318,14 @@ fun isAncestor (x, z) =
         andalso (y, z) elem parents);
 > val isAncestor = fn : string * string -> bool
 
+from a
+  where isAncestor(a, "arwen");
+> val it = ["elrond","earendil"] : string bag
+
+from d
+  where isAncestor("earendil", d);
+> val it = ["elrond","arwen","elladan","elrohir"] : string bag
+
 (*) Recipe optimization
 from b, c
   where b >= 0 andalso b <= 100       (*) number of banana cakes
@@ -1859,6 +1867,20 @@ fun reachable (x, y) =
   edge (x, y) orelse
   exists z where edge (x, z) andalso reachable (z, y);
 > val reachable = fn : int * int -> bool
+
+from source in [1,2,3,4,5,6]
+  yield {source,
+         c = count (from target where reachable (source, target))};
+> c source
+> - ------
+> 6      1
+> 1      2
+> 0      3
+> 6      4
+> 6      5
+> 0      6
+>
+> val it : {c:int, source:int} list
 
 (* --- Coda ------------------------------------------------------- *)
 from message in ["the end"];

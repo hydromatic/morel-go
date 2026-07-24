@@ -18,6 +18,8 @@
 package compile
 
 import (
+	"maps"
+
 	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/types"
 )
@@ -30,11 +32,16 @@ import (
 // are the function's logic, and the queries that call the
 // function handle them. The declaration is returned unchanged
 // (the same pointer) when nothing needed rewriting.
-func Ground(decl core.Decl, sys *types.System) (core.Decl, error) {
+func Ground(decl core.Decl, sys *types.System,
+	recFns map[string]*core.Fn,
+) (core.Decl, error) {
 	if _, rec := decl.(*core.RecValDecl); rec {
 		return decl, nil
 	}
-	g := &grounder{sys: sys}
+	g := &grounder{sys: sys, recFns: recFns}
+	if g.recFns == nil {
+		g.recFns = map[string]*core.Fn{}
+	}
 	g.exp = g.visit
 	decl2 := g.rewriteDecl(decl)
 	if g.err != nil {
@@ -49,8 +56,9 @@ func Ground(decl core.Decl, sys *types.System) (core.Decl, error) {
 type grounder struct {
 	rewriter
 
-	sys *types.System
-	err error
+	sys    *types.System
+	recFns map[string]*core.Fn
+	err    error
 }
 
 // visit intercepts queries (to expand them) and recursive
@@ -61,7 +69,7 @@ func (g *grounder) visit(e core.Exp) (core.Exp, bool) {
 	}
 	switch e := e.(type) {
 	case *core.From:
-		from, err := expandFrom(g.sys, e)
+		from, err := expandFrom(g.sys, g.recFns, e)
 		if err != nil {
 			g.err = err
 			return e, true
@@ -74,10 +82,47 @@ func (g *grounder) visit(e core.Exp) (core.Exp, bool) {
 		e2 := g.rewriteExpOnly(from)
 		return e2, true
 	case *core.Let:
-		if _, rec := e.Decl.(*core.RecValDecl); rec {
+		var binds []*core.NonRecValDecl
+		skipDecl := false
+		switch d := e.Decl.(type) {
+		case *core.NonRecValDecl:
+			binds = []*core.NonRecValDecl{d}
+		case *core.RecValDecl:
+			// The recursive bindings' bodies are the functions'
+			// own logic, not expanded; the let's body is.
+			binds = d.Binds
+			skipDecl = true
+		}
+		saved := g.recFns
+		extended := false
+		for _, b := range binds {
+			pat, okPat := b.Pat.(*core.IDPat)
+			fn, okFn := b.Exp.(*core.Fn)
+			if !okPat || !okFn {
+				continue
+			}
+			if !extended {
+				g.recFns = maps.Clone(saved)
+				if g.recFns == nil {
+					g.recFns = map[string]*core.Fn{}
+				}
+				extended = true
+			}
+			g.recFns[pat.Name] = fn
+		}
+		if !extended && !skipDecl {
+			return nil, false
+		}
+		decl := e.Decl
+		if !skipDecl {
+			decl = g.rewriteDecl(e.Decl)
+		}
+		body := g.rewriteExp(e.Exp)
+		g.recFns = saved
+		if decl == e.Decl && body == e.Exp {
 			return e, true
 		}
-		return nil, false
+		return &core.Let{Decl: decl, Exp: body}, true
 	default:
 		return nil, false
 	}

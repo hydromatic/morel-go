@@ -37,9 +37,10 @@ import (
 // values of every earlier literal arm. The case conjunct itself
 // always survives as a filter, which is what enforces arm order
 // and exclusions exactly.
-func maybeCase(sys *types.System, pat *core.IDPat,
-	constraints []core.Exp, extents map[*core.IDPat]bool,
+func maybeCase(ctx *genContext, pat *core.IDPat,
+	constraints []core.Exp,
 ) *generator {
+	sys := ctx.sys
 	for i, c := range constraints {
 		cs, ok := c.(*core.Case)
 		if !ok || cs.T != sys.Bool || len(cs.Matches) < 2 {
@@ -56,8 +57,8 @@ func maybeCase(sys *types.System, pat *core.IDPat,
 		orelse := composeDisjuncts(sys, branches)
 		constraints2 := slices.Concat(constraints[:i],
 			[]core.Exp{orelse}, constraints[i+1:])
-		if g := maybeGenerator(sys, pat, constraints2,
-			extents); g != nil {
+		if g := maybeGenerator(ctx, pat,
+			constraints2); g != nil {
 			return g
 		}
 	}

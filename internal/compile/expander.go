@@ -35,6 +35,7 @@ import (
 // generator is an error: the query cannot be evaluated.
 type expander struct {
 	sys         *types.System
+	recFns      map[string]*core.Fn
 	cache       *generatorCache
 	constraints []core.Exp
 	// scanPats are the variables bound by any of the query's own
@@ -51,10 +52,12 @@ type expander struct {
 
 // expandFrom grounds a query, returning it unchanged (the same
 // pointer) if nothing needed rewriting.
-func expandFrom(sys *types.System, from *core.From,
+func expandFrom(sys *types.System, recFns map[string]*core.Fn,
+	from *core.From,
 ) (*core.From, error) {
 	x := &expander{
 		sys:        sys,
+		recFns:     recFns,
 		cache:      &generatorCache{m: map[*core.IDPat][]*generator{}},
 		scanPats:   map[*core.IDPat]bool{},
 		extentPats: map[*core.IDPat]token.Span{},
@@ -136,8 +139,13 @@ func (x *expander) improveGenerators() {
 		for p := range x.extentPats {
 			extentSet[p] = true
 		}
-		if g2 := maybeGenerator(x.sys, pat, x.constraints,
-			extentSet); g2 != nil {
+		ctx := &genContext{
+			sys:     x.sys,
+			extents: extentSet,
+			recFns:  x.recFns,
+		}
+		if g2 := maybeGenerator(ctx, pat,
+			x.constraints); g2 != nil {
 			x.cache.add(g2)
 		}
 	}
@@ -548,11 +556,15 @@ func (r *rebuilder) addGeneratorScan(pat *core.IDPat) {
 	expanded := core.PatIDs(g.pat)
 	var required []*core.IDPat
 	for _, p := range expanded {
-		if r.isExtentPat(p) && r.state[p] != done {
+		if r.state[p] == done {
+			continue
+		}
+		if r.isExtentPat(p) || slices.Contains(g.freshPats, p) {
 			required = append(required, p)
 		}
 	}
-	if len(required) < len(expanded) {
+	switch {
+	case len(required) < len(expanded):
 		for _, p := range expanded {
 			if r.x.scanPats[p] && r.state[p] != done &&
 				!slices.Contains(required, p) {
@@ -565,7 +577,7 @@ func (r *rebuilder) addGeneratorScan(pat *core.IDPat) {
 		r.steps = append(r.steps, r.projectedScan(g, required))
 		r.subsume(g)
 		r.changed = true
-	} else {
+	default:
 		exp := g.exp
 		if !g.unique {
 			// A non-unique generator may repeat values (several
@@ -574,6 +586,11 @@ func (r *rebuilder) addGeneratorScan(pat *core.IDPat) {
 		}
 		r.steps = append(r.steps, &core.Scan{Pat: g.pat, Exp: exp})
 		r.subsume(g)
+		if len(g.conds) > 0 {
+			r.steps = append(r.steps, &core.Where{
+				Exp: composeConjuncts(r.x.sys, g.conds),
+			})
+		}
 		if !r.x.isExtentScanExp(g.exp) {
 			// Re-emitting the variable's own extent scan is not
 			// a change; substituting anything else is.
@@ -605,6 +622,9 @@ func (r *rebuilder) projectedScan(g *generator,
 		joins = append(joins, eqExp(r.x.sys,
 			&core.ID{Pat: renamed}, &core.ID{Pat: orig}))
 	}
+	for _, c := range g.conds {
+		joins = append(joins, substituteFresh(c, fresh))
+	}
 	steps := []core.FromStep{&core.Scan{Pat: scanPat, Exp: g.exp}}
 	if len(joins) > 0 {
 		steps = append(steps,
@@ -635,6 +655,18 @@ func distinctScan(sys *types.System, pat core.Pat,
 		},
 		Kind: ast.FromOp,
 	}
+}
+
+// substituteFresh rewrites a condition onto a scan's fresh
+// pattern copies.
+func substituteFresh(e core.Exp,
+	fresh map[*core.IDPat]*core.IDPat,
+) core.Exp {
+	binds := map[*core.IDPat]core.Exp{}
+	for orig, copy := range fresh {
+		binds[orig] = &core.ID{Pat: copy}
+	}
+	return substituteExp(e, binds)
 }
 
 // rowOf builds the yielded row of a projected scan and the outer

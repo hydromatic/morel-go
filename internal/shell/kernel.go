@@ -104,6 +104,11 @@ type Kernel struct {
 	// inlineExps holds, per top-level binding, the expression
 	// that defined it, so later statements can inline it.
 	inlineExps map[string]core.Exp
+	// recFns holds, per recursive top-level function, its
+	// defining expression — not for inlining, but so the
+	// grounding pass can invert a recursive predicate into a
+	// fixed-point iteration.
+	recFns map[string]*core.Fn
 	// gaps counts the not-yet-implemented errors and panics that
 	// suppression hid, by message — the inventory of what running
 	// the input would need. Gaps reports it.
@@ -139,6 +144,7 @@ func NewKernel(name string) *Kernel {
 		gaps:       map[string]int{},
 		methods:    compile.NewMethodRegistry(result.Methods, bindings),
 		inlineExps: map[string]core.Exp{},
+		recFns:     map[string]*core.Fn{},
 	}
 	values := make(map[string]eval.Val, len(eval.Builtins))
 	maps.Copy(values, eval.Builtins)
@@ -527,13 +533,18 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	}
 	coreDecl = compile.Inline(
 		coreDecl, k.inlineEnv(), k.inlinePassCount())
+	// Later statements inline the pre-grounding form: grounding
+	// specializes queries to this statement's bindings, but the
+	// logical form is what a later query's own grounding wants.
+	inlined := coreDecl
 	// Ground unbounded query variables, to a fixpoint: expanding
 	// one query can expose another.
 	for range k.inlinePassCount() {
 		if !compile.ContainsUnbounded(coreDecl) {
 			break
 		}
-		coreDecl2, gerr := compile.Ground(coreDecl, k.sys)
+		coreDecl2, gerr := compile.Ground(coreDecl, k.sys,
+			k.recFns)
 		if gerr != nil {
 			return k.formatCompileError(gerr)
 		}
@@ -578,7 +589,7 @@ func (k *Kernel) runStatement(n ast.Node) string {
 		lines = append(lines,
 			k.config.prettyBinding(b.Pat.Name, v, b.Pat.T))
 	}
-	k.recordInlineExp(coreDecl)
+	k.recordInlineExp(inlined)
 	return strings.Join(lines, "\n")
 }
 
@@ -632,15 +643,30 @@ func (k *Kernel) recordInlineExp(decl core.Decl) {
 	}
 	for _, name := range names {
 		delete(k.inlineExps, name)
+		delete(k.recFns, name)
 		for stored, exp := range k.inlineExps {
 			if slices.Contains(compile.FreeNames(exp), name) {
 				delete(k.inlineExps, stored)
 			}
 		}
+		for stored, fn := range k.recFns {
+			if slices.Contains(compile.FreeNames(fn), name) {
+				delete(k.recFns, stored)
+			}
+		}
 	}
-	if d, ok := decl.(*core.NonRecValDecl); ok {
+	switch d := decl.(type) {
+	case *core.NonRecValDecl:
 		if pat, ok := d.Pat.(*core.IDPat); ok {
 			k.inlineExps[pat.Name] = d.Exp
+		}
+	case *core.RecValDecl:
+		if len(d.Binds) == 1 {
+			pat, okPat := d.Binds[0].Pat.(*core.IDPat)
+			fn, okFn := d.Binds[0].Exp.(*core.Fn)
+			if okPat && okFn {
+				k.recFns[pat.Name] = fn
+			}
 		}
 	}
 }
