@@ -527,6 +527,21 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	}
 	coreDecl = compile.Inline(
 		coreDecl, k.inlineEnv(), k.inlinePassCount())
+	// Ground unbounded query variables, to a fixpoint: expanding
+	// one query can expose another.
+	for range k.inlinePassCount() {
+		if !compile.ContainsUnbounded(coreDecl) {
+			break
+		}
+		coreDecl2, gerr := compile.Ground(coreDecl, k.sys)
+		if gerr != nil {
+			return k.formatCompileError(gerr)
+		}
+		if coreDecl2 == coreDecl {
+			break
+		}
+		coreDecl = coreDecl2
+	}
 	compiled, err := compile.Statement(coreDecl, k.values, k.sys)
 	if err != nil {
 		return k.formatCompileError(err)

@@ -87,7 +87,7 @@ var topBuiltins = map[string]topBuiltin{
 	"op <":      {comparison, ""},
 	"op <=":     {comparison, ""},
 	"op <>":     {comparison, ""},
-	"op =":      {comparison, ""},
+	eqOpName:    {comparison, ""},
 	"op >":      {comparison, ""},
 	"op >=":     {comparison, ""},
 	"op @":      {"'a list * 'a list -> 'a list", ""},
@@ -115,6 +115,9 @@ var topBuiltins = map[string]topBuiltin{
 	"vector":    {"'a list -> 'a vector", ""},
 }
 
+// eqOpName is the top-level binding of the equality operator.
+const eqOpName = "op ="
+
 // infixOpNames maps an infix operator's Op to the name of its
 // top-level binding.
 var infixOpNames = map[ast.Op]string{
@@ -126,7 +129,7 @@ var infixOpNames = map[ast.Op]string{
 	ast.NotElemOp: opNotElem,
 	ast.DivOp:     opDiv,
 	ast.DivideOp:  "op /",
-	ast.EqOp:      "op =",
+	ast.EqOp:      eqOpName,
 	ast.GeOp:      "op >=",
 	ast.GtOp:      "op >",
 	ast.LeOp:      "op <=",

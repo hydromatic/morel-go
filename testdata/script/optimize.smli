@@ -302,5 +302,31 @@ fun path (x, y) =
 (*) Char is a finite type (256 values), so the plan filters the extent directly.
 from c where c >= #"a" andalso c <= #"e" orelse c >= #"x" andalso c <= #"z";
 > val it = [#"a",#"b",#"c",#"d",#"e",#"x",#"y",#"z"] : char bag
+(* Disjoint case (abs x > c) is two intervals — FBBT skips and the
+ * constraint cannot be inverted by the existing extractor either. *)
+from x where abs x > 5;
+> stdIn:1.6 Error: pattern 'x' is not grounded
+>   raised at: stdIn:1.6
+
+(* Ranges that cannot be deduced even with FBBT.
+ *
+ * The first query is feasible but unbounded (`x < y andalso y < x + 10`
+ * admits any x). The second has a non-linear constraint that needs
+ * monotonicity reasoning. The third is a tilted polytope where the
+ * variables only acquire bounds after pairs of constraints are added,
+ * which is the job of Fourier-Motzkin elimination, not FBBT. All three
+ * report 'not grounded' for now; subsequent techniques will handle
+ * them. *)
+from x, y where x < y andalso y < x + 10;
+> stdIn:1.6 Error: pattern 'x' is not grounded
+>   raised at: stdIn:1.6
+from x, y where x > 0 andalso x * y = 100 andalso y > 0;
+> stdIn:1.6 Error: pattern 'x' is not grounded
+>   raised at: stdIn:1.6
+from x, y
+  where x + y >= 0 andalso x + y <= 10
+  andalso x - y >= ~3 andalso x - y <= 3;
+> stdIn:1.6 Error: pattern 'x' is not grounded
+>   raised at: stdIn:1.6
 
 (*) End optimize.smli
