@@ -18,6 +18,7 @@
 package compile
 
 import (
+	"maps"
 	"slices"
 
 	"github.com/hydromatic/morel-go/internal/core"
@@ -163,9 +164,9 @@ func (inl *inliner) visit(e core.Exp) (core.Exp, bool) {
 func (inl *inliner) visitCase(e *core.Case) core.Exp {
 	scrut := inl.rewriteExp(e.Exp)
 	if len(e.Matches) == 1 {
-		if pat, ok := e.Matches[0].Pat.(*core.IDPat); ok &&
-			isAtom(scrut) {
-			inl.subst[pat] = scrut
+		if binds, ok := caseSubstitution(e.Matches[0].Pat,
+			scrut); ok {
+			maps.Copy(inl.subst, binds)
 			return inl.rewriteExp(e.Matches[0].Exp)
 		}
 	}
@@ -188,6 +189,51 @@ func (inl *inliner) visitCase(e *core.Case) core.Exp {
 	}
 	return &core.Case{
 		T: e.T, Exp: scrut, Matches: matches, Span: e.Span,
+	}
+}
+
+// caseSubstitution matches a singleton case's pattern against an
+// atomic scrutinee — a variable or literal, or a tuple of them
+// against a tuple pattern — returning the variable bindings the
+// case performs. Such a case is a pure binding, substitutable
+// without duplicating work.
+func caseSubstitution(pat core.Pat, scrut core.Exp,
+) (map[*core.IDPat]core.Exp, bool) {
+	binds := map[*core.IDPat]core.Exp{}
+	if !caseBinds(pat, scrut, binds) {
+		return nil, false
+	}
+	return binds, true
+}
+
+// caseBinds accumulates the bindings of a pattern over an atomic
+// scrutinee.
+func caseBinds(pat core.Pat, scrut core.Exp,
+	binds map[*core.IDPat]core.Exp,
+) bool {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch p := pat.(type) {
+	case *core.IDPat:
+		if !isAtom(scrut) {
+			return false
+		}
+		binds[p] = scrut
+		return true
+	case *core.TuplePat:
+		tuple, ok := scrut.(*core.Tuple)
+		if !ok || len(tuple.Args) != len(p.Args) {
+			return false
+		}
+		for i, sub := range p.Args {
+			if !caseBinds(sub, tuple.Args[i], binds) {
+				return false
+			}
+		}
+		return true
+	case *core.WildcardPat:
+		return isAtom(scrut)
+	default:
+		return false
 	}
 }
 

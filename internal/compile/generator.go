@@ -130,7 +130,7 @@ func extentGenerator(scan *core.Scan) *generator {
 // priority order: the first membership conjunct mentioning the
 // variable, else the first equality on it.
 func maybeGenerator(sys *types.System, pat *core.IDPat,
-	constraints []core.Exp,
+	constraints []core.Exp, extents map[*core.IDPat]bool,
 ) *generator {
 	var elemMatch, pointMatch core.Exp
 	for _, c := range constraints {
@@ -152,10 +152,128 @@ func maybeGenerator(sys *types.System, pat *core.IDPat,
 	if g := maybeRangeGenerator(sys, pat, constraints); g != nil {
 		return g
 	}
-	if g := maybeExists(sys, pat, constraints); g != nil {
+	if g := maybePrefix(sys, pat, constraints); g != nil {
 		return g
 	}
-	return maybeUnion(sys, pat, constraints)
+	if g := maybeExists(sys, pat, constraints, extents); g != nil {
+		return g
+	}
+	if g := maybeConCase(sys, pat, constraints); g != nil {
+		return g
+	}
+	if g := maybeCase(sys, pat, constraints, extents); g != nil {
+		return g
+	}
+	return maybeUnion(sys, pat, constraints, extents)
+}
+
+// maybePrefix inverts "String.isPrefix p s": p ranges over the
+// prefixes of s, tabulated by length.
+func maybePrefix(sys *types.System, pat *core.IDPat,
+	constraints []core.Exp,
+) *generator {
+	for _, c := range constraints {
+		outer, ok := c.(*core.Apply)
+		if !ok {
+			continue
+		}
+		inner, ok := outer.Fn.(*core.Apply)
+		if !ok {
+			continue
+		}
+		if builtinName(inner.Fn) != "String.isPrefix" {
+			continue
+		}
+		p, ok := inner.Arg.(*core.ID)
+		if !ok || p.Pat != pat {
+			continue
+		}
+		s := outer.Arg
+		if slices.Contains(freePatsOf(s), pat) {
+			continue
+		}
+		return prefixGenerator(sys, pat, s, c)
+	}
+	return nil
+}
+
+// builtinName names the function an expression denotes: a
+// variable's name, or "Structure.member" for a member selection.
+func builtinName(e core.Exp) string {
+	switch e := e.(type) {
+	case *core.Apply:
+		sel, okSel := e.Fn.(*core.Selector)
+		id, okID := e.Arg.(*core.ID)
+		if okSel && okID {
+			return id.Pat.Name + "." + sel.Name
+		}
+	case *core.ID:
+		return e.Pat.Name
+	}
+	return ""
+}
+
+// prefixGenerator builds the prefixes of a string:
+// Bag.tabulate (String.size s + 1, fn i => String.substring
+// (s, 0, i)).
+func prefixGenerator(sys *types.System, pat *core.IDPat,
+	s core.Exp, conjunct core.Exp,
+) *generator {
+	intT := sys.Int
+	strT := sys.String
+	size := &core.Apply{
+		T: intT,
+		Fn: &core.ID{Pat: &core.IDPat{
+			T:    sys.Fn(strT, intT),
+			Name: "String.size",
+		}},
+		Arg: s,
+	}
+	count := shiftExp(sys, size, opPlus, &core.Literal{
+		T: intT, Kind: ast.IntLiteralOp, Value: int32(1),
+	})
+	i := &core.IDPat{T: intT, Name: "i"}
+	tripleT := sys.Tuple(strT, intT, intT)
+	substring := &core.Apply{
+		T: strT,
+		Fn: &core.ID{Pat: &core.IDPat{
+			T:    sys.Fn(tripleT, strT),
+			Name: "String.substring",
+		}},
+		Arg: &core.Tuple{T: tripleT, Args: []core.Exp{
+			s,
+			&core.Literal{
+				T: intT, Kind: ast.IntLiteralOp,
+				Value: int32(0),
+			},
+			&core.ID{Pat: i},
+		}},
+	}
+	fnT, ok := sys.Fn(intT, strT).(*types.Fn)
+	if !ok {
+		return nil
+	}
+	bagT := sys.Named("bag", strT)
+	pairT := sys.Tuple(intT, fnT)
+	return &generator{
+		exp: &core.Apply{
+			T: bagT,
+			Fn: &core.ID{Pat: &core.IDPat{
+				T:    sys.Fn(pairT, bagT),
+				Name: "Bag.tabulate",
+			}},
+			Arg: &core.Tuple{T: pairT, Args: []core.Exp{
+				count,
+				&core.Fn{T: fnT, IDPat: i, Exp: substring},
+			}},
+		},
+		pat:        pat,
+		freePats:   freePatsOf(s),
+		card:       finite,
+		unique:     true,
+		sealed:     true,
+		provenance: map[core.Exp]bool{conjunct: true},
+	}
 }
 
 // maybeExists inverts a quantified conjunct: "exists z where P"
@@ -165,7 +283,7 @@ func maybeGenerator(sys *types.System, pat *core.IDPat,
 // wraps the body's scans; being unsealed, the quantifier survives
 // as a filter.
 func maybeExists(sys *types.System, pat *core.IDPat,
-	constraints []core.Exp,
+	constraints []core.Exp, extents map[*core.IDPat]bool,
 ) *generator {
 	for i, c := range constraints {
 		from, ok := c.(*core.From)
@@ -173,7 +291,8 @@ func maybeExists(sys *types.System, pat *core.IDPat,
 			continue
 		}
 		base := slices.Concat(constraints[:i], constraints[i+1:])
-		if g := invertExists(sys, pat, from, base); g != nil {
+		g := invertExists(sys, pat, from, base, extents)
+		if g != nil {
 			return g
 		}
 	}
@@ -184,6 +303,7 @@ func maybeExists(sys *types.System, pat *core.IDPat,
 // one exists conjunct, trying after each of the body's filters.
 func invertExists(sys *types.System, pat *core.IDPat,
 	from *core.From, base []core.Exp,
+	extents map[*core.IDPat]bool,
 ) *generator {
 	working := slices.Clone(base)
 	var innerScans []*core.Scan
@@ -196,12 +316,12 @@ func invertExists(sys *types.System, pat *core.IDPat,
 			innerScans = append(innerScans, s)
 		case *core.Where:
 			decomposeConjuncts(s.Exp, &working)
-			g := maybeGenerator(sys, pat, working)
+			g := maybeGenerator(sys, pat, working, extents)
 			if g == nil {
 				continue
 			}
 			return existsGenerator(sys, pat, g, innerScans,
-				working)
+				working, extents)
 		default:
 			return nil
 		}
@@ -217,6 +337,7 @@ func invertExists(sys *types.System, pat *core.IDPat,
 // value.
 func existsGenerator(sys *types.System, pat *core.IDPat,
 	g *generator, innerScans []*core.Scan, working []core.Exp,
+	extents map[*core.IDPat]bool,
 ) *generator {
 	covered := map[*core.IDPat]bool{}
 	for _, id := range core.PatIDs(g.pat) {
@@ -230,19 +351,27 @@ func existsGenerator(sys *types.System, pat *core.IDPat,
 	}
 	steps, dependent := existsScans(g, innerScans, covered)
 	steps = append(steps, &core.Scan{Pat: g.pat, Exp: g.exp})
-	// The body's other filters apply inside; one that reads a
-	// quantified variable no scan here binds cannot.
+	// The body's other filters apply inside — except one reading
+	// another unbounded variable, which the surviving quantifier
+	// filter enforces instead; one that reads a quantified
+	// variable no scan here binds cannot apply at all.
 	var filters []core.Exp
 	for _, c := range working {
 		if g.provenance[c] {
 			continue
 		}
+		include := true
 		for _, f := range freePatsOf(c) {
 			if innerVars[f] && !covered[f] {
 				return nil
 			}
+			if extents[f] && !covered[f] {
+				include = false
+			}
 		}
-		filters = append(filters, c)
+		if include {
+			filters = append(filters, c)
+		}
 	}
 	if len(filters) > 0 {
 		steps = append(steps,
@@ -639,7 +768,7 @@ func rangeSetScanExp(sys *types.System, t types.Type,
 // scope, and the branch generators combine. If any branch fails
 // to ground the variable, the disjunction cannot be inverted.
 func maybeUnion(sys *types.System, pat *core.IDPat,
-	constraints []core.Exp,
+	constraints []core.Exp, extents map[*core.IDPat]bool,
 ) *generator {
 	for _, c := range constraints {
 		var branches []core.Exp
@@ -652,7 +781,7 @@ func maybeUnion(sys *types.System, pat *core.IDPat,
 		for _, branch := range branches {
 			var bc []core.Exp
 			decomposeConjuncts(branch, &bc)
-			g := maybeGenerator(sys, pat, bc)
+			g := maybeGenerator(sys, pat, bc, extents)
 			if g == nil {
 				ok = false
 				break

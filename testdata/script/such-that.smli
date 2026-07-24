@@ -196,9 +196,65 @@ from n where isNum n andalso isEven n;
 from x where case x of y => y elem [1,2];
 > val it = [1,2] : int bag
 
+(*) Case with multiple arms (issue #341)
+from x where (case x of 1 => true | 3 => true | _ => false);
+> val it = [1,3] : int bag
+
+(*) Case with explicit false arm excludes that value
+from x where (case x of 1 => true | 2 => false | 3 => true | _ => false);
+> val it = [1,3] : int bag
+
 (*) Simple boolean inversion: 'not b' generates false
 from b where not b;
 > val it = [false] : bool bag
+
+(*) Case with variable pattern and range predicate
+from x where (case x of 0 => true | n => n >= 5 andalso n <= 8);
+> val it = [0,5,6,7,8] : int bag
+
+(* TODO: Exclusion constraints need to become post-generation filters
+(*) Case where explicit false shadows later variable match
+from x where (case x of 6 => false | n => n >= 5 andalso n <= 8);
+> val it = [5,7,8] : int bag
+*)
+
+(*) Simple constructor pattern test - single arm with range constraint
+from e where (case e of INL n => n >= 5 andalso n <= 8 | _ => false);
+> val it = [INL 5,INL 6,INL 7,INL 8] : (int,'a) either bag
+
+(*) Constructor pattern with boolean payload
+from e where (case e of INR b => b | _ => false);
+> val it = [INR true] : ('a,bool) either bag
+
+(*) Constructor pattern with boolean payload - "not b" inverts to "b = false"
+from e where (case e of INR b => not b | _ => false);
+> val it = [INR false] : ('a,bool) either bag
+
+(*) Constructor pattern with (boolean * int) payload
+from e where (case e of INR (b, i) => b andalso i > 5 andalso i < 15 andalso i mod 3 = 1 | _ => false);
+> val it = [INR (true,7),INR (true,10),INR (true,13)]
+>   : ('a,bool * int) either bag
+
+from e where (case e of INR (b, i) => i > 0 andalso i < 5 andalso b = (i mod 2 = 0) | _ => false);
+> val it = [INR (false,1),INR (false,3),INR (true,2),INR (true,4)]
+>   : ('a,bool * int) either bag
+
+(*) Multiple constructor arms combined with orelse (via maybeUnion)
+from e where (case e of
+    INL n => n >= 5 andalso n <= 8
+  | INR b => not b);
+> val it = [INL 5,INL 6,INL 7,INL 8,INR false] : (int,bool) either bag
+
+(*) Case with constructor patterns - INL/INR (issue #341)
+(* Multiple arms with literal patterns, variable patterns, and exclusions *)
+from e where (case e of
+    INL 0 => true
+  | INL 6 => false
+  | INR b => not b
+  | INL 7 => true
+  | INL 100 => true
+  | INL n => n >= 5 andalso n <= 8);
+> val it = [INL 0,INR false,INL 7,INL 100,INL 5,INL 8] : (int,bool) either bag
 
 (* Predicate cannot be inverted.
  *
@@ -250,6 +306,15 @@ from x in [1,2], y where y elem [x, x+1];
 
 (*) Reversed pattern
 from x, y where (y, x) elem [(1,true),(2,false)];
+> x     y
+> ----- -
+> true  1
+> false 2
+>
+> val it : {x:bool, y:int} bag
+
+(*) Reversed pattern via case
+from x, y where case (y, x) of (a, b) => (a, b) elem [(1,true),(2,false)];
 > x     y
 > ----- -
 > true  1
@@ -399,6 +464,30 @@ where j > 4 andalso j < 7
 > ...
 >
 > val it : {i:int, j:int, k:int, m:int} bag
+
+(* -- Emp and dept examples --------------------------------------- *)
+
+(*) Previously MainTest.testFromSuchThat
+let
+  val emps = [
+    {id = 100, name = "Fred", deptno = 10},
+    {id = 101, name = "Velma", deptno = 20},
+    {id = 102, name = "Shaggy", deptno = 30},
+    {id = 103, name = "Scooby", deptno = 30}]
+  fun hasEmpNameInDept (n, d) =
+    (n, d) elem (from e in emps yield (e.name, e.deptno))
+in
+  from n, d
+    where hasEmpNameInDept (n, d)
+    where d = 30
+    yield {d, n}
+end;
+> d  n
+> -- ------
+> 30 Shaggy
+> 30 Scooby
+>
+> val it : {d:int, n:string} bag
 
 (* Unbounded variables with `take` and other clauses -------------- *)
 
@@ -751,11 +840,65 @@ end;
 > stdIn:5.8 Error: pattern 'e' is not grounded
 >   raised at: stdIn:5.8
 
+(*) Invalid, because the argument has no extent.
+(*) TODO should give error 'e not grounded'
+(*
+let
+  fun hasJob (e, job) =
+    e.job = job
+in
+  from e where hasJob (e, "CLERK")
+end;
+*)
+
+(* 2. String prefix.
+ *
+ * Invert
+ *   from p where ifPrefix p s'
+ * to
+ *   from p in List.tabulate(String.size s + 1,
+ *                           fn i => String.substring(s, 0, i))
+ *)
+from p where String.isPrefix p "abcd";
+> val it = ["","a","ab","abc","abcd"] : string bag
+
+from s in ["abcd", "ant"], p where String.isPrefix p s;
+> p    s
+> ---- ----
+>      abcd
+> a    abcd
+> ab   abcd
+> abc  abcd
+> abcd abcd
+>      ant
+> a    ant
+> an   ant
+> ant  ant
+>
+> val it : {p:string, s:string} bag
+
+from s in ["abcd", "ant"], p where String.isPrefix p s yield p distinct;
+> val it = ["a","ab","abc","ant","abcd","an",""] : string bag
+
+from p where (exists s in ["abcd", "ant"] where String.isPrefix p s) order p;
+> val it = ["","a","ab","abc","abcd","an","ant"] : string list
+
 (* A string function with external extent.
  * Given s2, we could generate finite s1. *)
 fun isPrefix (s1, s2) =
   String.isPrefix s1 s2;
 > val isPrefix = fn : string * string -> bool
+from s where isPrefix (s, "abcd");
+> val it = ["","a","ab","abc","abcd"] : string bag
+
+(* An integer function with external extent.
+ * Given j, k we could generate finite i. *)
+let
+  fun isBetween (i, j, k) = j <= i andalso i <= k
+in
+  from i where isBetween (i, 5, 8)
+end;
+> val it = [5,6,7,8] : int bag
 
 (* Invert a function that tests membership of table --------------- *)
 
@@ -836,6 +979,17 @@ fun path (x, y) =
   orelse (exists z where path (x, z) andalso edge (z, y));
 > val path = fn : int * int -> bool
 
+(*) Find symmetric elements of a relation
+let
+  val edges = [(1, 1), (2, 3), (4, 4)]
+  fun edge (x, y) = (x, y) elem edges
+  fun self_loop x =
+    (exists y where edge (x, y) andalso x = y)
+in
+  from x where self_loop x
+end;
+> val it = [1,4] : int bag
+
 (* More edges *)
 (*
    1 --> 4 ----+
@@ -856,6 +1010,17 @@ val edges = [(1, 2), (2, 3), (1, 4), (4, 2), (4, 3)];
 
 fun edge (x, y) = (x, y) elem edges;
 > val edge = fn : int * int -> bool
+
+from x, y where edge (x, y);
+> x y
+> - -
+> 1 2
+> 2 3
+> 1 4
+> 4 2
+> 4 3
+>
+> val it : {x:int, y:int} bag
 
 (* Safety ------------------------------------------------------------
  * A rule is safe if:
@@ -991,6 +1156,51 @@ fun sells (bar, beer, price) =
   {bar, beer, price} elem barBeers;
 > val sells = fn : string * string * int -> bool
 
+(* Patron p is happy if there exists a bar, a beer, and a price such that p
+ * frequents the bar, likes the beer, and the bar sells the beer at price p.
+ *
+ * Datalog:
+ *    Happy(p) <- Frequents(p, bar) AND Likes(p, beer) AND Sells(bar, beer)
+ *)
+fun happy patron =
+  exists bar, beer, price
+      where frequents (patron, bar)
+      andalso likes (patron, beer)
+      andalso sells (bar, beer, price);
+> val happy = fn : string -> bool
+
+(* A beer is considered cheap if there are at least two bars that sell it for
+ * under $3.
+ *
+ * Datalog:
+ *   Cheap(beer) <- Sells(bar1, beer, p1) AND Sells(bar2, beer, p2)
+ *     AND p1 < 3 AND p2 < 3 AND bar1 <> bar2
+ *)
+fun cheap beer =
+  exists bar1, price1, bar2, price2
+    where sells (bar1, beer, price1)
+      andalso sells (bar2, beer, price2)
+      andalso price1 < 3
+      andalso price2 < 3
+      andalso bar1 <> bar2;
+> val cheap = fn : string -> bool
+
+(* Example Datalog Program. Using EDB Sells (bar, beer, price) and
+ * Likes (patron, beer), find the patrons who like beers Joe doesn't sell.
+ *
+ * Datalog:
+ *   JoeSells(b) <- Sells('Joe''s Bar', b, p)
+ *   Answer(p) <- Likes(p, b)
+ *     AND NOT JoeSells(b)
+ *)
+fun caskSells b =
+  exists price where sells ("cask", b, price);
+> val caskSells = fn : string -> bool
+
+from p
+  where (exists b where likes (p, b) andalso not (caskSells b));
+> val it = ["shaggy","fred"] : string bag
+
 (* Family relationships ----------------------------------------------
  *
  * Datalog:
@@ -1023,6 +1233,30 @@ fun par (x, p) =
     ("g", "k"),
     ("h", "i")];
 > val par = fn : string * string -> bool
+fun sib (x, y) =
+  exists p where par (x, p) andalso par (y, p) andalso x <> y;
+> val sib = fn : string * string -> bool
+
+fun cousin (x, y) = sib (x, y)
+  orelse
+    exists xp, yp
+      where par (x, xp)
+      andalso par (y, yp)
+      andalso cousin (xp, yp);
+> val cousin = fn : string * string -> bool
+
+(* Nonmonotone relation.
+ * 'cousin2' is as 'cousin', but 'orelse' has become 'and not'.
+ * The graph is not stratified: there is a path with an infinite number
+ * of 'not' as we traverse the cycle cousin - s2 - cousin,
+ * where s2 is the expression 'not (exists ...)'. *)
+fun cousin2 (x, y) = sib (x, y)
+  andalso not (
+    exists xp, yp
+      where par (x, xp)
+      andalso par (y, yp)
+      andalso cousin2 (xp, yp));
+> val cousin2 = fn : string * string -> bool
 
 (* TODO
 from p where cousin2 p;
@@ -1114,6 +1348,32 @@ order DESC profit;
 > 0 0      0
 >
 > val it : {b:int, c:int, profit:int} list
+
+(* -------------------------------------------------------------------
+ * Extracted testFromSuchThat* tests from MainTest.java.
+ *)
+
+(* testFromSuchThat - Basic function with elem predicate *)
+let
+  val emps = [
+    {id = 100, name = "Fred", deptno = 10},
+    {id = 101, name = "Velma", deptno = 20},
+    {id = 102, name = "Shaggy", deptno = 30},
+    {id = 103, name = "Scooby", deptno = 30}]
+  fun hasEmpNameInDept (n, d) =
+    (n, d) elem (from e in emps yield (e.name, e.deptno))
+in
+  from n, d
+    where hasEmpNameInDept (n, d)
+    where d = 30
+    yield {d, n}
+end;
+> d  n
+> -- ------
+> 30 Shaggy
+> 30 Scooby
+>
+> val it : {d:int, n:string} bag
 (* Expected code:
  * "from(sink
  *   join(pat e, exp tuple(
@@ -1283,6 +1543,26 @@ in
   from x where f x andalso x > 1
 end;
 > val it = [2,3] : int bag
+
+(* testFromSuchThat3 - Smaller version of testFromSuchThat *)
+let
+  val emps = [
+    {id = 102, name = "Shaggy", deptno = 30},
+    {id = 103, name = "Scooby", deptno = 30}]
+  fun hasEmpNameInDept (n, d) =
+    (n, d) elem (from e in emps yield (e.name, e.deptno))
+in
+  from n, d
+    where hasEmpNameInDept (n, d)
+    where d = 30
+    yield {d, n}
+end;
+> d  n
+> -- ------
+> 30 Shaggy
+> 30 Scooby
+>
+> val it : {d:int, n:string} bag
 (* Expected code:
  * "from(sink
  *   join(pat (n_1, d_1),

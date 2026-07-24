@@ -22,7 +22,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hydromatic/morel-go/internal/eval"
 	"github.com/hydromatic/morel-go/internal/token"
 
 	"github.com/hydromatic/morel-go/internal/ast"
@@ -826,20 +825,7 @@ const ExtentName = "$.extent"
 // of the element type.
 func (r *resolver) extentExp(t types.Type, span token.Span,
 ) core.Exp {
-	sys := r.typeMap.sys
-	bagT := sys.Named("bag", t)
-	extent := eval.NewRangeExtent(sys, t, nil)
-	return &core.Apply{
-		T: bagT,
-		Fn: &core.ID{Pat: &core.IDPat{
-			T:    sys.Fn(sys.Unit, bagT),
-			Name: ExtentName,
-		}},
-		Arg: &core.Literal{
-			Kind: ast.UnitLiteralOp, T: sys.Unit, Value: extent,
-		},
-		Span: span,
-	}
+	return extentScanExp(r.typeMap.sys, t, span)
 }
 
 // toFn converts a function. A single rule that binds one name

@@ -132,8 +132,12 @@ func (x *expander) improveGenerators() {
 		if g == nil || g.card != infinite {
 			continue
 		}
-		if g2 := maybeGenerator(x.sys, pat,
-			x.constraints); g2 != nil {
+		extentSet := map[*core.IDPat]bool{}
+		for p := range x.extentPats {
+			extentSet[p] = true
+		}
+		if g2 := maybeGenerator(x.sys, pat, x.constraints,
+			extentSet); g2 != nil {
 			x.cache.add(g2)
 		}
 	}
