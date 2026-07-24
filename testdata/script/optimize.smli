@@ -26,6 +26,8 @@ Sys.set ("stringDepth", ~1);
 (*) A variable used once is inlined.
 let val x = 1 in x + 2 end;
 > val it = 3 : int
+Sys.plan ();
+> val it = "apply2(fnValue Int.+, constant(1), constant(2))" : string
 
 (*) A variable used twice is not inlined if non-atomic.
 let val x = 1 + 1 in x + x end;
@@ -38,22 +40,30 @@ Sys.plan ();
 (*) An atomic variable (bound to a literal) used twice is inlined.
 let val x = 5 in x + x end;
 > val it = 10 : int
+Sys.plan ();
+> val it = "apply2(fnValue Int.+, constant(5), constant(5))" : string
 
 (*) A dead variable (not used) is removed.
 let val x = 1 val y = 2 in y end;
 > val it = 2 : int
+Sys.plan ();
+> val it = "constant(2)" : string
 
 (* --- Function inlining ------------------------------------------ *)
 
 (*) A function applied once is inlined.
 let val f = fn x => x + 1 in f 5 end;
 > val it = 6 : int
+Sys.plan ();
+> val it = "apply2(fnValue Int.+, constant(5), constant(1))" : string
 
 (* --- Singleton case inlining ------------------------------------ *)
 
 (*) A singleton case with id pattern is inlined.
 let val f = fn x => case x of y => y + 2 in f 3 end;
 > val it = 5 : int
+Sys.plan ();
+> val it = "apply2(fnValue Int.+, constant(3), constant(2))" : string
 
 (* --- Constant case inlining (issue #330) ------------------------ *)
 
@@ -72,6 +82,8 @@ let val x = 99 in case x of 1 => "one" | 2 => "two" | _ => "large" end;
 (*) Case on a constant with id pattern that binds the value.
 let val x = 5 in case x of y => y + 10 end;
 > val it = 15 : int
+Sys.plan ();
+> val it = "apply2(fnValue Int.+, constant(5), constant(10))" : string
 
 (*) If-then-else with constant true condition.
 if true then "yes" else "no";

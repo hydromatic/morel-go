@@ -211,6 +211,12 @@ func (r *resolver) toRecDecl(env *coreEnv, d *ast.ValDecl) (
 			Span: bind.Span(),
 		}
 	}
+	// A "rec" declaration whose expression never uses the bound
+	// name is not really recursive; treating it as non-recursive
+	// lets the inliner consider it.
+	if len(binds) == 1 && !referencesAny(binds[0].Exp, idPats) {
+		return binds[0], env2, nil
+	}
 	return &core.RecValDecl{Binds: binds}, env2, nil
 }
 

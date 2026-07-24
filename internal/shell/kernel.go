@@ -24,10 +24,12 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/hydromatic/morel-go/internal/ast"
 	"github.com/hydromatic/morel-go/internal/compile"
+	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/eval"
 	"github.com/hydromatic/morel-go/internal/parse"
 	"github.com/hydromatic/morel-go/internal/sig"
@@ -99,6 +101,9 @@ type Kernel struct {
 	// lastCode is the compiled code of the most recently executed
 	// statement's expression; Sys.plan describes it.
 	lastCode eval.Code
+	// inlineExps holds, per top-level binding, the expression
+	// that defined it, so later statements can inline it.
+	inlineExps map[string]core.Exp
 	// gaps counts the not-yet-implemented errors and panics that
 	// suppression hid, by message — the inventory of what running
 	// the input would need. Gaps reports it.
@@ -127,12 +132,13 @@ func NewKernel(name string) *Kernel {
 		config.Directory = dir
 	}
 	k := &Kernel{
-		name:     name,
-		config:   config,
-		sys:      sys,
-		bindings: bindings,
-		gaps:     map[string]int{},
-		methods:  compile.NewMethodRegistry(result.Methods, bindings),
+		name:       name,
+		config:     config,
+		sys:        sys,
+		bindings:   bindings,
+		gaps:       map[string]int{},
+		methods:    compile.NewMethodRegistry(result.Methods, bindings),
+		inlineExps: map[string]core.Exp{},
 	}
 	values := make(map[string]eval.Val, len(eval.Builtins))
 	maps.Copy(values, eval.Builtins)
@@ -517,6 +523,8 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	if covErr != nil {
 		return k.formatCompileError(covErr)
 	}
+	coreDecl = compile.Inline(
+		coreDecl, k.inlineEnv(), k.inlinePassCount())
 	compiled, err := compile.Statement(coreDecl, k.values, k.sys)
 	if err != nil {
 		return k.formatCompileError(err)
@@ -553,7 +561,71 @@ func (k *Kernel) runStatement(n ast.Node) string {
 		lines = append(lines,
 			k.config.prettyBinding(b.Pat.Name, v, b.Pat.T))
 	}
+	k.recordInlineExp(coreDecl)
 	return strings.Join(lines, "\n")
+}
+
+// defaultInlinePassCount is the number of inlining passes to run
+// when the "inlinePassCount" property is unset.
+const defaultInlinePassCount = 5
+
+// inlinePassCount returns the number of inlining passes to run: the
+// "inlinePassCount" property, or its default.
+func (k *Kernel) inlinePassCount() int {
+	if s, ok := k.config.props["inlinePassCount"]; ok {
+		n, err := strconv.Atoi(s)
+		if err == nil {
+			return n
+		}
+	}
+	return defaultInlinePassCount
+}
+
+// inlineEnv returns the cross-statement inlining context: the
+// defining expressions of earlier top-level bindings, and which
+// names are resolvable at evaluation time.
+func (k *Kernel) inlineEnv() *compile.InlineEnv {
+	return &compile.InlineEnv{
+		Exps: k.inlineExps,
+		Known: func(name string) bool {
+			_, ok := k.values[name]
+			return ok
+		},
+	}
+}
+
+// recordInlineExp keeps the expression that defined a top-level
+// single-variable binding, so later statements can inline it.
+// Stored expressions that use a name this declaration rebinds are
+// dropped: they captured the name's previous binding, and
+// inlining them would resolve it to the new one.
+func (k *Kernel) recordInlineExp(decl core.Decl) {
+	var names []string
+	switch d := decl.(type) {
+	case *core.NonRecValDecl:
+		for _, id := range core.PatIDs(d.Pat) {
+			names = append(names, id.Name)
+		}
+	case *core.RecValDecl:
+		for _, b := range d.Binds {
+			for _, id := range core.PatIDs(b.Pat) {
+				names = append(names, id.Name)
+			}
+		}
+	}
+	for _, name := range names {
+		delete(k.inlineExps, name)
+		for stored, exp := range k.inlineExps {
+			if slices.Contains(compile.FreeNames(exp), name) {
+				delete(k.inlineExps, stored)
+			}
+		}
+	}
+	if d, ok := decl.(*core.NonRecValDecl); ok {
+		if pat, ok := d.Pat.(*core.IDPat); ok {
+			k.inlineExps[pat.Name] = d.Exp
+		}
+	}
 }
 
 // notImplemented is the placeholder value of a built-in that has
