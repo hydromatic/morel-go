@@ -119,6 +119,7 @@ func (p *Parser) fromStep() ([]ast.FromStep, error) {
 // exprStep parses "keyword [binder =] exp"; only group and
 // compute may have a binder.
 func (p *Parser) exprStep(kind ast.Op) ([]ast.FromStep, error) {
+	kwStart := p.tok.Span.Start
 	err := p.next()
 	if err != nil {
 		return nil, err
@@ -134,7 +135,11 @@ func (p *Parser) exprStep(kind ast.Op) ([]ast.FromStep, error) {
 	if err != nil {
 		return nil, err
 	}
-	step := ast.NewStep(exp.Span(), kind, exp)
+	// The step's span runs from its keyword to the end of its
+	// expression (so a misplaced-step error points at the whole
+	// step, keyword included).
+	span := token.Span{Start: kwStart, End: exp.Span().End}
+	step := ast.NewStep(span, kind, exp)
 	// lint: sort until '^\t}' where '^\tcase '
 	switch st := step.(type) {
 	case *ast.ComputeStep:

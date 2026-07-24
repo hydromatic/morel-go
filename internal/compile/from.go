@@ -61,6 +61,10 @@ func (st *fromState) elemTerm() unify.Term {
 func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 	v *unify.Var,
 ) error {
+	err := checkStepPlacement(from)
+	if err != nil {
+		return err
+	}
 	st := &fromState{r: r, rootEnv: rootEnv, env: rootEnv}
 	steps := from.Steps
 	for i := 0; i < len(steps); i++ {
@@ -109,6 +113,63 @@ func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 	}
 	r.regEquiv(from, v, r.collectionTerm(st.elemTerm(), ord))
 	return nil
+}
+
+// checkStepPlacement reports the first misplaced "compute", "into",
+// or "require" step: "compute" and "into" belong only in a "from",
+// "require" only in a "forall", and each must be the query's last
+// step. A "compute" absorbed by a preceding "group" is part of
+// that group, so it is exempt.
+func checkStepPlacement(from *ast.From) error {
+	kind := queryKindName(from.Kind)
+	steps := from.Steps
+	for i, step := range steps {
+		var op string
+		var wrongContainer bool
+		// lint: sort until '^\t\t}' where '^\t\tcase '
+		switch step.(type) {
+		case *ast.ComputeStep:
+			if i > 0 {
+				if _, ok := steps[i-1].(*ast.GroupStep); ok {
+					continue
+				}
+			}
+			op, wrongContainer = "compute", from.Kind != ast.FromOp
+		case *ast.IntoStep:
+			op, wrongContainer = "into", from.Kind != ast.FromOp
+		case *ast.RequireStep:
+			op, wrongContainer = "require", from.Kind != ast.ForallOp
+		default:
+			continue
+		}
+		if wrongContainer {
+			return &Error{
+				Span: step.Span(),
+				Msg:  "'" + op + "' step must not occur in '" + kind + "'",
+			}
+		}
+		if i != len(steps)-1 {
+			return &Error{
+				Span: steps[i+1].Span(),
+				Msg:  "'" + op + "' step must be last in '" + kind + "'",
+			}
+		}
+	}
+	return nil
+}
+
+// queryKindName is the lowercase name of a query's kind, for error
+// messages: "from", "exists", or "forall".
+func queryKindName(kind ast.Op) string {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch kind {
+	case ast.ExistsOp:
+		return "exists"
+	case ast.ForallOp:
+		return "forall"
+	default:
+		return "from"
+	}
 }
 
 // checkForallRequire reports an error unless a "forall" query's

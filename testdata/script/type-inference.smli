@@ -572,6 +572,32 @@ from s in bag ["ab","c"]
 :t forall d in [{a=1,b=true}] require d.a = 0;
 > val it : bool
 
+(*) invalid last step
+:t
+from d in [{a=1,b=true}] yield d.a into sum yield "a";
+> stdIn:1.45-1.54 Error: 'into' step must be last in 'from'
+>   raised at: stdIn:1.45-1.54
+
+:t
+exists d in [{a=1,b=true}] yield d.a into sum;
+> stdIn:1.38-1.46 Error: 'into' step must not occur in 'exists'
+>   raised at: stdIn:1.38-1.46
+
+:t
+forall d in [{a=1,b=true}] yield d.a into sum;
+> stdIn:1.38-1.46 Error: 'into' step must not occur in 'forall'
+>   raised at: stdIn:1.38-1.46
+
+:t
+forall d in [{a=1,b=true}] yield d.a compute sum over current;
+> stdIn:1.38-1.62 Error: 'compute' step must not occur in 'forall'
+>   raised at: stdIn:1.38-1.62
+
+:t
+forall d in [{a=1,b=true}] yield d.a;
+> stdIn:1.28-1.37 Error: last step of 'forall' must be 'require'
+>   raised at: stdIn:1.28-1.37
+
 :t
 forall d in [{a=1,b=true}];
 > stdIn:1.8-1.27 Error: last step of 'forall' must be 'require'
