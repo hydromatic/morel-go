@@ -289,7 +289,9 @@ func (st *fromState) boolStep(exp ast.Expr) error {
 // kind, exactly as an aggregate does.
 func (st *fromState) intoStep(s *ast.IntoStep) error {
 	rv := st.r.u.Variable()
-	err := st.r.deduceAggregate(st.env, s.Exp, st.elemTerm(),
+	// "into f" applies f to the whole result, so f is typed in the
+	// root scope; the query variables are out of scope inside it.
+	err := st.r.deduceAggregate(st.rootEnv, s.Exp, st.elemTerm(),
 		st.r.orDefaultOrd(st.ord), rv)
 	if err != nil {
 		return err

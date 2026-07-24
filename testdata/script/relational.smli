@@ -2347,6 +2347,14 @@ from i in [1,2,3]
   through i3 in (map (fn x => [x]));
 > val it = [[[1]],[[2]],[[3]]] : int list list list
 
+(* An "into" function is applied to the whole query result in the
+ * enclosing scope, so a query variable is out of scope inside it:
+ * referencing one is an unbound-variable error, not a read of a
+ * leftover row slot. *)
+from i in [1,2,3] into (fn l => i);
+> stdIn:1.33 Error: unbound variable or constructor: i
+>   raised at: stdIn:1.33
+
 (* The function in a 'through' may be a structure member such as
    'List.map'; resolving it rewrites the expression, which once left the
    step's type unregistered and threw a NullPointerException. *)

@@ -480,8 +480,8 @@ func updateRowVars(rowVars []*core.IDPat,
 // the Core steps it produces, the environment for what follows, and
 // whether it was a yield (after which no step may follow). Scan
 // sources, order keys, where and yield expressions see the query
-// variables; skip/take counts and set-op arguments see only the
-// root scope.
+// variables; skip/take counts, set-op arguments, and an "into"
+// function see only the root scope.
 func (r *resolver) toQueryStep(env, cur *coreEnv, step ast.FromStep,
 ) ([]core.FromStep, *coreEnv, bool, error) {
 	// lint: sort until '^\t}' where '^\tcase '
@@ -489,7 +489,10 @@ func (r *resolver) toQueryStep(env, cur *coreEnv, step ast.FromStep,
 	case *ast.DistinctStep:
 		return []core.FromStep{&core.Distinct{}}, cur, false, nil
 	case *ast.IntoStep:
-		fn, err := r.toExp(cur, s.Exp)
+		// "into f" applies f to the whole query result, so f is an
+		// expression of the root scope, not the query row's -- the
+		// query variables are out of scope inside it.
+		fn, err := r.toExp(env, s.Exp)
 		return []core.FromStep{&core.Into{Fn: fn}}, cur, true, err
 	case *ast.OrderStep:
 		exp, err := r.toExp(cur, s.Exp)
