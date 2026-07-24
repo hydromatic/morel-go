@@ -76,9 +76,10 @@ func (c *getCode) Eval(f *Frame) (Val, error) {
 }
 
 func (c *getCode) Describe() string {
-	// The plan describes a local by its distance from the top of
-	// the frame, counting from 1: a function's parameter is at
-	// slot 0, the most recently pushed, so it is offset 1.
+	// The plan describes a local by its frame slot, 1-based: the
+	// parameter (slot 0, allocated first) is offset 1, the next
+	// local offset 2, and so on. This is a fixed slot index counted
+	// from the frame's base, not a live stack depth from the top.
 	return "stack(offset " + strconv.Itoa(c.slot+1) +
 		", name " + c.name + ")"
 }
