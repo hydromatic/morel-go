@@ -224,6 +224,12 @@ func maybePrefix(sys *types.System, pat *core.IDPat,
 	return nil
 }
 
+// BuiltinName names the function an expression denotes: a
+// variable's name, or "Structure.member" for a member selection.
+func BuiltinName(e core.Exp) string {
+	return builtinName(e)
+}
+
 // builtinName names the function an expression denotes: a
 // variable's name, or "Structure.member" for a member selection.
 func builtinName(e core.Exp) string {

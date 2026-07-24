@@ -150,6 +150,7 @@ func (k *Kernel) sysBuiltins() map[string]eval.Val {
 	m := map[string]eval.Val{
 		"Sys.env":     eval.Fn(k.sysEnv),
 		"Sys.plan":    eval.Fn(k.sysPlan),
+		"Sys.planEx":  eval.Fn(k.sysPlanEx),
 		"Sys.set":     eval.Fn(k.sysSet),
 		"Sys.show":    eval.Fn(k.sysShow),
 		"Sys.showAll": eval.Fn(k.sysShowAll),
@@ -175,11 +176,28 @@ func (k *Kernel) sysBuiltins() map[string]eval.Val {
 	}
 	m["env"] = m["Sys.env"]
 	m["plan"] = m["Sys.plan"]
+	m["planEx"] = m["Sys.planEx"]
 	m["set"] = m["Sys.set"]
 	m["show"] = m["Sys.show"]
 	m["showAll"] = m["Sys.showAll"]
 	m["unset"] = m["Sys.unset"]
 	return m
+}
+
+// sysPlanEx is "Sys.planEx phase": the most recent statement's
+// declaration re-planned to the numbered pass, rendered as
+// source.
+func (k *Kernel) sysPlanEx(arg eval.Val) (eval.Val, error) {
+	phase, ok := arg.(string)
+	if !ok {
+		return "Error re-planning: not a phase", nil
+	}
+	if k.planExDecl == nil {
+		return "No previous command to re-plan", nil
+	}
+	d := compile.Replan(k.planExDecl, k.inlineEnv(), k.sys,
+		k.recFns, k.inlinePassCount(), phase)
+	return compile.UnparseDecl(k.sys, d), nil
 }
 
 // sysPlan is "Sys.plan ()": the compiled plan of the most

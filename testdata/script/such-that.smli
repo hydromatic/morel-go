@@ -33,12 +33,22 @@ Sys.set ("stringDepth", ~1);
 
 from i where i > 0 andalso i < 10;
 > val it = [1,2,3,4,5,6,7,8,9] : int bag
+Sys.planEx "3";
+> val it = "val it = from i in #fromList Bag (#flatten Range ([OPEN (0, 10)]))"
+>   : string
 
 from i where i >= 0 andalso i <= 10;
 > val it = [0,1,2,3,4,5,6,7,8,9,10] : int bag
+Sys.planEx "3";
+> val it = "val it = from i in #fromList Bag (#flatten Range ([CLOSED (0, 10)]))"
+>   : string
 
 from i where i >= 0 andalso i <= 5 orelse i = 8 orelse i > 20 andalso i < 22;
 > val it = [1,2,3,4,5,21,8,0] : int bag
+Sys.planEx "3";
+> val it =
+>   "val it = from i in #fromList Bag (#flatten Range ([CLOSED (0, 5), POINT 8, OPEN (20, 22)]))"
+>   : string
 
 from i where i > 0 andalso i < 4 yield {j = i + 1};
 > j
@@ -72,6 +82,10 @@ from i where i = 0 orelse i = 12;
 
 from i where i > 0 andalso i < 10 orelse i > 12 andalso i <= 15;
 > val it = [1,2,3,4,5,6,7,8,9,13,14,15] : int bag
+Sys.planEx "3";
+> val it =
+>   "val it = from i in #fromList Bag (#flatten Range ([OPEN (0, 10), OPEN_CLOSED (12, 15)]))"
+>   : string
 
 (*) Ranges over int * bool: point constraints merged into a single discreteSetOf.
 from t where t = (1, true) orelse t = (3, false);
@@ -81,6 +95,10 @@ from t where t = (1, true) orelse t = (3, false);
 > 3 false
 >
 > val it : (int * bool) bag
+Sys.planEx "3";
+> val it =
+>   "val it = from t in #toBag Range (#discreteSetOf Range ([POINT (1, true), POINT (3, false)]))"
+>   : string
 
 from i
 where i > 0 andalso i < 10
@@ -382,6 +400,10 @@ from x, y in [0, 2, 9] where x > y andalso x < y + 5;
 (* Similar, but we know the values of x. *)
 from x in [3, 5, 7], y where x > y andalso x < y + 5 yield y;
 > val it = [~1,0,1,2,1,2,3,4,3,4,5,6] : int bag
+Sys.planEx "3";
+> val it =
+>   "val it = from x in [3, 5, 7] join y in #fromList Bag (#flatten Range ([OPEN (#- Int (x, 5), x)])) yield y"
+>   : string
 
 from x in [3, 5, 7], y
   where x > y andalso x < y + 5
@@ -861,6 +883,10 @@ end;
  *)
 from p where String.isPrefix p "abcd";
 > val it = ["","a","ab","abc","abcd"] : string bag
+Sys.planEx "999";
+> val it =
+>   "val it = from p in #tabulate Bag (#size String \"abcd\" + 1, fn i => #substring String (\"abcd\", 0, i))"
+>   : string
 
 from s in ["abcd", "ant"], p where String.isPrefix p s;
 > p    s
@@ -876,6 +902,10 @@ from s in ["abcd", "ant"], p where String.isPrefix p s;
 > ant  ant
 >
 > val it : {p:string, s:string} bag
+Sys.planEx "999";
+> val it =
+>   "val it = from s in [\"abcd\", \"ant\"] join p in #tabulate Bag (#size String s + 1, fn i => #substring String (s, 0, i))"
+>   : string
 
 from s in ["abcd", "ant"], p where String.isPrefix p s yield p distinct;
 > val it = ["a","ab","abc","ant","abcd","an",""] : string bag
@@ -1610,6 +1640,12 @@ from d where d elem scott.depts;
 >     40 OPERATIONS BOSTON
 >
 > val it : {deptno:int, dname:string, loc:string} bag
+Sys.planEx "0";
+> val it =
+>   "val it = from d : {deptno:int, dname:string, loc:string} where op elem (d, #depts scott)"
+>   : string
+Sys.planEx "3";
+> val it = "val it = from d in #depts scott" : string
 
 (* testFromSuchThat2c - Record pattern with field renaming *)
 from loc, deptno, name
@@ -1622,6 +1658,15 @@ where {deptno, loc, dname = name} elem scott.depts;
 >     40 BOSTON   OPERATIONS
 >
 > val it : {deptno:int, loc:string, name:string} bag
+Sys.planEx "0";
+> val it =
+>   "val it = from loc : string join deptno : int join name : string where op elem ({deptno = deptno, dname = name, loc = loc}, #depts scott)"
+>   : string
+(* TODO: remove spurious 'where' *)
+Sys.planEx "3";
+> val it =
+>   "val it = from ({deptno = deptno, dname = name, loc = loc}) in #depts scott"
+>   : string
 
 (* testFromSuchThat2d - Record pattern with literal and additional
    constraint. Same as testFromSuchThat2c but with a literal. *)
@@ -1634,6 +1679,14 @@ from dno, name
 >  30 SALES
 >
 > val it : {dno:int, name:string} bag
+Sys.planEx "0";
+> val it =
+>   "val it = from dno : int join name : string where op elem ({deptno = dno, dname = name, loc = \"CHICAGO\"}, #depts scott) andalso dno > 20"
+>   : string
+Sys.planEx "3";
+> val it =
+>   "val it = from ({deptno = dno, dname = name, loc = \"CHICAGO\"}) in #depts scott where dno > 20"
+>   : string
 
 (* testFromSuchThat2d3 - Forward references with equality constraint *)
 from dno, name, v
@@ -1648,6 +1701,10 @@ yield {dno = #deptno v, name = #dname v};
 >  30 SALES
 >
 > val it : {dno:int, name:string} bag
+Sys.planEx "0";
+> val it =
+>   "val it = from dno : int join name : string join v : {deptno:int, dname:string, loc:string} where op elem (v, #depts scott) where #deptno v = dno where name = #dname v where #loc v = \"CHICAGO\" where dno = 30 yield {dno = #deptno v, name = #dname v}"
+>   : string
 
 (* testFromSuchThat2d4 - Forward references with inequality constraint *)
 from dno, name, v
@@ -1662,6 +1719,10 @@ yield {dno = #deptno v, name = #dname v};
 >  30 SALES
 >
 > val it : {dno:int, name:string} bag
+Sys.planEx "0";
+> val it =
+>   "val it = from dno : int join name : string join v : {deptno:int, dname:string, loc:string} where op elem (v, #depts scott) where #deptno v = dno where name = #dname v where #loc v = \"CHICAGO\" where dno > 25 yield {dno = #deptno v, name = #dname v}"
+>   : string
 
 (* testFromSuchThat2e - Function inlining with elem predicate.
  * As testFromSuchThat2d but using a function. (Simple enough
@@ -1673,6 +1734,13 @@ from d
   where isDept d andalso d.deptno = 20
   yield d.dname;
 > val it = ["RESEARCH"] : string bag
+Sys.planEx "0";
+> val it =
+>   "val it = from d : {deptno:int, dname:string, loc:string} where (let val d_1 = d in op elem (d_1, #depts scott) end) andalso #deptno d = 20 yield #dname d"
+>   : string
+Sys.planEx "999";
+> val it = "val it = from d in #depts scott where #deptno d = 20 yield #dname d"
+>   : string
 
 (* testFromSuchThat2f - Join via suchthat with two functions *)
 let
@@ -1703,6 +1771,10 @@ in
   from x where f x
 end;
 > val it = [1,2,3] : int bag
+Sys.planEx "0";
+> val it =
+>   "val it = let val xs = [1, 2, 3] in let val f = fn x => op elem (x, xs) in from x_1 : int where f x_1 end end"
+>   : string
 
 (* testProvenanceThroughFunctionWithFilter - Same as above but
  * with an additional filter. Provenance removes 'f x'
@@ -1714,6 +1786,10 @@ in
   from x where f x andalso x > 1
 end;
 > val it = [2,3] : int bag
+Sys.planEx "0";
+> val it =
+>   "val it = let val xs = [1, 2, 3] in let val f = fn x => op elem (x, xs) in from x_1 : int where f x_1 andalso x_1 > 1 end end"
+>   : string
 
 (* testFromSuchThat3 - Smaller version of testFromSuchThat *)
 let

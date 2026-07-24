@@ -128,7 +128,7 @@ func withExclusions(sys *types.System, branch, scrut core.Exp,
 			T: sys.Bool,
 			Fn: &core.ID{Pat: &core.IDPat{
 				T:    sys.Fn(sys.Bool, sys.Bool),
-				Name: "not",
+				Name: notName,
 			}},
 			Arg: eqExp(sys, scrut, v),
 		}

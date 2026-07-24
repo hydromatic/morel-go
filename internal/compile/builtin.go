@@ -41,12 +41,17 @@ const (
 	opDiv      = "op div"
 	opMod      = "op mod"
 	opNegate   = "op ~"
+	opAt       = "op @"
+	opCaret    = "op ^"
+	opCons     = "op ::"
 	opElem     = "op elem"
 	opGe       = "op >="
 	opGt       = "op >"
 	opLe       = "op <="
 	opLt       = "op <"
+	opNe       = "op <>"
 	opNotElem  = "op notelem"
+	notName    = "not"
 	comparison = "'a * 'a -> bool"
 	realToInt  = "real -> int"
 	boolName   = "bool"
@@ -81,21 +86,21 @@ var topBuiltins = map[string]topBuiltin{
 	"iterate":   {"'a list -> ('a list * 'a list -> 'a list) -> 'a list", ""},
 	"length":    {"'a list -> int", ""},
 	"map":       {"('a -> 'b) -> 'a list -> 'b list", ""},
-	"not":       {"bool -> bool", ""},
+	notName:     {"bool -> bool", ""},
 	"null":      {"'a list -> bool", ""},
 	opTimes:     {numPair, intName},
 	opPlus:      {numPair, intName},
 	opMinus:     {numPair, intName},
 	"op /":      {numPair, realName},
-	"op ::":     {"'a * 'a list -> 'a list", ""},
+	opCons:      {"'a * 'a list -> 'a list", ""},
 	opLt:        {comparison, ""},
 	opLe:        {comparison, ""},
-	"op <>":     {comparison, ""},
+	opNe:        {comparison, ""},
 	eqOpName:    {comparison, ""},
 	opGt:        {comparison, ""},
 	opGe:        {comparison, ""},
-	"op @":      {"'a list * 'a list -> 'a list", ""},
-	"op ^":      {"string * string -> string", ""},
+	opAt:        {"'a list * 'a list -> 'a list", ""},
+	opCaret:     {"string * string -> string", ""},
 	opDiv:       {numPair, intName},
 	opMod:       {numPair, intName},
 	"op o":      {"('b -> 'c) * ('a -> 'b) -> 'a -> 'c", ""},
@@ -125,10 +130,10 @@ const eqOpName = "op ="
 // infixOpNames maps an infix operator's Op to the name of its
 // top-level binding.
 var infixOpNames = map[ast.Op]string{
-	ast.AtOp:      "op @",
-	ast.CaretOp:   "op ^",
+	ast.AtOp:      opAt,
+	ast.CaretOp:   opCaret,
 	ast.ComposeOp: "op o",
-	ast.ConsOp:    "op ::",
+	ast.ConsOp:    opCons,
 	ast.ElemOp:    opElem,
 	ast.NotElemOp: opNotElem,
 	ast.DivOp:     opDiv,
@@ -140,7 +145,7 @@ var infixOpNames = map[ast.Op]string{
 	ast.LtOp:      opLt,
 	ast.MinusOp:   opMinus,
 	ast.ModOp:     opMod,
-	ast.NeOp:      "op <>",
+	ast.NeOp:      opNe,
 	ast.PlusOp:    opPlus,
 	ast.TimesOp:   opTimes,
 }

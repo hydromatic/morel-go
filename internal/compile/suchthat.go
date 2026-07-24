@@ -19,6 +19,7 @@ package compile
 
 import (
 	"maps"
+	"strconv"
 
 	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/types"
@@ -48,6 +49,50 @@ func Ground(decl core.Decl, sys *types.System,
 		return nil, g.err
 	}
 	return decl2, nil
+}
+
+// Replan re-runs the optimization pipeline over a statement's
+// resolved declaration up to a numbered pass, for Sys.planEx. A
+// phase that is not an integer returns the declaration as
+// resolved; "0" the limited inlining pass; "2" onward the state
+// after each changing inlining pass, then after each changing
+// grounding pass; anything past the last pass — "-1"
+// conventionally — the final form.
+func Replan(decl core.Decl, env *InlineEnv, sys *types.System,
+	recFns map[string]*core.Fn, passCount int, phase string,
+) core.Decl {
+	target, err := strconv.Atoi(phase)
+	if err != nil {
+		return decl
+	}
+	if target == 0 || passCount <= 0 {
+		return newPass(decl, env, true).rewriteDecl(decl)
+	}
+	cur := decl
+	for i := range passCount {
+		next := newPass(cur, env, false).rewriteDecl(cur)
+		if next == cur {
+			break
+		}
+		cur = next
+		if i+2 == target {
+			return cur
+		}
+	}
+	for i := range passCount {
+		if !ContainsUnbounded(cur) {
+			break
+		}
+		next, gerr := Ground(cur, sys, recFns)
+		if gerr != nil || next == cur {
+			break
+		}
+		cur = next
+		if i+2 == target {
+			return cur
+		}
+	}
+	return cur
 }
 
 // grounder walks a declaration expanding each query, outermost
