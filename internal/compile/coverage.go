@@ -226,6 +226,10 @@ const (
 func patInfo(p core.Pat) (string, []core.Pat, bool) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch p := p.(type) {
+	case *core.AsPat:
+		// "x as pat" matches exactly what pat matches; the binding
+		// does not affect coverage.
+		return patInfo(p.Body)
 	case *core.Con0Pat:
 		return fmt.Sprintf("con:%s:%d", p.Datatype, p.Ordinal), nil, false
 	case *core.ConPat:

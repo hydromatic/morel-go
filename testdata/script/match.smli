@@ -91,6 +91,17 @@ ack 2 3;
 ack 3 3;
 > val it = 61 : int
 
+(* A layered pattern "x as pat" matches exactly what pat matches, so
+ * it must not count as a wildcard for coverage: "l as h :: t" leaves
+ * [] uncovered (nonexhaustive), and an "as" clause before [] is not
+ * redundant. *)
+fun f (l as h :: t) = 1;
+> stdIn:1.5-1.24 Warning: match nonexhaustive
+>   raised at: stdIn:1.5-1.24
+> val f = fn : 'a list -> int
+fun g (l as h :: t) = 1 | g [] = 0;
+> val g = fn : 'a list -> int
+
 (* Various types, exhaustive & non-exhaustive --------------------- *)
 (*) From https://smlhelp.github.io/book/docs/start/syntax/
 
