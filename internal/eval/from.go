@@ -509,8 +509,9 @@ func (s *GroupStage) partition(q *fromCode, f *Frame, rows [][]Val,
 ) ([]string, map[string]*groupRows, error) {
 	var order []string
 	groups := map[string]*groupRows{}
-	for _, row := range rows {
+	for i, row := range rows {
 		q.restore(f, row)
+		q.setOrdinal(f, i)
 		key := make([]Val, len(s.Keys))
 		for i, k := range s.Keys {
 			v, err := k.Code.Eval(f)
@@ -555,6 +556,7 @@ func (a *GroupAggCode) eval(q *fromCode, f *Frame, rows [][]Val,
 			continue
 		}
 		q.restore(f, row)
+		q.setOrdinal(f, i)
 		args[i], err = a.Arg.Eval(f)
 		if err != nil {
 			return nil, err

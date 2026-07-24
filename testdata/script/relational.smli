@@ -536,6 +536,25 @@ from i in [1,2]
 > val it = [{i=1,j=0},{i=1,j=1},{i=1,j=2},{i=2,j=0},{i=2,j=1},{i=2,j=2}]
 >   : {i:int, j:int} list
 
+(* "ordinal" is the input row's position where a group key reads
+ * it, so the enumeration must advance per row -- the position once
+ * stuck, collapsing every row into one group. *)
+from i in [10,20,30] group {m = ordinal};
+> val it = [{m=0},{m=1},{m=2}] : {m:int} list
+from i in [10,20,30] group k = ordinal mod 2;
+> val it = [0,1] : int list
+
+(* An aggregate argument reads the same input-row position, even
+ * though it is evaluated after the rows have been collected into
+ * groups. A 3-element input would not pin this: 0 + 1 + 2 and
+ * 1 + 1 + 1 are both 3. *)
+from i in [5,6,7,8] group {} compute sum over ordinal;
+> val it = [6] : int list
+
+(*) An argument-less aggregate still sees whole rows.
+from i in [1,2,3,4] group {} compute {c = count over (), s = sum over ordinal};
+> val it = [{c=4,s=6}] : {c:int, s:int} list
+
 (* Degenerate joins ----------------------------------------------- *)
 
 (*) Join atom to list of units
