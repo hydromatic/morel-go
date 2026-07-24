@@ -19,6 +19,7 @@ package compile
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/hydromatic/morel-go/internal/ast"
 	"github.com/hydromatic/morel-go/internal/core"
@@ -151,7 +152,183 @@ func maybeGenerator(sys *types.System, pat *core.IDPat,
 	if g := maybeRangeGenerator(sys, pat, constraints); g != nil {
 		return g
 	}
+	if g := maybeExists(sys, pat, constraints); g != nil {
+		return g
+	}
 	return maybeUnion(sys, pat, constraints)
+}
+
+// maybeExists inverts a quantified conjunct: "exists z where P"
+// grounds an outer variable when P does, the quantified variables
+// projecting away. The exists body's conjuncts join the search
+// (with the conjunct itself removed), and the derived generator
+// wraps the body's scans; being unsealed, the quantifier survives
+// as a filter.
+func maybeExists(sys *types.System, pat *core.IDPat,
+	constraints []core.Exp,
+) *generator {
+	for i, c := range constraints {
+		from, ok := c.(*core.From)
+		if !ok || from.Kind != ast.ExistsOp {
+			continue
+		}
+		base := slices.Concat(constraints[:i], constraints[i+1:])
+		if g := invertExists(sys, pat, from, base); g != nil {
+			return g
+		}
+	}
+	return nil
+}
+
+// invertExists derives a generator for the outer variable from
+// one exists conjunct, trying after each of the body's filters.
+func invertExists(sys *types.System, pat *core.IDPat,
+	from *core.From, base []core.Exp,
+) *generator {
+	working := slices.Clone(base)
+	var innerScans []*core.Scan
+	for _, step := range from.Steps {
+		// lint: sort until '^\t\t}' where '^\t\tcase '
+		switch s := step.(type) {
+		case *core.Group, *core.Yield:
+			// No constraints to add.
+		case *core.Scan:
+			innerScans = append(innerScans, s)
+		case *core.Where:
+			decomposeConjuncts(s.Exp, &working)
+			g := maybeGenerator(sys, pat, working)
+			if g == nil {
+				continue
+			}
+			return existsGenerator(sys, pat, g, innerScans,
+				working)
+		default:
+			return nil
+		}
+	}
+	return nil
+}
+
+// existsGenerator wraps the generator derived inside an exists
+// body. When it depends on a quantified variable's scan, the
+// body's scans join in front of it; either way the body's other
+// filters apply, the outer variables project out, and the scan
+// deduplicates — several quantified bindings may witness one
+// value.
+func existsGenerator(sys *types.System, pat *core.IDPat,
+	g *generator, innerScans []*core.Scan, working []core.Exp,
+) *generator {
+	covered := map[*core.IDPat]bool{}
+	for _, id := range core.PatIDs(g.pat) {
+		covered[id] = true
+	}
+	innerVars := map[*core.IDPat]bool{}
+	for _, s := range innerScans {
+		for _, id := range core.PatIDs(s.Pat) {
+			innerVars[id] = true
+		}
+	}
+	steps, dependent := existsScans(g, innerScans, covered)
+	steps = append(steps, &core.Scan{Pat: g.pat, Exp: g.exp})
+	// The body's other filters apply inside; one that reads a
+	// quantified variable no scan here binds cannot.
+	var filters []core.Exp
+	for _, c := range working {
+		if g.provenance[c] {
+			continue
+		}
+		for _, f := range freePatsOf(c) {
+			if innerVars[f] && !covered[f] {
+				return nil
+			}
+		}
+		filters = append(filters, c)
+	}
+	if len(filters) > 0 {
+		steps = append(steps,
+			&core.Where{Exp: composeConjuncts(sys, filters)})
+	}
+	yieldPats := core.PatIDs(g.pat)
+	if !dependent {
+		yieldPats = []*core.IDPat{pat}
+	}
+	yieldExp, outerPat := rowOfOriginals(sys, yieldPats)
+	steps = append(steps, &core.Yield{Exp: yieldExp})
+	built := &core.From{
+		T:     sys.Named("bag", outerPat.Type()),
+		Steps: steps,
+		Kind:  ast.FromOp,
+	}
+	fresh := map[*core.IDPat]*core.IDPat{}
+	exp := distinctScan(sys, outerPat, cloneExp(built, fresh))
+	return &generator{
+		exp:      exp,
+		pat:      outerPat,
+		freePats: freePatsOf(exp),
+		card:     finite,
+		unique:   true,
+	}
+}
+
+// existsScans emits the quantified variables' own scans when the
+// derived generator depends on them, reporting whether it does.
+func existsScans(g *generator, innerScans []*core.Scan,
+	covered map[*core.IDPat]bool,
+) ([]core.FromStep, bool) {
+	dependent := false
+	for _, dep := range g.freePats {
+		if !covered[dep] {
+			for _, s := range innerScans {
+				if slices.Contains(core.PatIDs(s.Pat), dep) {
+					dependent = true
+				}
+			}
+		}
+	}
+	if !dependent {
+		return nil, false
+	}
+	var steps []core.FromStep
+	for _, s := range innerScans {
+		all := true
+		for _, id := range core.PatIDs(s.Pat) {
+			if !covered[id] {
+				all = false
+			}
+		}
+		if !all {
+			steps = append(steps, s)
+			for _, id := range core.PatIDs(s.Pat) {
+				covered[id] = true
+			}
+		}
+	}
+	return steps, true
+}
+
+// rowOfOriginals builds a yielded row over the variables
+// themselves and the pattern that rebinds them: the sole
+// variable, or a record (a sorted tuple) of them.
+func rowOfOriginals(sys *types.System, pats []*core.IDPat,
+) (core.Exp, core.Pat) {
+	if len(pats) == 1 {
+		return &core.ID{Pat: pats[0]}, pats[0]
+	}
+	sorted := append([]*core.IDPat(nil), pats...)
+	slices.SortFunc(sorted, func(a, b *core.IDPat) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	fields := make([]types.Field, len(sorted))
+	args := make([]core.Exp, len(sorted))
+	patArgs := make([]core.Pat, len(sorted))
+	for i, p := range sorted {
+		fields[i] = types.Field{Label: p.Name, Type: p.T}
+		args[i] = &core.ID{Pat: p}
+		patArgs[i] = p
+	}
+	t := sys.Record(fields)
+	return &core.Tuple{T: t, Args: args},
+		&core.TuplePat{T: t, Args: patArgs}
 }
 
 // bound is one side of a range a conjunct implies: its value, its
