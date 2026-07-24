@@ -32,7 +32,7 @@ func RelationalAggregates() map[string]Fn {
 		"max":      relMaxFn,
 		"min":      relMinFn,
 		"nonEmpty": relNonEmptyFn,
-		"sum":      relSumFn,
+		"sum":      SumFn(int32(0)),
 	}
 }
 
@@ -106,12 +106,20 @@ func relNonEmptyFn(arg Val) (Val, error) {
 	return len(asList(arg)) > 0, nil
 }
 
-// relSumFn is "sum": the total of a numeric collection. An empty
-// collection sums to the integer zero.
-func relSumFn(arg Val) (Val, error) {
+// SumFn is "sum": the total of a numeric collection. An empty
+// collection carries no element to reveal its type, so the zero it
+// sums to is supplied by the caller (the compiler, from the static
+// result type) -- real 0.0 and word 0w0 rather than int 0.
+func SumFn(zero Val) Fn {
+	return func(arg Val) (Val, error) {
+		return sum(arg, zero)
+	}
+}
+
+func sum(arg, zero Val) (Val, error) {
 	list := asList(arg)
 	if len(list) == 0 {
-		return int32(0), nil
+		return zero, nil
 	}
 	switch list[0].(type) {
 	case float32:

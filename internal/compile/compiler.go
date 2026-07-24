@@ -264,6 +264,49 @@ func (c *compiler) builtinFnInfo(fnExp core.Exp,
 	}
 }
 
+// sumEmptyZero reports the additive zero a "sum" aggregate returns
+// for an empty collection, so its result carries the static element
+// type (real 0.0, word 0w0) rather than the int 0 that a value-
+// inspecting sum defaults to when no element reveals the type. It
+// returns nil, false for any function that is not "sum".
+func sumEmptyZero(fnExp core.Exp) (eval.Val, bool) {
+	switch builtinRefName(fnExp) {
+	case "Relational." + sumName, sumName:
+	default:
+		return nil, false
+	}
+	fn, ok := fnExp.Type().(*types.Fn)
+	if !ok {
+		return nil, false
+	}
+	// lint: sort until '^\t}' where '^\tcase '
+	switch fn.Result.String() {
+	case realName:
+		return float32(0), true
+	case wordName:
+		return uint64(0), true
+	default:
+		return int32(0), true
+	}
+}
+
+// builtinRefName is the qualified name of a built-in referenced
+// directly (an ID) or as a structure member (Structure.member),
+// or "" for anything else.
+func builtinRefName(fnExp core.Exp) string {
+	switch fn := fnExp.(type) {
+	case *core.Apply:
+		sel, isSel := fn.Fn.(*core.Selector)
+		id, isID := fn.Arg.(*core.ID)
+		if isSel && isID {
+			return id.Pat.Name + "." + sel.Name
+		}
+	case *core.ID:
+		return fn.Pat.Name
+	}
+	return ""
+}
+
 // curriedArity is the number of curried arguments a built-in takes,
 // used to collapse a fully applied curried built-in to apply2/apply3
 // in the plan. It is the number of arrows in the type — except that
@@ -548,6 +591,9 @@ func (c *compiler) compileGroup(g *core.Group) (eval.FromStage,
 		if err != nil {
 			return nil, nil, err
 		}
+		if zero, ok := sumEmptyZero(a.Fn); ok {
+			fn = eval.Constant(eval.SumFn(zero))
+		}
 		var arg eval.Code
 		if a.Arg != nil {
 			arg, err = c.compileExp(a.Arg)
@@ -775,6 +821,9 @@ func (c *compiler) compileApply(e *core.Apply, tail bool) (eval.Code,
 	fn, err := c.compileExp(e.Fn)
 	if err != nil {
 		return nil, err
+	}
+	if zero, ok := sumEmptyZero(e.Fn); ok {
+		fn = eval.Constant(eval.SumFn(zero))
 	}
 	arg, err := c.compileExp(e.Arg)
 	if err != nil {

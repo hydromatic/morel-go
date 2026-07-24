@@ -47,6 +47,7 @@ const (
 	realToInt  = "real -> int"
 	boolName   = "bool"
 	intName    = "int"
+	sumName    = "sum"
 	realName   = "real"
 	wordName   = "word"
 	stringName = "string"
@@ -181,7 +182,7 @@ func collectionBindings(sys *types.System) []Binding {
 		{Name: "nonEmpty", Type: collToBool},
 		{Name: "max", Type: collToElem},
 		{Name: "min", Type: collToElem},
-		{Name: "sum", Type: collToElem},
+		{Name: sumName, Type: collToElem},
 		{Name: "only", Type: collToElem},
 	}
 }
@@ -204,7 +205,7 @@ func CollectionAggType(sys *types.System, member string,
 		return nil
 	}
 	switch member {
-	case "count", "empty", "max", "min", "nonEmpty", "only", "sum":
+	case "count", "empty", "max", "min", "nonEmpty", "only", sumName:
 		return sys.Fn(sys.Collection(bag.Args[0]), fn.Result)
 	default:
 		return nil

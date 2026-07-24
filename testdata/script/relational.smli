@@ -1580,6 +1580,19 @@ fun product [] = 1
 product (factorize 12);
 > val it = 12 : int
 
+(* Group ---------------------------------------------------------- *)
+
+(* We can simulate "group" using "foldl". *)
+
+(* An empty collection reveals no element type, so "sum" once
+ * returned the int zero for every type; a real sum then panicked
+ * when combined with a real. The zero must match the static
+ * element type. *)
+sum (bag [] : real bag) + 1.5;
+> val it = 1.5 : real
+from r in (from e in ([] : {x:real} list) group {} compute sum over e.x) yield r + 1.5;
+> val it = [1.5] : real list
+
 (*) foldl function (built into SML)
 let
   fun foldl f start [] = start
