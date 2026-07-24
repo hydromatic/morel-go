@@ -463,12 +463,20 @@ from d in [{a=1,b=true}], i in [2] yield {d} yield a;
 > val it : {d:{a:int, b:bool}} list
 :t from d in [{a=1,b=true}], i in [2] yield {d} where true;
 > val it : {d:{a:int, b:bool}} list
+:t from d in [{a=1,b=true}], i in [2] yield {d.a,d.b} yield a;
+> val it : int list
 :t from d in [{a=1,b=true}], i in [2] yield i yield 3;
 > val it : int list
 :t from d in [{a=1,b=true}], i in [2] yield d;
 > val it : {a:int, b:bool} list
+:t from d in [{a=1,b=true}], i in [2] yield {d.a,d.b} yield a;
+> val it : int list
 :t from d in [{a=1,b=true}], i in [2] yield (d.b, i) yield #1 current;
 > val it : bool list
+:t from d in [{a=1,b=true}], i in [2] yield {d.a,d.b} order a;
+> val it : {a:int, b:bool} list
+:t from d in [{a=1,b=true}], i in [2] yield {d.a,d.b} order current.a;
+> val it : {a:int, b:bool} list
 :t from d in [{a=1,b=true}], i in [2] yield d where true;
 > val it : {a:int, b:bool} list
 :t from d in [{a=1,b=true}], i in [2] yield d distinct;
@@ -484,6 +492,10 @@ from d in [{a=1,b=true}], i in [2] yield {d} yield a;
 :t from e in [{empno=1,deptno=10,name="Fred"},
         {empno=2,deptno=10,name="Jane"}]
   order (e.empno, e.deptno);
+> val it : {deptno:int, empno:int, name:string} list
+:t from e in [{empno=1,deptno=10,name="Fred"},
+        {empno=2,deptno=10,name="Jane"}]
+  order {e.deptno, e.empno};
 > val it : {deptno:int, empno:int, name:string} list
 
 (*) unorder

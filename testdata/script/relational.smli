@@ -95,7 +95,17 @@ from e in emps yield {deptno = #deptno e, one = 1};
 >   [{deptno=10,one=1},{deptno=20,one=1},{deptno=30,one=1},{deptno=30,one=1}]
 >   : {deptno:int, one:int} list
 
+from e in emps yield {e.deptno, three = 1 + 2};
+> val it =
+>   [{deptno=10,three=3},{deptno=20,three=3},{deptno=30,three=3},
+>    {deptno=30,three=3}] : {deptno:int, three:int} list
+
 from e in emps yield {deptno = e.deptno, one = 1};
+> val it =
+>   [{deptno=10,one=1},{deptno=20,one=1},{deptno=30,one=1},{deptno=30,one=1}]
+>   : {deptno:int, one:int} list
+
+from e in emps yield {e.deptno, one = 1};
 > val it =
 >   [{deptno=10,one=1},{deptno=20,one=1},{deptno=30,one=1},{deptno=30,one=1}]
 >   : {deptno:int, one:int} list
@@ -168,12 +178,21 @@ from x in [{a = {a = 1}}, {a = {a = 2}}]
   yield {b = x.a.a};
 > val it = [{b=1},{b=2}] : {b:int} list
 
+from x in [{a = {a = 1}}, {a = {a = 2}}]
+  yield {x.a};
+> val it = [{a={a=1}},{a={a=2}}] : {a:{a:int}} list
+
 (* Duplicate field name within the 'compute' record itself. The error
  * position is the second occurrence of the label. *)
 from e in [{x = 1, y = 5}, {x = 0, y = 1}, {x = 1, y = 1}]
   group {a = e.x, a = e.y};
 > stdIn:2.19 Error: duplicate field 'a' in record
 >   raised at: stdIn:2.19
+
+from e in [{x = 1, y = 5}, {x = 0, y = 1}, {x = 1, y = 1}]
+  group {e.x, x = e.y};
+> stdIn:2.15 Error: duplicate field 'x' in record
+>   raised at: stdIn:2.15
 
 (* -------------------------------------------------------------------
  * A 'binder' is an identifier in a yield, yieldAll or group that
@@ -424,6 +443,23 @@ listFields2 [];
 listFields2 [{a = 1, b = 2}, {a = 3, b = 0}, {a = 4, b = 5}];
 > val it = [2,4,5] : int list
 
+(*) Temporary functions
+let
+  fun abbrev s =
+    if size s > 5
+    then (substring (s, 0, 3)) ^ "."
+    else s
+  fun shouldPromote e =
+    e.id < e.deptno * 4
+in
+  from e in emps
+  where shouldPromote e
+  yield {e.id, e.deptno, abbrev_name = abbrev e.name}
+end;
+> val it =
+>   [{abbrev_name="Sha.",deptno=30,id=102},{abbrev_name="Sco.",deptno=30,id=103}]
+>   : {abbrev_name:string, deptno:int, id:int} list
+
 (*) There's no flatMap in the standard library, so define one
 fun flatMap f l = List.concat (map f l);
 > val flatMap = fn : ('a -> 'b list) -> 'a list -> 'b list
@@ -471,6 +507,22 @@ flatMap employeesIn [10, 25, 30];
 > val it =
 >   [{deptno=10,id=100,name="Fred"},{deptno=30,id=102,name="Shaggy"},
 >    {deptno=30,id=103,name="Scooby"}] : {deptno:int, id:int, name:string} list
+
+(*) Function in yield
+let
+  val intFns = from a in [2, 3, 4] yield {a, f = fn x => x + a}
+in
+  from intFn in intFns yield {intFn.a, f1 = intFn.f 1, f2 = intFn.f 2}
+end;
+> val it = [{a=2,f1=3,f2=4},{a=3,f1=4,f2=5},{a=4,f1=5,f2=6}]
+>   : {a:int, f1:int, f2:int} list
+
+(*) Function in order
+val triples =
+  from t in [{x=1,y=2}, {x=2,y=6}, {x=3, y=5}]
+    yield {t.x, t.y, foo = fn z => t.x * z + t.y};
+> val triples = [{foo=fn,x=1,y=2},{foo=fn,x=2,y=6},{foo=fn,x=3,y=5}]
+>   : {foo:int -> int, x:int, y:int} list
  (* (~1+2,2) < (~3+5,5) < (~2+6,6) *)
 
 (*) A deep nested loop
@@ -503,10 +555,24 @@ from e in
 (*) Hybrid
 Sys.set ("hybrid", false);
 > val it = () : unit
+from r1 in
+  List.tabulate (6, fn i =>
+    {i, j = i + 3, s = substring ("morel", 0, i)})
+yield {r1.j, r1.s};
+> val it =
+>   [{j=3,s=""},{j=4,s="m"},{j=5,s="mo"},{j=6,s="mor"},{j=7,s="more"},
+>    {j=8,s="morel"}] : {j:int, s:string} list
 
 
 Sys.set ("hybrid", true);
 > val it = () : unit
+from r in
+  List.tabulate (6, fn i2 =>
+    {i = i2, j = i2 + 3, s = substring ("morel", 0, i2)})
+yield {r.j, r.s};
+> val it =
+>   [{j=3,s=""},{j=4,s="m"},{j=5,s="mo"},{j=6,s="mor"},{j=7,s="more"},
+>    {j=8,s="morel"}] : {j:int, s:string} list
 
 (* List expression in Hybrid mode (0% Calcite), with various
  * row types: record, tuple, primitive *)

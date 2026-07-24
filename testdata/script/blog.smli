@@ -39,6 +39,11 @@ val filter = List.filter;
 
 "Hello, world!";
 > val it = "Hello, world!" : string
+
+(* In Morel, you can omit label = if the expression is an identifier,
+ * label application, or field reference. Thus *)
+{#deptno e, e.name, d};
+> val it = {d=10,deptno=10,name="Fred"} : {d:int, deptno:int, name:string}
 (*) is shorthand for
 {deptno = #deptno e, name = e.name, d = d};
 > val it = {d=10,deptno=10,name="Fred"} : {d:int, deptno:int, name:string}
@@ -481,6 +486,12 @@ from e in emps
   yield {id = #id e};
 > val it = [{id=102},{id=103}] : {id:int} list
 
+(* The following is equivalent. *)
+from e in emps
+  where e.deptno = 30
+  yield {e.id};
+> val it = [{id=102},{id=103}] : {id:int} list
+
 (* If you omit 'yield' you get the raw values of 'e'. *)
 from e in emps
   where #deptno e = 30;
@@ -494,6 +505,9 @@ from e in emps
 from e in emps
   yield {e = e.id};
 > val it = [{e=100},{e=101},{e=102},{e=103}] : {e:int} list
+from e in emps
+  yield {e.id};
+> val it = [{id=100},{id=101},{id=102},{id=103}] : {id:int} list
 
 (* The following query would, in SQL, be described as having 'EXISTS
    and a correlated sub-query'. But 'exists' is not a built-in keyword
@@ -707,6 +721,24 @@ List.map
 >   [{deptno=10,name="Fred"},{deptno=20,name="Velma"},{deptno=30,name="Shaggy"},
 >    {deptno=30,name="Scooby"}] : {deptno:int, name:string} list
 
+(*) Functions as views, functions as values
+fun emps2 () =
+   from e in emps
+     yield {e.id,
+       e.name,
+       e.deptno,
+       comp = fn revenue => case e.deptno of
+           30 => e.id + revenue div 2
+         | _ => e.id};
+> val emps2 = fn
+>   : unit -> {comp:int -> int, deptno:int, id:int, name:string} list
+from e in emps2 ()
+  yield {e.name, e.id, c = e.comp 1000};
+> val it =
+>   [{c=100,id=100,name="Fred"},{c=101,id=101,name="Velma"},
+>    {c=602,id=102,name="Shaggy"},{c=603,id=103,name="Scooby"}]
+>   : {c:int, id:int, name:string} list
+
 (*) Chaining relational operators
 from e in emps;
 > val it =
@@ -799,6 +831,10 @@ val db =
   {emps = [{name = "Fred", deptno = 2, sal = 1000, comm = 100}]};
 > val db = {emps=[{comm=100,deptno=2,name="Fred",sal=1000}]}
 >   : {emps:{comm:int, deptno:int, name:string, sal:int} list}
+from e in db.emps
+  where e.deptno = 2
+  yield {e.name, pay = e.sal + e.comm};
+> val it = [{name="Fred",pay=1100}] : {name:string, pay:int} list
 
 (*) Pipe syntax
 val produceSales = [
