@@ -60,6 +60,7 @@ func expandFrom(sys *types.System, from *core.From,
 		extentPats: map[*core.IDPat]token.Span{},
 		used:       map[*core.IDPat]bool{},
 	}
+	from = rangePushdown(sys, from)
 	x.deduce(from)
 	x.markUsed(from)
 	// A used variable whose best generator is still infinite is
@@ -191,6 +192,235 @@ func stepRefs(step core.FromStep) []*core.IDPat {
 	return pats
 }
 
+// rangePushdown tightens each scan over a one-sided range list
+// using a literal bound from the filters: "from x in [1 ..] where
+// x < 5" scans [1 ..^ 5], and the consumed conjunct disappears.
+// The tightest literal wins; a crossing that empties the range is
+// left alone.
+func rangePushdown(sys *types.System, from *core.From,
+) *core.From {
+	steps := append([]core.FromStep(nil), from.Steps...)
+	changed := false
+	for i, step := range steps {
+		scan, ok := step.(*core.Scan)
+		if !ok {
+			continue
+		}
+		pat, ok := scan.Pat.(*core.IDPat)
+		if !ok {
+			continue
+		}
+		rl, ok := scan.Exp.(*core.RangeList)
+		if !ok || len(rl.Items) != 1 {
+			continue
+		}
+		item := rl.Items[0]
+		wantUpper := item.Kind == ast.RangeAtLeast ||
+			item.Kind == ast.RangeGreaterThan
+		wantLower := item.Kind == ast.RangeAtMost ||
+			item.Kind == ast.RangeLessThan
+		if !wantUpper && !wantLower {
+			continue
+		}
+		item2, consumed := pushBound(sys, pat, item, wantUpper,
+			steps[i+1:])
+		if consumed == nil {
+			continue
+		}
+		steps[i] = &core.Scan{
+			Pat: scan.Pat,
+			Exp: &core.RangeList{
+				T:     rl.T,
+				Items: []core.RangeItem{item2},
+			},
+		}
+		removeConjunct(sys, steps[i+1:], consumed)
+		changed = true
+	}
+	if !changed {
+		return from
+	}
+	return &core.From{T: from.T, Steps: steps, Kind: from.Kind}
+}
+
+// pushBound finds the tightest literal bound on the variable in
+// the following filter steps and folds it into a one-sided range
+// item, returning the closed item and the conjunct consumed.
+func pushBound(sys *types.System, pat *core.IDPat,
+	item core.RangeItem, wantUpper bool, rest []core.FromStep,
+) (core.RangeItem, core.Exp) {
+	var best *bound
+	var source core.Exp
+	for _, step := range rest {
+		where, ok := step.(*core.Where)
+		if !ok {
+			continue
+		}
+		var conjuncts []core.Exp
+		decomposeConjuncts(where.Exp, &conjuncts)
+		for _, c := range conjuncts {
+			lo, hi := conjunctBounds(sys, c, pat)
+			b := hi
+			if !wantUpper {
+				b = lo
+			}
+			if b == nil {
+				continue
+			}
+			lit, ok := b.value.(*core.Literal)
+			if !ok {
+				continue
+			}
+			if best != nil && !tighter(lit, b, best, wantUpper) {
+				continue
+			}
+			best, source = b, c
+		}
+	}
+	if best == nil {
+		return item, nil
+	}
+	if crossesEmpty(item, best, wantUpper) {
+		return item, nil
+	}
+	if wantUpper {
+		return core.RangeItem{
+			Kind: closeUpper(item.Kind, best.strict),
+			Lo:   item.Lo,
+			Hi:   best.value,
+		}, source
+	}
+	return core.RangeItem{
+		Kind: closeLower(item.Kind, best.strict),
+		Lo:   best.value,
+		Hi:   item.Hi,
+	}, source
+}
+
+// tighter reports whether a new literal bound is stricter than
+// the best so far.
+func tighter(lit *core.Literal, b, best *bound,
+	wantUpper bool,
+) bool {
+	bestLit, ok := best.value.(*core.Literal)
+	if !ok {
+		return true
+	}
+	c := compareLiterals(lit, bestLit)
+	if wantUpper {
+		return c < 0 || (c == 0 && b.strict && !best.strict)
+	}
+	return c > 0 || (c == 0 && b.strict && !best.strict)
+}
+
+// crossesEmpty reports whether folding the bound into the item
+// would produce an obviously empty range (both endpoints
+// literal, in the wrong order).
+func crossesEmpty(item core.RangeItem, b *bound,
+	wantUpper bool,
+) bool {
+	fixed := item.Lo
+	if !wantUpper {
+		fixed = item.Hi
+	}
+	fixedLit, ok := fixed.(*core.Literal)
+	if !ok {
+		return false
+	}
+	lit, ok := b.value.(*core.Literal)
+	if !ok {
+		return false
+	}
+	if wantUpper {
+		return compareLiterals(lit, fixedLit) < 0
+	}
+	return compareLiterals(lit, fixedLit) > 0
+}
+
+// compareLiterals orders two int or char literals (both are
+// int32-valued).
+func compareLiterals(a, b *core.Literal) int {
+	av, aOK := a.Value.(int32)
+	bv, bOK := b.Value.(int32)
+	switch {
+	case !aOK || !bOK:
+		return 0
+	case av < bv:
+		return -1
+	case av > bv:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// closeUpper is the bounded range kind after adding an upper
+// bound to a lower-only item.
+func closeUpper(kind ast.RangeKind, strict bool) ast.RangeKind {
+	open := kind == ast.RangeGreaterThan
+	switch {
+	case open && strict:
+		return ast.RangeOpen
+	case open:
+		return ast.RangeOpenClosed
+	case strict:
+		return ast.RangeClosedOpen
+	default:
+		return ast.RangeClosed
+	}
+}
+
+// closeLower is the bounded range kind after adding a lower bound
+// to an upper-only item.
+func closeLower(kind ast.RangeKind, strict bool) ast.RangeKind {
+	open := kind == ast.RangeLessThan
+	switch {
+	case open && strict:
+		return ast.RangeOpen
+	case open:
+		return ast.RangeClosedOpen
+	case strict:
+		return ast.RangeOpenClosed
+	default:
+		return ast.RangeClosed
+	}
+}
+
+// removeConjunct deletes a consumed conjunct from the filter step
+// that carries it, dropping the step if nothing remains.
+func removeConjunct(sys *types.System, steps []core.FromStep,
+	consumed core.Exp,
+) {
+	for i, step := range steps {
+		where, ok := step.(*core.Where)
+		if !ok {
+			continue
+		}
+		var conjuncts []core.Exp
+		decomposeConjuncts(where.Exp, &conjuncts)
+		var remaining []core.Exp
+		found := false
+		for _, c := range conjuncts {
+			if c == consumed {
+				found = true
+				continue
+			}
+			remaining = append(remaining, c)
+		}
+		if !found {
+			continue
+		}
+		if len(remaining) == 0 {
+			steps[i] = &core.Where{Exp: boolLiteral(sys, true)}
+		} else {
+			steps[i] = &core.Where{
+				Exp: composeConjuncts(sys, remaining),
+			}
+		}
+		return
+	}
+}
+
 // patState tracks scheduling of a variable's generator scan.
 type patState int
 
@@ -205,7 +435,11 @@ const (
 // binding its dependencies, and drops the filter conjuncts that
 // the sealed generators subsume.
 func (x *expander) rebuild(from *core.From) (*core.From, error) {
-	r := &rebuilder{x: x, state: map[*core.IDPat]patState{}}
+	r := &rebuilder{
+		x:        x,
+		state:    map[*core.IDPat]patState{},
+		subsumed: map[core.Exp]bool{},
+	}
 	for _, step := range from.Steps {
 		// A generator whose dependencies a step uses must be
 		// scheduled before the step.
@@ -271,6 +505,13 @@ type rebuilder struct {
 	steps   []core.FromStep
 	state   map[*core.IDPat]patState
 	changed bool
+	// subsumed holds the provenance conjuncts of the generators
+	// whose scans this rebuild actually emitted; only those
+	// conjuncts leave the filters. A cached generator that was
+	// never scanned must not delete its conjunct (a variable may
+	// be bound by a different generator, leaving this conjunct as
+	// the only enforcement).
+	subsumed map[core.Exp]bool
 }
 
 // addGeneratorScan schedules the generator scan that binds a
@@ -318,10 +559,12 @@ func (r *rebuilder) addGeneratorScan(pat *core.IDPat) {
 			}
 		}
 		r.steps = append(r.steps, r.projectedScan(g, required))
+		r.subsume(g)
 		r.changed = true
 	} else {
 		r.steps = append(r.steps,
 			&core.Scan{Pat: g.pat, Exp: g.exp})
+		r.subsume(g)
 		if !r.x.isExtentScanExp(g.exp) {
 			// Re-emitting the variable's own extent scan is not
 			// a change; substituting anything else is.
@@ -422,20 +665,22 @@ func (x *expander) isExtentScanExp(e core.Exp) bool {
 	return extentOf(e) != nil
 }
 
-// filterStep re-emits a filter without the conjuncts that sealed
-// generators subsume; a filter with nothing left is dropped.
-func (r *rebuilder) filterStep(s *core.Where) {
-	subsumed := map[core.Exp]bool{}
-	for _, gens := range r.x.cache.m {
-		for _, g := range gens {
-			if !g.sealed {
-				continue
-			}
-			for conjunct := range g.provenance {
-				subsumed[conjunct] = true
-			}
-		}
+// subsume records that a sealed generator's scan was emitted, so
+// the conjuncts it enforces leave the filters.
+func (r *rebuilder) subsume(g *generator) {
+	if !g.sealed {
+		return
 	}
+	for conjunct := range g.provenance {
+		r.subsumed[conjunct] = true
+	}
+}
+
+// filterStep re-emits a filter without the conjuncts that this
+// rebuild's emitted generator scans subsume; a filter with
+// nothing left is dropped.
+func (r *rebuilder) filterStep(s *core.Where) {
+	subsumed := r.subsumed
 	var conjuncts []core.Exp
 	decomposeConjuncts(s.Exp, &conjuncts)
 	var remaining []core.Exp

@@ -1318,6 +1318,22 @@ fun isAncestor (x, z) =
         andalso (y, z) elem parents);
 > val isAncestor = fn : string * string -> bool
 
+(*) Recipe optimization
+from b, c
+  where b >= 0 andalso b <= 100       (*) number of banana cakes
+  andalso c >= 0 andalso c <= 100     (*) number of chocolate cakes
+  andalso 50 * b + 200 * c <= 40000   (*) flour
+  andalso 2 * b <= 60                 (*) bananas
+  andalso 75 * b + 150 * c <= 20000   (*) sugar
+  andalso 100 * b + 150 * c <= 5000   (*) butter
+  andalso 75 * c <= 5000              (*) cocoa
+  yield {b, c, profit = 400 * b + 450 * c}
+  order DESC profit
+  take 3;
+> val it =
+>   [{b=29,c=14,profit=17900},{b=30,c=13,profit=17850},{b=26,c=16,profit=17600}]
+>   : {b:int, c:int, profit:int} list
+
 (* --- GCD and LCM ------------------------------------------------ *)
 
 (* "INTERSECT ALL, EXCEPT ALL, and the arithmetic of fractions",

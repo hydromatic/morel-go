@@ -308,6 +308,22 @@ from x where abs x > 5;
 > stdIn:1.6 Error: pattern 'x' is not grounded
 >   raised at: stdIn:1.6
 
+(* Same strengthening via the literal range-list syntax. FBBT injects
+ * the implied lower bounds from `[1..]`, propagates through the
+ * multiplication constraint, and pushes the deduced upper bounds back
+ * into each scan's range constructor — turning `[1..]` into `[1..7]`
+ * and `[1..^27]`. Preserves the original `int list` (ordered) type. *)
+from x in [1..] where x < 5;
+> val it = [1,2,3,4] : int list
+
+(* RangePushdown also handles char-typed infinite range scans. *)
+from c in [#"a"..] where c < #"e";
+> val it = [#"a",#"b",#"c",#"d"] : char list
+from c in [#"a"..] where c <= #"d";
+> val it = [#"a",#"b",#"c",#"d"] : char list
+from x where x > 0 andalso x < x + 1 andalso x < 5;
+> val it = [1,2,3,4] : int bag
+
 (* Ranges that cannot be deduced even with FBBT.
  *
  * The first query is feasible but unbounded (`x < y andalso y < x + 10`

@@ -775,11 +775,153 @@ from x, y, z
   group {} compute count over ();
 > val it = [366] : int bag
 
+(* 3. 4-Clique -------------------------------------------------------
+ * In Datalog:
+ *   4Clique(x, y, z, w) :- R(x, y), S(y, z), T(x, z), U(x, w),
+ *       V(y, w), Q(z, w).
+ *)
+
+from x, y, z, w
+  where (x, y) elem western_pairs
+    andalso (y, z) elem western_pairs
+    andalso (x, z) elem western_pairs
+    andalso (x, w) elem western_pairs
+    andalso (y, w) elem western_pairs
+    andalso (z, w) elem western_pairs
+  order (w, x, y, z);
+> val it =
+>   [{w="AZ",x="CO",y="NM",z="UT"},{w="AZ",x="CO",y="UT",z="NM"},
+>    {w="AZ",x="NM",y="CO",z="UT"},{w="AZ",x="NM",y="UT",z="CO"},
+>    {w="AZ",x="UT",y="CO",z="NM"},{w="AZ",x="UT",y="NM",z="CO"},
+>    {w="CO",x="AZ",y="NM",z="UT"},{w="CO",x="AZ",y="UT",z="NM"},
+>    {w="CO",x="NM",y="AZ",z="UT"},{w="CO",x="NM",y="UT",z="AZ"},
+>    {w="CO",x="UT",y="AZ",z="NM"},{w="CO",x="UT",y="NM",z="AZ"},
+>    {w="NM",x="AZ",y="CO",z="UT"},{w="NM",x="AZ",y="UT",z="CO"},
+>    {w="NM",x="CO",y="AZ",z="UT"},{w="NM",x="CO",y="UT",z="AZ"},
+>    {w="NM",x="UT",y="AZ",z="CO"},{w="NM",x="UT",y="CO",z="AZ"},
+>    {w="UT",x="AZ",y="CO",z="NM"},{w="UT",x="AZ",y="NM",z="CO"},
+>    {w="UT",x="CO",y="AZ",z="NM"},{w="UT",x="CO",y="NM",z="AZ"},
+>    {w="UT",x="NM",y="AZ",z="CO"},{w="UT",x="NM",y="CO",z="AZ"}]
+>   : {w:string, x:string, y:string, z:string} list
+
 (* A 3-node graph has no 4-clique. Grounding must not delete a
  * conjunct whose generator was cached but never scanned; when it did,
  * this returned rows in which x = y. *)
 val ps = [(1,2),(2,1),(1,3),(3,1),(2,3),(3,2)];
 > val ps = [(1,2),(2,1),(1,3),(3,1),(2,3),(3,2)] : (int * int) list
+from x, y, z, w where (x, y) elem ps andalso (y, z) elem ps andalso (x, z) elem ps andalso (x, w) elem ps andalso (y, w) elem ps andalso (z, w) elem ps;
+> val it = [] : {w:int, x:int, y:int, z:int} bag
+
+(* 4. Lollipop -------------------------------------------------------
+ * In Datalog:
+ *   Lollipop(x, y, z, w) :- R(x, y), S(y, z), T(x, z), U(x, w).
+ *)
+
+from x, y, z, w
+  where (x, y) elem western_pairs
+    andalso (y, z) elem western_pairs
+    andalso (x, z) elem western_pairs
+    andalso (x, w) elem western_pairs
+    andalso w <> y
+    andalso y <> z
+  order (w, x, y, z);
+> val it =
+>   [{w="AZ",x="CA",y="NV",z="AZ"},{w="AZ",x="CA",y="NV",z="OR"},
+>    {w="AZ",x="CA",y="OR",z="NV"},{w="AZ",x="CO",y="NM",z="AZ"},
+>    {w="AZ",x="CO",y="NM",z="UT"},{w="AZ",x="CO",y="UT",z="AZ"},
+>    {w="AZ",x="CO",y="UT",z="NM"},{w="AZ",x="NM",y="CO",z="AZ"},
+>    {w="AZ",x="NM",y="CO",z="UT"},{w="AZ",x="NM",y="UT",z="AZ"},
+>    {w="AZ",x="NM",y="UT",z="CO"},{w="AZ",x="NV",y="CA",z="AZ"},
+>    {w="AZ",x="NV",y="CA",z="OR"},{w="AZ",x="NV",y="ID",z="OR"},
+>    {w="AZ",x="NV",y="ID",z="UT"},{w="AZ",x="NV",y="OR",z="CA"},
+>    {w="AZ",x="NV",y="OR",z="ID"},{w="AZ",x="NV",y="UT",z="AZ"},
+>    {w="AZ",x="NV",y="UT",z="ID"},{w="AZ",x="UT",y="CO",z="AZ"},
+>    {w="AZ",x="UT",y="CO",z="NM"},{w="AZ",x="UT",y="ID",z="NV"},
+>    {w="AZ",x="UT",y="NM",z="AZ"},{w="AZ",x="UT",y="NM",z="CO"},
+>    {w="AZ",x="UT",y="NV",z="AZ"},{w="AZ",x="UT",y="NV",z="ID"},
+>    {w="CA",x="AZ",y="CO",z="NM"},{w="CA",x="AZ",y="CO",z="UT"},
+>    {w="CA",x="AZ",y="NM",z="CO"},{w="CA",x="AZ",y="NM",z="UT"},
+>    {w="CA",x="AZ",y="NV",z="CA"},{w="CA",x="AZ",y="NV",z="UT"},
+>    {w="CA",x="AZ",y="UT",z="CO"},{w="CA",x="AZ",y="UT",z="NM"},
+>    {w="CA",x="AZ",y="UT",z="NV"},{w="CA",x="NV",y="AZ",z="CA"},
+>    {w="CA",x="NV",y="AZ",z="UT"},{w="CA",x="NV",y="ID",z="OR"},
+>    {w="CA",x="NV",y="ID",z="UT"},{w="CA",x="NV",y="OR",z="CA"},
+>    {w="CA",x="NV",y="OR",z="ID"},{w="CA",x="NV",y="UT",z="AZ"},
+>    {w="CA",x="NV",y="UT",z="ID"},{w="CA",x="OR",y="ID",z="NV"},
+>    {w="CA",x="OR",y="ID",z="WA"},{w="CA",x="OR",y="NV",z="CA"},
+>    {w="CA",x="OR",y="NV",z="ID"},{w="CA",x="OR",y="WA",z="ID"},
+>    {w="CO",x="AZ",y="CA",z="NV"},{w="CO",x="AZ",y="NM",z="CO"},
+>    {w="CO",x="AZ",y="NM",z="UT"},{w="CO",x="AZ",y="NV",z="CA"},
+>    {w="CO",x="AZ",y="NV",z="UT"},{w="CO",x="AZ",y="UT",z="CO"},
+>    {w="CO",x="AZ",y="UT",z="NM"},{w="CO",x="AZ",y="UT",z="NV"},
+>    {w="CO",x="NM",y="AZ",z="CO"},{w="CO",x="NM",y="AZ",z="UT"},
+>    {w="CO",x="NM",y="UT",z="AZ"},{w="CO",x="NM",y="UT",z="CO"},
+>    {w="CO",x="UT",y="AZ",z="CO"},{w="CO",x="UT",y="AZ",z="NM"},
+>    {w="CO",x="UT",y="AZ",z="NV"},{w="CO",x="UT",y="ID",z="NV"},
+>    {w="CO",x="UT",y="NM",z="AZ"},{w="CO",x="UT",y="NM",z="CO"},
+>    {w="CO",x="UT",y="NV",z="AZ"},{w="CO",x="UT",y="NV",z="ID"},
+>    {w="ID",x="NV",y="AZ",z="CA"},{w="ID",x="NV",y="AZ",z="UT"},
+>    {w="ID",x="NV",y="CA",z="AZ"},{w="ID",x="NV",y="CA",z="OR"},
+>    {w="ID",x="NV",y="OR",z="CA"},{w="ID",x="NV",y="OR",z="ID"},
+>    {w="ID",x="NV",y="UT",z="AZ"},{w="ID",x="NV",y="UT",z="ID"},
+>    {w="ID",x="OR",y="CA",z="NV"},{w="ID",x="OR",y="NV",z="CA"},
+>    {w="ID",x="OR",y="NV",z="ID"},{w="ID",x="OR",y="WA",z="ID"},
+>    {w="ID",x="UT",y="AZ",z="CO"},{w="ID",x="UT",y="AZ",z="NM"},
+>    {w="ID",x="UT",y="AZ",z="NV"},{w="ID",x="UT",y="CO",z="AZ"},
+>    {w="ID",x="UT",y="CO",z="NM"},{w="ID",x="UT",y="NM",z="AZ"},
+>    {w="ID",x="UT",y="NM",z="CO"},{w="ID",x="UT",y="NV",z="AZ"},
+>    {w="ID",x="UT",y="NV",z="ID"},{w="ID",x="WA",y="OR",z="ID"},
+>    {w="NM",x="AZ",y="CA",z="NV"},{w="NM",x="AZ",y="CO",z="NM"},
+>    {w="NM",x="AZ",y="CO",z="UT"},{w="NM",x="AZ",y="NV",z="CA"},
+>    {w="NM",x="AZ",y="NV",z="UT"},{w="NM",x="AZ",y="UT",z="CO"},
+>    {w="NM",x="AZ",y="UT",z="NM"},{w="NM",x="AZ",y="UT",z="NV"},
+>    {w="NM",x="CO",y="AZ",z="NM"},{w="NM",x="CO",y="AZ",z="UT"},
+>    {w="NM",x="CO",y="UT",z="AZ"},{w="NM",x="CO",y="UT",z="NM"},
+>    {w="NM",x="UT",y="AZ",z="CO"},{w="NM",x="UT",y="AZ",z="NM"},
+>    {w="NM",x="UT",y="AZ",z="NV"},{w="NM",x="UT",y="CO",z="AZ"},
+>    {w="NM",x="UT",y="CO",z="NM"},{w="NM",x="UT",y="ID",z="NV"},
+>    {w="NM",x="UT",y="NV",z="AZ"},{w="NM",x="UT",y="NV",z="ID"},
+>    {w="NV",x="AZ",y="CA",z="NV"},{w="NV",x="AZ",y="CO",z="NM"},
+>    {w="NV",x="AZ",y="CO",z="UT"},{w="NV",x="AZ",y="NM",z="CO"},
+>    {w="NV",x="AZ",y="NM",z="UT"},{w="NV",x="AZ",y="UT",z="CO"},
+>    {w="NV",x="AZ",y="UT",z="NM"},{w="NV",x="AZ",y="UT",z="NV"},
+>    {w="NV",x="CA",y="AZ",z="NV"},{w="NV",x="CA",y="OR",z="NV"},
+>    {w="NV",x="ID",y="OR",z="NV"},{w="NV",x="ID",y="OR",z="WA"},
+>    {w="NV",x="ID",y="UT",z="NV"},{w="NV",x="ID",y="WA",z="OR"},
+>    {w="NV",x="OR",y="CA",z="NV"},{w="NV",x="OR",y="ID",z="NV"},
+>    {w="NV",x="OR",y="ID",z="WA"},{w="NV",x="OR",y="WA",z="ID"},
+>    {w="NV",x="UT",y="AZ",z="CO"},{w="NV",x="UT",y="AZ",z="NM"},
+>    {w="NV",x="UT",y="AZ",z="NV"},{w="NV",x="UT",y="CO",z="AZ"},
+>    {w="NV",x="UT",y="CO",z="NM"},{w="NV",x="UT",y="ID",z="NV"},
+>    {w="NV",x="UT",y="NM",z="AZ"},{w="NV",x="UT",y="NM",z="CO"},
+>    {w="OR",x="CA",y="AZ",z="NV"},{w="OR",x="CA",y="NV",z="AZ"},
+>    {w="OR",x="CA",y="NV",z="OR"},{w="OR",x="ID",y="NV",z="OR"},
+>    {w="OR",x="ID",y="NV",z="UT"},{w="OR",x="ID",y="UT",z="NV"},
+>    {w="OR",x="ID",y="WA",z="OR"},{w="OR",x="NV",y="AZ",z="CA"},
+>    {w="OR",x="NV",y="AZ",z="UT"},{w="OR",x="NV",y="CA",z="AZ"},
+>    {w="OR",x="NV",y="CA",z="OR"},{w="OR",x="NV",y="ID",z="OR"},
+>    {w="OR",x="NV",y="ID",z="UT"},{w="OR",x="NV",y="UT",z="AZ"},
+>    {w="OR",x="NV",y="UT",z="ID"},{w="OR",x="WA",y="ID",z="OR"},
+>    {w="UT",x="AZ",y="CA",z="NV"},{w="UT",x="AZ",y="CO",z="NM"},
+>    {w="UT",x="AZ",y="CO",z="UT"},{w="UT",x="AZ",y="NM",z="CO"},
+>    {w="UT",x="AZ",y="NM",z="UT"},{w="UT",x="AZ",y="NV",z="CA"},
+>    {w="UT",x="AZ",y="NV",z="UT"},{w="UT",x="CO",y="AZ",z="NM"},
+>    {w="UT",x="CO",y="AZ",z="UT"},{w="UT",x="CO",y="NM",z="AZ"},
+>    {w="UT",x="CO",y="NM",z="UT"},{w="UT",x="ID",y="NV",z="OR"},
+>    {w="UT",x="ID",y="NV",z="UT"},{w="UT",x="ID",y="OR",z="NV"},
+>    {w="UT",x="ID",y="OR",z="WA"},{w="UT",x="ID",y="WA",z="OR"},
+>    {w="UT",x="NM",y="AZ",z="CO"},{w="UT",x="NM",y="AZ",z="UT"},
+>    {w="UT",x="NM",y="CO",z="AZ"},{w="UT",x="NM",y="CO",z="UT"},
+>    {w="UT",x="NV",y="AZ",z="CA"},{w="UT",x="NV",y="AZ",z="UT"},
+>    {w="UT",x="NV",y="CA",z="AZ"},{w="UT",x="NV",y="CA",z="OR"},
+>    {w="UT",x="NV",y="ID",z="OR"},{w="UT",x="NV",y="ID",z="UT"},
+>    {w="UT",x="NV",y="OR",z="CA"},{w="UT",x="NV",y="OR",z="ID"},
+>    {w="WA",x="ID",y="NV",z="OR"},{w="WA",x="ID",y="NV",z="UT"},
+>    {w="WA",x="ID",y="OR",z="NV"},{w="WA",x="ID",y="OR",z="WA"},
+>    {w="WA",x="ID",y="UT",z="NV"},{w="WA",x="OR",y="CA",z="NV"},
+>    {w="WA",x="OR",y="ID",z="NV"},{w="WA",x="OR",y="ID",z="WA"},
+>    {w="WA",x="OR",y="NV",z="CA"},{w="WA",x="OR",y="NV",z="ID"}]
+>   : {w:string, x:string, y:string, z:string} list
 
 (* 5. Barbell --------------------------------------------------------
  * In Datalog:

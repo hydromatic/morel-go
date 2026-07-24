@@ -133,7 +133,11 @@ func ContainsUnbounded(decl core.Decl) bool {
 		if from, ok := e.(*core.From); ok {
 			for _, s := range from.Steps {
 				scan, isScan := s.(*core.Scan)
-				if isScan && isInfiniteExtent(scan.Exp) {
+				if !isScan {
+					continue
+				}
+				if isInfiniteExtent(scan.Exp) ||
+					!finiteCollection(scan.Exp) {
 					found = true
 				}
 			}

@@ -42,6 +42,10 @@ const (
 	opMod      = "op mod"
 	opNegate   = "op ~"
 	opElem     = "op elem"
+	opGe       = "op >="
+	opGt       = "op >"
+	opLe       = "op <="
+	opLt       = "op <"
 	opNotElem  = "op notelem"
 	comparison = "'a * 'a -> bool"
 	realToInt  = "real -> int"
@@ -84,12 +88,12 @@ var topBuiltins = map[string]topBuiltin{
 	opMinus:     {numPair, intName},
 	"op /":      {numPair, realName},
 	"op ::":     {"'a * 'a list -> 'a list", ""},
-	"op <":      {comparison, ""},
-	"op <=":     {comparison, ""},
+	opLt:        {comparison, ""},
+	opLe:        {comparison, ""},
 	"op <>":     {comparison, ""},
 	eqOpName:    {comparison, ""},
-	"op >":      {comparison, ""},
-	"op >=":     {comparison, ""},
+	opGt:        {comparison, ""},
+	opGe:        {comparison, ""},
 	"op @":      {"'a list * 'a list -> 'a list", ""},
 	"op ^":      {"string * string -> string", ""},
 	opDiv:       {numPair, intName},
@@ -130,10 +134,10 @@ var infixOpNames = map[ast.Op]string{
 	ast.DivOp:     opDiv,
 	ast.DivideOp:  "op /",
 	ast.EqOp:      eqOpName,
-	ast.GeOp:      "op >=",
-	ast.GtOp:      "op >",
-	ast.LeOp:      "op <=",
-	ast.LtOp:      "op <",
+	ast.GeOp:      opGe,
+	ast.GtOp:      opGt,
+	ast.LeOp:      opLe,
+	ast.LtOp:      opLt,
 	ast.MinusOp:   opMinus,
 	ast.ModOp:     opMod,
 	ast.NeOp:      "op <>",

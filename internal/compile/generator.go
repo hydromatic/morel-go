@@ -18,6 +18,7 @@
 package compile
 
 import (
+	"github.com/hydromatic/morel-go/internal/ast"
 	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/types"
 )
@@ -137,7 +138,276 @@ func maybeGenerator(sys *types.System, pat *core.IDPat,
 	if pointMatch != nil {
 		return pointGenerator(sys, pat, pointMatch)
 	}
+	return maybeRangeGenerator(sys, pat, constraints)
+}
+
+// bound is one side of a range a conjunct implies: its value, its
+// openness, and the conjunct it came from.
+type bound struct {
+	value  core.Exp
+	strict bool
+	source core.Exp
+}
+
+// maybeRangeGenerator inverts a pair of bound conjuncts — a lower
+// like "x > 3" and an upper like "x < 10" — into a generator that
+// enumerates the range between them. Both sides are required: a
+// one-sided bound generates nothing. Constant bounds are
+// preferred, since a variable bound makes the generator depend on
+// the variable's scan.
+func maybeRangeGenerator(sys *types.System, pat *core.IDPat,
+	constraints []core.Exp,
+) *generator {
+	if pat.T != sys.Int {
+		return nil
+	}
+	lo := findBound(sys, pat, constraints, true, true)
+	if lo == nil {
+		lo = findBound(sys, pat, constraints, true, false)
+	}
+	hi := findBound(sys, pat, constraints, false, true)
+	if hi == nil {
+		hi = findBound(sys, pat, constraints, false, false)
+	}
+	if lo == nil || hi == nil {
+		return nil
+	}
+	return rangeGenerator(sys, pat, lo, hi)
+}
+
+// findBound returns the first bound of the given side a conjunct
+// implies for the variable, optionally requiring a constant.
+func findBound(sys *types.System, pat *core.IDPat,
+	constraints []core.Exp, lower, constOnly bool,
+) *bound {
+	for _, c := range constraints {
+		lo, hi := conjunctBounds(sys, c, pat)
+		b := hi
+		if lower {
+			b = lo
+		}
+		if b == nil {
+			continue
+		}
+		if _, isConst := b.value.(*core.Literal); constOnly &&
+			!isConst {
+			continue
+		}
+		return b
+	}
 	return nil
+}
+
+// conjunctBounds returns the lower and upper bounds a conjunct
+// implies for the variable: a comparison with the variable on
+// either side, a comparison against the variable plus or minus a
+// literal offset (the bound shifts by the offset), or membership
+// in a one-sided range list.
+func conjunctBounds(sys *types.System, c core.Exp,
+	pat *core.IDPat,
+) (*bound, *bound) {
+	for _, form := range [...]struct {
+		op     string
+		strict bool
+		// less: the operator orders its left side below its right.
+		less bool
+	}{
+		{op: opLt, strict: true, less: true},
+		{op: opLe, less: true},
+		{op: opGt, strict: true},
+		{op: opGe},
+	} {
+		a, b := binaryCall(c, form.op)
+		if a == nil {
+			continue
+		}
+		// In "a < b", a bounds the variable from below when the
+		// right side is the variable (possibly offset by a
+		// literal), and b bounds it from above when the left side
+		// is exactly the variable; "a > b" mirrors. The offset
+		// form is recognized on the right side only.
+		var fromRight, fromLeft *bound
+		if v, ok := offsetRef(sys, b, pat); ok {
+			fromRight = &bound{
+				value: v(a), strict: form.strict, source: c,
+			}
+		} else if id, ok := a.(*core.ID); ok && id.Pat == pat {
+			fromLeft = &bound{
+				value: b, strict: form.strict, source: c,
+			}
+		}
+		if form.less {
+			return fromRight, fromLeft
+		}
+		return fromLeft, fromRight
+	}
+	return oneSidedElemBounds(c, pat)
+}
+
+// offsetRef matches the variable, or the variable plus or minus a
+// literal offset; it returns a function that shifts a bound
+// expression back by the offset.
+func offsetRef(sys *types.System, e core.Exp, pat *core.IDPat,
+) (func(core.Exp) core.Exp, bool) {
+	if id, ok := e.(*core.ID); ok && id.Pat == pat {
+		return func(b core.Exp) core.Exp { return b }, true
+	}
+	for _, op := range [...]string{opPlus, opMinus} {
+		a, b := binaryCall(e, op)
+		if a == nil {
+			continue
+		}
+		id, aIsID := a.(*core.ID)
+		lit, bIsLit := b.(*core.Literal)
+		if op == opPlus && !aIsID {
+			// "k + x" also matches; "k - x" does not.
+			if id2, ok := b.(*core.ID); ok {
+				if lit2, ok := a.(*core.Literal); ok {
+					id, lit = id2, lit2
+					aIsID, bIsLit = true, true
+				}
+			}
+		}
+		if !aIsID || !bIsLit || id.Pat != pat {
+			return nil, false
+		}
+		return func(bnd core.Exp) core.Exp {
+			// The bound on "x + k" is shifted: subtract for
+			// "+", add back for "-".
+			shift := opMinus
+			if op == opMinus {
+				shift = opPlus
+			}
+			return shiftExp(sys, bnd, shift, lit)
+		}, true
+	}
+	return nil, false
+}
+
+// shiftExp applies an arithmetic operator to a bound and a
+// literal offset.
+func shiftExp(sys *types.System, e core.Exp, op string,
+	lit *core.Literal,
+) core.Exp {
+	t := e.Type()
+	pairT := sys.Tuple(t, t)
+	return &core.Apply{
+		T: t,
+		Fn: &core.ID{Pat: &core.IDPat{
+			T:    sys.Fn(pairT, t),
+			Name: op,
+		}},
+		Arg: &core.Tuple{T: pairT, Args: []core.Exp{e, lit}},
+	}
+}
+
+// oneSidedElemBounds converts membership in a one-sided range
+// list ("x elem [3 ..]") to the bound it implies.
+func oneSidedElemBounds(c core.Exp, pat *core.IDPat,
+) (*bound, *bound) {
+	lhs, coll := binaryCall(c, elemName)
+	id, ok := lhs.(*core.ID)
+	if !ok || id.Pat != pat {
+		return nil, nil
+	}
+	rl, ok := coll.(*core.RangeList)
+	if !ok || len(rl.Items) != 1 {
+		return nil, nil
+	}
+	item := rl.Items[0]
+	// lint: sort until '^\t}' where '^\tcase '
+	switch item.Kind {
+	case ast.RangeAtLeast:
+		return &bound{value: item.Lo, source: c}, nil
+	case ast.RangeAtMost:
+		return nil, &bound{value: item.Hi, source: c}
+	case ast.RangeGreaterThan:
+		return &bound{value: item.Lo, strict: true, source: c}, nil
+	case ast.RangeLessThan:
+		return nil, &bound{value: item.Hi, strict: true, source: c}
+	default:
+		return nil, nil
+	}
+}
+
+// rangeCtorName is the range constructor for the bounds'
+// openness.
+func rangeCtorName(loStrict, hiStrict bool) string {
+	switch {
+	case loStrict && hiStrict:
+		return "OPEN"
+	case loStrict:
+		return "OPEN_CLOSED"
+	case hiStrict:
+		return "CLOSED_OPEN"
+	default:
+		return "CLOSED"
+	}
+}
+
+// rangeGenerator builds the generator enumerating the values
+// between two bounds: Bag.fromList (Range.flatten [CTOR (lo,
+// hi)]), with the constructor encoding each bound's openness.
+// Both source conjuncts are subsumed; other bound conjuncts on
+// the variable remain as filters.
+func rangeGenerator(sys *types.System, pat *core.IDPat,
+	lo, hi *bound,
+) *generator {
+	t := pat.T
+	ctorName := rangeCtorName(lo.strict, hi.strict)
+	tc, ok := sys.LookupTyCon(ctorName)
+	if !ok {
+		return nil
+	}
+	rangeT := sys.Named("range", t)
+	pairT := sys.Tuple(t, t)
+	ctorApply := &core.Apply{
+		T: rangeT,
+		Fn: &core.Con{
+			T:        sys.Fn(pairT, rangeT),
+			Datatype: "range",
+			Name:     ctorName,
+			Ordinal:  tc.Ordinal,
+			HasArg:   true,
+		},
+		Arg: &core.Tuple{
+			T: pairT, Args: []core.Exp{lo.value, hi.value},
+		},
+	}
+	listT := sys.List(t)
+	flatten := &core.Apply{
+		T: listT,
+		Fn: &core.ID{Pat: &core.IDPat{
+			T:    sys.Fn(sys.List(rangeT), listT),
+			Name: "Range.flatten",
+		}},
+		Arg: &core.List{
+			T:    sys.List(rangeT),
+			Args: []core.Exp{ctorApply},
+		},
+	}
+	bagT := sys.Named("bag", t)
+	exp := &core.Apply{
+		T: bagT,
+		Fn: &core.ID{Pat: &core.IDPat{
+			T:    sys.Fn(listT, bagT),
+			Name: "Bag.fromList",
+		}},
+		Arg: flatten,
+	}
+	return &generator{
+		exp: exp,
+		pat: pat,
+		freePats: append(freePatsOf(lo.value),
+			freePatsOf(hi.value)...),
+		card:   finite,
+		unique: true,
+		sealed: true,
+		provenance: map[core.Exp]bool{
+			lo.source: true,
+			hi.source: true,
+		},
+	}
 }
 
 // binaryCall decodes an application of a named top-level operator
@@ -199,8 +469,30 @@ const elemName = opElem
 // matchesElem reports whether the conjunct is a membership test
 // whose element side mentions the variable.
 func matchesElem(conjunct core.Exp, pat *core.IDPat) bool {
-	lhs, _ := binaryCall(conjunct, elemName)
-	return lhs != nil && containsRef(lhs, pat)
+	lhs, coll := binaryCall(conjunct, elemName)
+	return lhs != nil && containsRef(lhs, pat) &&
+		finiteCollection(coll)
+}
+
+// finiteCollection reports whether a collection expression is
+// finitely enumerable: any collection except a range list with an
+// unbounded item. Membership in a one-sided range list is a bound
+// (oneSidedElemBounds), not a scan.
+func finiteCollection(coll core.Exp) bool {
+	rl, ok := coll.(*core.RangeList)
+	if !ok {
+		return true
+	}
+	for _, item := range rl.Items {
+		switch item.Kind {
+		case ast.RangeAll, ast.RangeAtLeast, ast.RangeAtMost,
+			ast.RangeGreaterThan, ast.RangeLessThan:
+			return false
+		default:
+			// Point and the bounded intervals enumerate.
+		}
+	}
+	return true
 }
 
 // containsRef reports whether the expression mentions the
