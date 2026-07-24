@@ -169,6 +169,9 @@ fun isUnit v =
     UNIT => true
   | _ => false;
 > val isUnit = fn : variant -> bool
+
+isUnit UNIT;
+> val it = true : bool
 isUnit (INT 42);
 > val it = false : bool
 
@@ -178,6 +181,9 @@ fun getInt v =
     INT i => SOME i
   | _ => NONE;
 > val getInt = fn : variant -> int option
+
+getInt (INT 42);
+> val it = SOME 42 : int option
 getInt (STRING "hello");
 > val it = NONE : int option
 

@@ -43,21 +43,23 @@ type InlineEnv struct {
 // use sites: a binding used once, or bound to a variable or
 // literal, is substituted and its declaration dropped; an unused
 // binding is dropped outright; an application of a function
-// expression is beta-reduced to a let. Each pass re-analyzes the
+// expression is beta-reduced to a let; a case on a constant
+// reduces to its matching branch. Each pass re-analyzes the
 // declaration, and passes repeat (up to passCount) until a pass
 // changes nothing: beta-reduction introduces lets that only the
 // next pass can eliminate.
+//
+// When passCount is zero, one limited pass runs instead:
+// cross-statement inlining, beta-reduction, and singleton-case
+// substitution stay on, but bindings are not eliminated and
+// constant cases are not folded.
 func Inline(decl core.Decl, env *InlineEnv, passCount int,
 ) core.Decl {
-	for range max(passCount, 0) {
-		inl := &inliner{
-			analysis: analyze(decl),
-			env:      env,
-			subst:    map[*core.IDPat]core.Exp{},
-			minted:   map[*core.IDPat]bool{},
-		}
-		inl.exp = inl.visit
-		decl2 := inl.rewriteDecl(decl)
+	if passCount <= 0 {
+		return newPass(decl, env, true).rewriteDecl(decl)
+	}
+	for range passCount {
+		decl2 := newPass(decl, env, false).rewriteDecl(decl)
 		if decl2 == decl {
 			break
 		}
@@ -66,12 +68,27 @@ func Inline(decl core.Decl, env *InlineEnv, passCount int,
 	return decl
 }
 
+// newPass prepares one inlining pass over the declaration.
+func newPass(decl core.Decl, env *InlineEnv, limited bool,
+) *inliner {
+	inl := &inliner{
+		analysis: analyze(decl),
+		env:      env,
+		limited:  limited,
+		subst:    map[*core.IDPat]core.Exp{},
+		minted:   map[*core.IDPat]bool{},
+	}
+	inl.exp = inl.visit
+	return inl
+}
+
 // inliner performs one inlining pass.
 type inliner struct {
 	rewriter
 
 	analysis analysis
 	env      *InlineEnv
+	limited  bool
 	subst    map[*core.IDPat]core.Exp
 	// minted holds the patterns of expressions this pass copied
 	// in. They are declared in the tree but absent from the
@@ -108,16 +125,7 @@ func (inl *inliner) visit(e core.Exp) (core.Exp, bool) {
 		}
 		return &core.Apply{T: e.T, Fn: fn, Arg: arg, Span: e.Span}, true
 	case *core.Case:
-		// A singleton case whose pattern is a variable and whose
-		// scrutinee is atomic is a binding: substitute it.
-		if len(e.Matches) == 1 {
-			if pat, ok := e.Matches[0].Pat.(*core.IDPat); ok &&
-				isAtom(e.Exp) {
-				inl.subst[pat] = e.Exp
-				return inl.rewriteExp(e.Matches[0].Exp), true
-			}
-		}
-		return nil, false
+		return inl.visitCase(e), true
 	case *core.ID:
 		if exp, ok := inl.subst[e.Pat]; ok {
 			return inl.rewriteExp(exp), true
@@ -128,7 +136,7 @@ func (inl *inliner) visit(e core.Exp) (core.Exp, bool) {
 		return e, true
 	case *core.Let:
 		decl, ok := e.Decl.(*core.NonRecValDecl)
-		if !ok {
+		if !ok || inl.limited {
 			return nil, false
 		}
 		pat, ok := decl.Pat.(*core.IDPat)
@@ -146,6 +154,40 @@ func (inl *inliner) visit(e core.Exp) (core.Exp, bool) {
 		}
 	default:
 		return nil, false
+	}
+}
+
+// visitCase rewrites a case: a singleton case on an atomic
+// scrutinee substitutes its binding; a multi-branch case on a
+// constant reduces to its matching branch.
+func (inl *inliner) visitCase(e *core.Case) core.Exp {
+	scrut := inl.rewriteExp(e.Exp)
+	if len(e.Matches) == 1 {
+		if pat, ok := e.Matches[0].Pat.(*core.IDPat); ok &&
+			isAtom(scrut) {
+			inl.subst[pat] = scrut
+			return inl.rewriteExp(e.Matches[0].Exp)
+		}
+	}
+	if len(e.Matches) > 1 && !inl.limited {
+		if folded, ok := foldConstantCase(scrut, e); ok {
+			return inl.rewriteExp(folded)
+		}
+	}
+	matches := make([]core.Match, len(e.Matches))
+	changed := scrut != e.Exp
+	for i, m := range e.Matches {
+		matches[i] = m
+		matches[i].Exp = inl.rewriteExp(m.Exp)
+		if matches[i].Exp != m.Exp {
+			changed = true
+		}
+	}
+	if !changed {
+		return e
+	}
+	return &core.Case{
+		T: e.T, Exp: scrut, Matches: matches, Span: e.Span,
 	}
 }
 

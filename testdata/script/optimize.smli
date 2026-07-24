@@ -70,14 +70,20 @@ Sys.plan ();
 (*) Case on a constant matching a literal pattern.
 let val x = 2 in case x of 1 => "one" | 2 => "two" | _ => "large" end;
 > val it = "two" : string
+Sys.plan ();
+> val it = "constant(two)" : string
 
 (*) Case on a constant matching the first pattern.
 let val x = 1 in case x of 1 => "one" | 2 => "two" | _ => "large" end;
 > val it = "one" : string
+Sys.plan ();
+> val it = "constant(one)" : string
 
 (*) Case on a constant matching the wildcard pattern.
 let val x = 99 in case x of 1 => "one" | 2 => "two" | _ => "large" end;
 > val it = "large" : string
+Sys.plan ();
+> val it = "constant(large)" : string
 
 (*) Case on a constant with id pattern that binds the value.
 let val x = 5 in case x of y => y + 10 end;
@@ -88,22 +94,32 @@ Sys.plan ();
 (*) If-then-else with constant true condition.
 if true then "yes" else "no";
 > val it = "yes" : string
+Sys.plan ();
+> val it = "constant(yes)" : string
 
 (*) If-then-else with constant false condition.
 if false then "yes" else "no";
 > val it = "no" : string
+Sys.plan ();
+> val it = "constant(no)" : string
 
 (*) Boolean case.
 let val b = true in case b of true => 1 | false => 0 end;
 > val it = 1 : int
+Sys.plan ();
+> val it = "constant(1)" : string
 
 (*) String case.
 let val s = "hello" in case s of "hello" => 1 | "world" => 2 | _ => 3 end;
 > val it = 1 : int
+Sys.plan ();
+> val it = "constant(1)" : string
 
 (*) Char case.
 let val c = #"a" in case c of #"a" => 1 | #"b" => 2 | _ => 3 end;
 > val it = 1 : int
+Sys.plan ();
+> val it = "constant(1)" : string
 
 (*) Real case.
 let val r = 1.0 in case r of 0.0 => 0 | 1.0 => 1 | _ => 2 end;
