@@ -683,6 +683,10 @@ func (c *compiler) compileBody(exp core.Exp, tail bool) (eval.Code,
 func (c *compiler) compileApply(e *core.Apply, tail bool) (eval.Code,
 	error,
 ) {
+	code, ok, err := c.compileRangeMember(e)
+	if ok || err != nil {
+		return code, err
+	}
 	fn, err := c.compileExp(e.Fn)
 	if err != nil {
 		return nil, err
@@ -815,6 +819,17 @@ func (c *compiler) patCode(pat core.Pat) (eval.Pat, error) {
 func (c *compiler) compileRangeList(e *core.RangeList) (eval.Code,
 	error,
 ) {
+	items, err := c.compileRangeItems(e)
+	if err != nil {
+		return nil, err
+	}
+	return eval.RangeList(items), nil
+}
+
+// compileRangeItems compiles each range-list item's bound codes.
+func (c *compiler) compileRangeItems(e *core.RangeList) (
+	[]eval.RangeItem, error,
+) {
 	items := make([]eval.RangeItem, len(e.Items))
 	for i, item := range e.Items {
 		ri := eval.RangeItem{Kind: item.Kind}
@@ -834,7 +849,45 @@ func (c *compiler) compileRangeList(e *core.RangeList) (eval.Code,
 		}
 		items[i] = ri
 	}
-	return eval.RangeList(items), nil
+	return items, nil
+}
+
+// compileRangeMember compiles "x elem [ranges]" or "x notelem
+// [ranges]" to an interval-membership test, so a continuous or
+// unbounded range needs no enumeration. It reports false when the
+// application is not membership over a range-list literal.
+func (c *compiler) compileRangeMember(e *core.Apply) (eval.Code,
+	bool, error,
+) {
+	id, ok := e.Fn.(*core.ID)
+	if !ok {
+		return nil, false, nil
+	}
+	var negate bool
+	switch id.Pat.Name {
+	case opElem:
+	case opNotElem:
+		negate = true
+	default:
+		return nil, false, nil
+	}
+	tup, ok := e.Arg.(*core.Tuple)
+	if !ok || len(tup.Args) != 2 {
+		return nil, false, nil
+	}
+	rl, ok := tup.Args[1].(*core.RangeList)
+	if !ok {
+		return nil, false, nil
+	}
+	x, err := c.compileExp(tup.Args[0])
+	if err != nil {
+		return nil, false, err
+	}
+	items, err := c.compileRangeItems(rl)
+	if err != nil {
+		return nil, false, err
+	}
+	return eval.RangeMember(x, items, negate), true, nil
 }
 
 func (c *compiler) compileLet(let *core.Let, tail bool) (eval.Code,

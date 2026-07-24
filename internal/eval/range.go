@@ -143,6 +143,38 @@ func rangeToInterval(r Val) interval {
 	}
 }
 
+// rangeItemInterval converts a range-list item's kind and bounds to
+// bound form, parallel to rangeToInterval but from the compiled
+// item rather than a range value. lo and hi are the item's evaluated
+// bounds, nil where absent.
+func rangeItemInterval(kind ast.RangeKind, lo, hi Val) interval {
+	// lint: sort until '^	}' where '^	case '
+	switch kind {
+	case ast.RangeAll:
+		return interval{infBound, infBound}
+	case ast.RangeAtLeast:
+		return interval{closedBound(lo), infBound}
+	case ast.RangeAtMost:
+		return interval{infBound, closedBound(hi)}
+	case ast.RangeClosed:
+		return interval{closedBound(lo), closedBound(hi)}
+	case ast.RangeClosedOpen:
+		return interval{closedBound(lo), openBound(hi)}
+	case ast.RangeGreaterThan:
+		return interval{openBound(lo), infBound}
+	case ast.RangeLessThan:
+		return interval{infBound, openBound(hi)}
+	case ast.RangeOpen:
+		return interval{openBound(lo), openBound(hi)}
+	case ast.RangeOpenClosed:
+		return interval{openBound(lo), closedBound(hi)}
+	case ast.RangePoint:
+		return interval{closedBound(lo), closedBound(lo)}
+	default:
+		panic("unknown range kind")
+	}
+}
+
 // intervalToRange converts a bound-form interval back to the
 // tightest range constructor.
 func intervalToRange(iv interval) Val {
@@ -223,6 +255,18 @@ func succVal(v Val) (Val, bool) {
 		}
 	}
 	return nil, false
+}
+
+// isDiscrete reports whether a value has a successor, so a range
+// over it can be enumerated: int and char (int32) and bool. Real,
+// string, and word are not discrete.
+func isDiscrete(v Val) bool {
+	switch v.(type) {
+	case bool, int32:
+		return true
+	default:
+		return false
+	}
 }
 
 func predVal(v Val) (Val, bool) {
@@ -510,6 +554,50 @@ func (c *rangeListCode) Eval(f *Frame) (Val, error) {
 
 func (*rangeListCode) Describe() string { return "rangeList" }
 
+// RangeMember returns code for "x elem items" (or "x notelem items"
+// when negate is set): whether x lies in any of the range items,
+// tested by interval containment so a continuous or unbounded range
+// needs no enumeration.
+func RangeMember(x Code, items []RangeItem, negate bool) Code {
+	return &rangeMemberCode{x: x, items: items, negate: negate}
+}
+
+type rangeMemberCode struct {
+	x      Code
+	items  []RangeItem
+	negate bool
+}
+
+func (c *rangeMemberCode) Eval(f *Frame) (Val, error) {
+	x, err := c.x.Eval(f)
+	if err != nil {
+		return nil, err
+	}
+	found := false
+	for _, item := range c.items {
+		var lo, hi Val
+		if item.Lo != nil {
+			lo, err = item.Lo.Eval(f)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if item.Hi != nil {
+			hi, err = item.Hi.Eval(f)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if intervalContains(rangeItemInterval(item.Kind, lo, hi), x) {
+			found = true
+			break
+		}
+	}
+	return found != c.negate, nil
+}
+
+func (*rangeMemberCode) Describe() string { return "rangeMember" }
+
 // enumerateRangeItem enumerates one range-list item: a point is a
 // single value, a bounded interval is enumerated by successor, and
 // an unbounded form raises Size (it would produce an infinite
@@ -522,7 +610,13 @@ func enumerateRangeItem(kind ast.RangeKind, lo, hi Val) ([]Val,
 		return []Val{lo}, nil
 	case ast.RangeClosed, ast.RangeClosedOpen,
 		ast.RangeOpenClosed, ast.RangeOpen:
-		// A bounded interval, enumerated below.
+		// A bounded interval over a non-discrete element type (real
+		// or string) has no successor, so it cannot be enumerated and
+		// is effectively infinite -- raise Size. It is enumerated
+		// below only for a discrete type.
+		if !isDiscrete(lo) {
+			return nil, &MorelError{Exn: ExnSize}
+		}
 	default:
 		// ALL, AT_LEAST, AT_MOST, LESS_THAN, GREATER_THAN.
 		return nil, &MorelError{Exn: ExnSize}
