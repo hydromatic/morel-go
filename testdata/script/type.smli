@@ -1064,4 +1064,9 @@ type 'a pair = 'a * 'a;
 val p = (1, 2) : int pair;
 > val p = (1,2) : int * int
 
+(*) Applying an alias with the wrong number of arguments is an error.
+val w = [1] : my_list;
+> stdIn:1.15-1.22 Error: type constructor my_list given 0 arguments, wants 1
+>   raised at: stdIn:1.15-1.22
+
 (*) End type.smli

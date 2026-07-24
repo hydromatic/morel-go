@@ -536,10 +536,50 @@ func (r *typeResolver) astNamedTerm(t *ast.NamedType) (unify.Term,
 	if len(terms) == 0 && r.sys.Lookup(t.Name) != nil {
 		return r.u.Atom(t.Name), nil
 	}
+	// A known type constructor given the wrong number of arguments
+	// (e.g. "int pair" for a two-parameter alias) is an arity error,
+	// not an unbound constructor.
+	if expected, ok := r.typeConstructorArity(t.Name); ok {
+		return nil, &Error{
+			Span: t.Span(),
+			Msg: "type constructor " + t.Name + " given " +
+				strconv.Itoa(len(terms)) + " argument" +
+				plural(len(terms)) + ", wants " +
+				strconv.Itoa(expected),
+		}
+	}
 	return nil, &Error{
 		Span: t.Span(),
 		Msg:  "unbound type constructor: " + t.Name,
 	}
+}
+
+// typeConstructorArity returns the number of type arguments a named
+// type constructor expects, and whether the name is a known
+// constructor (an alias, datatype, the list or bag, or a nullary
+// type).
+func (r *typeResolver) typeConstructorArity(name string) (int, bool) {
+	if alias, ok := r.sys.LookupAlias(name); ok {
+		return len(alias.TyVars), true
+	}
+	if arity, ok := r.sys.DatatypeArity(name); ok {
+		return arity, true
+	}
+	if name == listTyCon || name == bagTyCon {
+		return 1, true
+	}
+	if r.sys.Lookup(name) != nil {
+		return 0, true
+	}
+	return 0, false
+}
+
+// plural is "s" unless n is 1, for pluralizing a count in a message.
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // aliasRecursive reports whether a type alias refers to itself,

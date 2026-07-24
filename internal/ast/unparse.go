@@ -269,9 +269,27 @@ func unparseDatatype(d *DatatypeDecl) string {
 func canonicalTyVars(tyVars []string) map[string]string {
 	m := make(map[string]string, len(tyVars))
 	for i, tv := range tyVars {
-		m[tv] = "'" + string(rune('a'+i))
+		m[tv] = tyVarName(i)
 	}
 	return m
+}
+
+// tyVarName is the i-th canonical type-variable name: 'a, 'b, ...,
+// 'z, 'ba, 'bb, ... -- base-26 with 'a' as 0, matching TypeVar.name
+// (so it does not run past 'z into non-letter bytes).
+func tyVarName(i int) string {
+	var b []byte
+	for {
+		b = append(b, byte('a'+i%26))
+		i /= 26
+		if i == 0 {
+			break
+		}
+	}
+	for l, r := 0, len(b)-1; l < r; l, r = l+1, r-1 {
+		b[l], b[r] = b[r], b[l]
+	}
+	return "'" + string(b)
 }
 
 // renameTyVars returns a copy of t with each type variable renamed

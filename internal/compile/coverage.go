@@ -341,6 +341,15 @@ func (c *coverageChecker) walkExp(exp core.Exp) {
 		for _, a := range e.Args {
 			c.walkExp(a)
 		}
+	case *core.RangeList:
+		for _, item := range e.Items {
+			if item.Lo != nil {
+				c.walkExp(item.Lo)
+			}
+			if item.Hi != nil {
+				c.walkExp(item.Hi)
+			}
+		}
 	case *core.Tuple:
 		for _, a := range e.Args {
 			c.walkExp(a)

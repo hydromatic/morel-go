@@ -39,7 +39,7 @@ sig
    *
    * Comparisons are based on the structure of the type `α`.
    * Primitive types are compared using their natural order;
-   * Option types compare with NONE last;
+   * Option types compare with NONE first;
    * Tuple types compare lexicographically;
    * Record types compare lexicographically, with the fields
    * compared in alphabetical order;
