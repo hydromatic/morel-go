@@ -294,4 +294,13 @@ val edges = [
 fun edge (x, y) = {x, y} elem edges;
 > val edge = fn : int * int -> bool
 
+fun path (x, y) =
+  edge (x, y)
+  orelse (exists z where path (x, z) andalso edge (z, y));
+> val path = fn : int * int -> bool
+
+(*) Char is a finite type (256 values), so the plan filters the extent directly.
+from c where c >= #"a" andalso c <= #"e" orelse c >= #"x" andalso c <= #"z";
+> val it = [#"a",#"b",#"c",#"d",#"e",#"x",#"y",#"z"] : char bag
+
 (*) End optimize.smli

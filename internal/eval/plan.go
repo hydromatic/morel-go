@@ -34,6 +34,8 @@ import (
 func PlanString(v Val) string {
 	// lint: sort until '^	}' where '^	case '
 	switch v := v.(type) {
+	case *RangeExtent:
+		return v.description()
 	case Con:
 		if v.Arg != nil {
 			return "[" + v.Name + ", " + PlanString(v.Arg) + "]"

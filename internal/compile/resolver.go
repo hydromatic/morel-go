@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hydromatic/morel-go/internal/eval"
 	"github.com/hydromatic/morel-go/internal/token"
 
 	"github.com/hydromatic/morel-go/internal/ast"
@@ -776,21 +777,29 @@ func (r *resolver) toThroughStep(cur *coreEnv, s *ast.ThroughStep,
 func (r *resolver) toScanStep(cur *coreEnv, s *ast.Scan) (
 	[]core.FromStep, *coreEnv, error,
 ) {
-	if s.Kind != ast.ScanIn {
-		return nil, nil, &Error{
-			Span: s.Span(),
-			Msg:  "cannot convert to core: " + s.Op().String(),
-		}
-	}
 	pat, err := r.toPat(s.Pat)
 	if err != nil {
 		return nil, nil, err
 	}
-	// The source is in the current scope, so a later scan may
-	// depend on an earlier scan's variables.
-	exp, err := r.toExp(cur, s.Exp)
-	if err != nil {
-		return nil, nil, err
+	var exp core.Exp
+	// lint: sort until '^\t}' where '^\tcase '
+	switch s.Kind {
+	case ast.ScanIn:
+		// The source is in the current scope, so a later scan may
+		// depend on an earlier scan's variables.
+		exp, err = r.toExp(cur, s.Exp)
+		if err != nil {
+			return nil, nil, err
+		}
+	case ast.ScanUnbounded:
+		// A sourceless scan iterates the extent of the pattern's
+		// type: all its values, restricted by nothing yet.
+		exp = r.extentExp(pat.Type(), s.Span())
+	default:
+		return nil, nil, &Error{
+			Span: s.Span(),
+			Msg:  "cannot convert to core: " + s.Op().String(),
+		}
 	}
 	steps := []core.FromStep{&core.Scan{Pat: pat, Exp: exp}}
 	for _, id := range core.PatIDs(pat) {
@@ -806,6 +815,31 @@ func (r *resolver) toScanStep(cur *coreEnv, s *ast.Scan) (
 		steps = append(steps, &core.Where{Exp: on})
 	}
 	return steps, cur, nil
+}
+
+// ExtentName is the name of the internal builtin that returns an
+// extent's values.
+const ExtentName = "$.extent"
+
+// extentExp builds the source of a sourceless scan: a call of the
+// internal extent builtin on the (materialized, if finite) extent
+// of the element type.
+func (r *resolver) extentExp(t types.Type, span token.Span,
+) core.Exp {
+	sys := r.typeMap.sys
+	bagT := sys.Named("bag", t)
+	extent := eval.NewRangeExtent(sys, t, nil)
+	return &core.Apply{
+		T: bagT,
+		Fn: &core.ID{Pat: &core.IDPat{
+			T:    sys.Fn(sys.Unit, bagT),
+			Name: ExtentName,
+		}},
+		Arg: &core.Literal{
+			Kind: ast.UnitLiteralOp, T: sys.Unit, Value: extent,
+		},
+		Span: span,
+	}
 }
 
 // toFn converts a function. A single rule that binds one name

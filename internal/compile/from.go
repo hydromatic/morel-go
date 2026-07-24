@@ -226,6 +226,11 @@ func (st *fromState) step(step ast.FromStep) error {
 			return err
 		}
 		st.ord = r.meetSourceOrd(st.ord, sourceOrd)
+		if s.Kind == ast.ScanUnbounded {
+			// Iterating all values of a type has no order, so an
+			// unbounded scan makes the whole query a bag.
+			st.ord = r.u.Atom(unorderedName)
+		}
 		st.fields = append(st.fields, newFields...)
 		st.curElem = nil
 		st.env = r.bindStep(st.rootEnv, st.fields, nil)
@@ -421,20 +426,24 @@ func (r *typeResolver) naryMeetOrderedness(ords []*unify.Var,
 // scalar scan). "pat in exp" iterates a collection, binding the
 // pattern to the element type and sharing the collection's
 // orderedness; "pat = exp" binds the pattern to the value of exp
-// and contributes no orderedness. A "join ... on" condition is a
-// boolean typed over the earlier fields and the pattern this scan
-// binds. An unbounded scan is not yet supported.
+// and contributes no orderedness. A sourceless scan iterates all
+// values of the pattern's type — inference against the later
+// steps decides what that is — and contributes no orderedness
+// here; the query itself becomes unordered. A "join ... on"
+// condition is a boolean typed over the earlier fields and the
+// pattern this scan binds.
 func (r *typeResolver) deduceScan(env typeEnv, scan *ast.Scan,
 ) ([]labelTerm, *unify.Var, error) {
-	if scan.Kind != ast.ScanIn && scan.Kind != ast.ScanEq {
-		return nil, nil, &Error{
-			Span: scan.Span(),
-			Msg:  "cannot deduce type for " + scan.Op().String(),
-		}
-	}
 	vElem := r.u.Variable()
 	var sourceOrd *unify.Var
-	if scan.Kind == ast.ScanIn {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch scan.Kind {
+	case ast.ScanEq:
+		err := r.deduceExp(env, scan.Exp, vElem)
+		if err != nil {
+			return nil, nil, err
+		}
+	case ast.ScanIn:
 		vColl := r.u.Variable()
 		err := r.deduceExp(env, scan.Exp, vColl)
 		if err != nil {
@@ -442,10 +451,12 @@ func (r *typeResolver) deduceScan(env typeEnv, scan *ast.Scan,
 		}
 		sourceOrd = r.u.Variable()
 		r.equiv(vColl, r.collectionTerm(vElem, sourceOrd))
-	} else {
-		err := r.deduceExp(env, scan.Exp, vElem)
-		if err != nil {
-			return nil, nil, err
+	case ast.ScanUnbounded:
+		// The pattern's type is free here.
+	default:
+		return nil, nil, &Error{
+			Span: scan.Span(),
+			Msg:  "cannot deduce type for " + scan.Op().String(),
 		}
 	}
 	var termMap []patTerm

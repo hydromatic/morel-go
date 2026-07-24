@@ -18,6 +18,7 @@
 package types
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
@@ -143,6 +144,34 @@ func (s *System) DeclareTyCon(name string, arg, result Type) {
 // datatype, or 0 if it is not a datatype.
 func (s *System) NumConstructors(datatype string) int {
 	return s.conCount[datatype]
+}
+
+// Constructor describes one constructor of a datatype: its name,
+// its declared argument type (nil for a constant constructor),
+// and its ordinal.
+type Constructor struct {
+	Arg     Type
+	Name    string
+	Ordinal int
+}
+
+// Constructors returns a datatype's constructors in name order,
+// or nil if the name is not a datatype.
+func (s *System) Constructors(datatype string) []Constructor {
+	var cons []Constructor
+	for name, tc := range s.tycons {
+		if datatypeName(tc.Result) == datatype {
+			cons = append(cons, Constructor{
+				Arg:     tc.Arg,
+				Name:    name,
+				Ordinal: tc.Ordinal,
+			})
+		}
+	}
+	slices.SortFunc(cons, func(a, b Constructor) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return cons
 }
 
 // datatypeName is the name a datatype's constructors are counted

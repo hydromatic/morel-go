@@ -158,6 +158,8 @@ func NewKernel(name string) *Kernel {
 	// The Sys implementations read and write session state, so
 	// the kernel supplies them.
 	maps.Copy(values, k.sysBuiltins())
+	// The internal extent builtin backs sourceless query scans.
+	values[compile.ExtentName] = eval.Fn(eval.ExtentValues)
 	// Build the structure records first, so that a structure defined
 	// in embedded Morel source can reference any other structure;
 	// then evaluate those sources and rebuild, wiring in the
