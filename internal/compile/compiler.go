@@ -145,16 +145,7 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch e := exp.(type) {
 	case *core.Apply:
-		fn, err := c.compileExp(e.Fn)
-		if err != nil {
-			return nil, err
-		}
-		arg, err := c.compileExp(e.Arg)
-		if err != nil {
-			return nil, err
-		}
-		name, arity, curried := c.builtinFnInfo(e.Fn, fn)
-		return eval.Apply(fn, arg, e.Span, name, arity, curried), nil
+		return c.compileApply(e)
 	case *core.Case:
 		return c.compileCase(e)
 	case *core.Con:
@@ -674,6 +665,20 @@ func (c *compiler) compileFn(fn *core.Fn) (eval.Code, error) {
 	}
 	return eval.MakeClosure(param, fn.IDPat.Name, body,
 		inner.captures, inner.nSlots), nil
+}
+
+// compileApply compiles a function application.
+func (c *compiler) compileApply(e *core.Apply) (eval.Code, error) {
+	fn, err := c.compileExp(e.Fn)
+	if err != nil {
+		return nil, err
+	}
+	arg, err := c.compileExp(e.Arg)
+	if err != nil {
+		return nil, err
+	}
+	name, arity, curried := c.builtinFnInfo(e.Fn, fn)
+	return eval.Apply(fn, arg, e.Span, name, arity, curried), nil
 }
 
 func (c *compiler) compileCase(caseExp *core.Case) (eval.Code,
