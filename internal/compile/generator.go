@@ -113,34 +113,72 @@ func extentGenerator(scan *core.Scan) *generator {
 	}
 }
 
-// maybePointGenerator inverts an equality conjunct "x = e" or
-// "e = x" into a generator producing the single value of e. The
-// constrained side must be exactly the variable, and e's free
-// variables become the generator's dependencies.
-func maybePointGenerator(sys *types.System, pat *core.IDPat,
-	conjunct core.Exp,
+// maybeGenerator deduces a generator for a variable from the
+// constraints accumulated so far, trying predicate classes in
+// priority order: the first membership conjunct mentioning the
+// variable, else the first equality on it.
+func maybeGenerator(sys *types.System, pat *core.IDPat,
+	constraints []core.Exp,
 ) *generator {
-	apply, ok := conjunct.(*core.Apply)
+	var elemMatch, pointMatch core.Exp
+	for _, c := range constraints {
+		if elemMatch == nil && matchesElem(c, pat) {
+			elemMatch = c
+		}
+		if pointMatch == nil && pointValue(c, pat) != nil {
+			pointMatch = c
+		}
+	}
+	if elemMatch != nil {
+		if g := collectionGenerator(elemMatch); g != nil {
+			return g
+		}
+	}
+	if pointMatch != nil {
+		return pointGenerator(sys, pat, pointMatch)
+	}
+	return nil
+}
+
+// binaryCall decodes an application of a named top-level operator
+// to a pair, returning the two operands.
+func binaryCall(e core.Exp, name string) (core.Exp, core.Exp) {
+	apply, ok := e.(*core.Apply)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	fn, ok := apply.Fn.(*core.ID)
-	if !ok || fn.Pat.Name != eqOpName {
-		return nil
+	if !ok || fn.Pat.Name != name {
+		return nil, nil
 	}
 	tuple, ok := apply.Arg.(*core.Tuple)
 	if !ok || len(tuple.Args) != 2 {
-		return nil
+		return nil, nil
 	}
-	var point core.Exp
-	if id, ok := tuple.Args[0].(*core.ID); ok && id.Pat == pat {
-		point = tuple.Args[1]
-	} else if id, ok := tuple.Args[1].(*core.ID); ok &&
-		id.Pat == pat {
-		point = tuple.Args[0]
-	} else {
-		return nil
+	return tuple.Args[0], tuple.Args[1]
+}
+
+// pointValue returns the expression an equality conjunct pins the
+// variable to, or nil. The constrained side must be exactly the
+// variable.
+func pointValue(conjunct core.Exp, pat *core.IDPat) core.Exp {
+	a, b := binaryCall(conjunct, eqOpName)
+	if id, ok := a.(*core.ID); ok && id.Pat == pat {
+		return b
 	}
+	if id, ok := b.(*core.ID); ok && id.Pat == pat {
+		return a
+	}
+	return nil
+}
+
+// pointGenerator inverts an equality conjunct "x = e" or "e = x"
+// into a generator producing the single value of e; e's free
+// variables become the generator's dependencies.
+func pointGenerator(sys *types.System, pat *core.IDPat,
+	conjunct core.Exp,
+) *generator {
+	point := pointValue(conjunct, pat)
 	return &generator{
 		exp: &core.List{
 			T:    sys.Named("bag", pat.T),
@@ -152,6 +190,84 @@ func maybePointGenerator(sys *types.System, pat *core.IDPat,
 		unique:     true,
 		sealed:     true,
 		provenance: map[core.Exp]bool{conjunct: true},
+	}
+}
+
+// elemName is the top-level binding of the membership operator.
+const elemName = opElem
+
+// matchesElem reports whether the conjunct is a membership test
+// whose element side mentions the variable.
+func matchesElem(conjunct core.Exp, pat *core.IDPat) bool {
+	lhs, _ := binaryCall(conjunct, elemName)
+	return lhs != nil && containsRef(lhs, pat)
+}
+
+// containsRef reports whether the expression mentions the
+// variable: it is the variable itself, or a tuple with the
+// variable somewhere within.
+func containsRef(e core.Exp, pat *core.IDPat) bool {
+	switch e := e.(type) {
+	case *core.ID:
+		return e.Pat == pat
+	case *core.Tuple:
+		for _, arg := range e.Args {
+			if containsRef(arg, pat) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// collectionGenerator inverts a membership conjunct "x elem coll"
+// into a generator scanning coll. The element side may be a tuple
+// of variables and literals: the scan's pattern then grounds
+// every variable at once, its literals filtering the rows. The
+// collection's free variables become dependencies. The collection
+// is scanned as-is — duplicates are deliberately kept.
+func collectionGenerator(conjunct core.Exp) *generator {
+	lhs, coll := binaryCall(conjunct, elemName)
+	pat, ok := patForExp(lhs)
+	if !ok {
+		return nil
+	}
+	return &generator{
+		exp:        coll,
+		pat:        pat,
+		freePats:   freePatsOf(coll),
+		card:       finite,
+		unique:     true,
+		sealed:     true,
+		provenance: map[core.Exp]bool{conjunct: true},
+	}
+}
+
+// patForExp converts a membership conjunct's element side to the
+// pattern its scan binds: a variable to its pattern, a tuple to a
+// tuple of converted components, and a literal to a literal
+// pattern (a filter).
+func patForExp(e core.Exp) (core.Pat, bool) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch e := e.(type) {
+	case *core.ID:
+		return e.Pat, true
+	case *core.Literal:
+		return &core.LiteralPat{
+			T: e.T, Kind: e.Kind, Value: e.Value,
+		}, true
+	case *core.Tuple:
+		args := make([]core.Pat, len(e.Args))
+		for i, arg := range e.Args {
+			p, ok := patForExp(arg)
+			if !ok {
+				return nil, false
+			}
+			args[i] = p
+		}
+		return &core.TuplePat{T: e.T, Args: args}, true
+	default:
+		return nil, false
 	}
 }
 

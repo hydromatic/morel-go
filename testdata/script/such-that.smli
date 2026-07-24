@@ -1,0 +1,979 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Tests for queries with unbounded variables (also called 'domain
+ * variables' because they range over a domain such as integers
+ * or positive integers). Queries with unbounded variables are made
+ * runnable using a technique called 'predicate inversion'.
+ *
+ * Originally, such queries used a 'suchthat' keyword, but that
+ * keyword has since been removed.
+ *)
+Sys.set ("output", "tabular");
+> val it = () : unit
+Sys.set ("stringDepth", ~1);
+> val it = () : unit
+
+from i where i = 0;
+> val it = [0] : int bag
+
+from s where s = "abc";
+> val it = ["abc"] : string bag
+
+(* -- elem -------------------------------------------------------- *)
+let
+  val nums = [1, 2, 3, 4, 5]
+in
+  from n where n elem nums
+end;
+> val it = [1,2,3,4,5] : int bag
+
+(* 'elem' over a finite range grounds the variable. ('j elem [1 .. 3]'
+   desugars to 'Range.contains', which is recognized as a finite
+   generator.) *)
+from j where j elem [1 .. 3];
+> val it = [1,2,3] : int bag
+
+(*) 'elem' over a range whose bounds depend on an earlier variable.
+from i, j where i elem [1, 2] andalso j elem [i + 1 .. i + 2];
+> i j
+> - -
+> 1 2
+> 1 3
+> 2 3
+> 2 4
+>
+> val it : {i:int, j:int} bag
+
+(*) Collection inversion of "elem".
+from x where x elem [1,2,3] andalso x > 1;
+> val it = [2,3] : int bag
+from x where x elem [1,2,2,3];
+> val it = [1,2,2,3] : int bag
+from y where y elem [1,2] andalso y elem [2,3];
+> val it = [2] : int bag
+
+(* -- andalso becomes join ---------------------------------------- *)
+val nums = [1, 2, 3, 4, 5];
+> val nums = [1,2,3,4,5] : int list
+
+fun isNum n = n elem nums;
+> val isNum = fn : int -> bool
+
+fun isEven n = n mod 2 = 0;
+> val isEven = fn : int -> bool
+
+from n where isNum n andalso isEven n;
+> val it = [2,4] : int bag
+
+(*) Case
+from x where case x of y => y elem [1,2];
+> val it = [1,2] : int bag
+
+(*) Simple boolean inversion: 'not b' generates false
+from b where not b;
+> val it = [false] : bool bag
+
+(* Predicate cannot be inverted.
+ *
+ * With symbolic math we could deduce that the solution is [~2,3],
+ * but we don't have symbolic math. *)
+from x where (x + 2) * (x - 3) = 0;
+> stdIn:1.6 Error: pattern 'x' is not grounded
+>   raised at: stdIn:1.6
+
+(* -- elem patterns ----------------------------------------------- *)
+
+(*) Pattern
+from x, y where (x, y) elem [(1,true),(2,false)];
+> x y
+> - -----
+> 1 true
+> 2 false
+>
+> val it : {x:int, y:bool} bag
+
+(*) A tuple elem grounds all its variables.
+from x, y where (x, y) elem [(1,10),(2,20)];
+> x y
+> - --
+> 1 10
+> 2 20
+>
+> val it : {x:int, y:int} bag
+from x where (x, 20) elem [(1,10),(2,20)];
+> val it = [2] : int bag
+
+(*) A bound variable joins in a projected scan.
+from x in [1,2,3], y where (x, y) elem [(1,10),(2,20)];
+> x y
+> - --
+> 1 10
+> 2 20
+>
+> val it : {x:int, y:int} bag
+from x in [1,2], y where y elem [x, x+1];
+> x y
+> - -
+> 1 1
+> 1 2
+> 2 2
+> 2 3
+>
+> val it : {x:int, y:int} bag
+
+(*) Reversed pattern
+from x, y where (y, x) elem [(1,true),(2,false)];
+> x     y
+> ----- -
+> true  1
+> false 2
+>
+> val it : {x:bool, y:int} bag
+
+(*) Record pattern
+from x, y where {y, x} elem [{y=1,x=true},{y=2,x=false}];
+> x     y
+> ----- -
+> true  1
+> false 2
+>
+> val it : {x:bool, y:int} bag
+
+from x where (x, "b") elem [(1,"a"),(2,"b")];
+> val it = [2] : int bag
+
+from x where (1, x) elem [(1,"a"),(2,"b")];
+> val it = ["a"] : string bag
+
+from x where (1, x, true) elem [(1,"a",false),(2,"b",true),(1,"c",true)];
+> val it = ["c"] : string bag
+
+(* -- orelse becomes union ---------------------------------------- *)
+fun isSmall n = n elem [1, 2];
+> val isSmall = fn : int -> bool
+
+fun isLarge n = n elem [10, 20];
+> val isLarge = fn : int -> bool
+
+(* -- Predicate inversion ----------------------------------------- *)
+
+(* 1. Simple elem
+ *
+ * Invert 'from x where x elem list' to 'from x in list'. *)
+from x where x elem [1, 2, 4];
+> val it = [1,2,4] : int bag
+
+from x where x = 3 andalso x < 10;
+> val it = [3] : int bag
+
+from x where x = 3 andalso x > 10;
+> val it = [] : int bag
+
+from b where b > false;
+> val it = [true] : bool bag
+
+from b where b > false andalso true;
+> val it = [true] : bool bag
+
+from b where b > false andalso false;
+> val it = [] : bool bag
+
+(* Unbounded variables with `take` and other clauses -------------- *)
+
+(*) A dependent point orders after its dependency.
+from x, y where x = 1 andalso y = x + 1;
+> x y
+> - -
+> 1 2
+>
+> val it : {x:int, y:int} bag
+
+(*) An unused unbounded variable is dropped.
+exists w, x where x = 3;
+> val it = true : bool
+
+(*) Equivalent to previous, using range-list syntax.
+from i in [0..100]
+  where i mod 6 <> 0
+  yield {i, odd = i mod 2 = 1}
+  group odd compute count over ()
+  order odd;
+> count odd
+> ----- -----
+>    34 false
+>    50 true
+>
+> val it : {count:int, odd:bool} list
+
+exists i in [0..100];
+> val it = true : bool
+
+exists i in [40..50]
+  where i mod 17 = 0;
+> val it = false : bool
+
+forall i in [40..^50]
+  require i + 100 < 155;
+> val it = true : bool
+
+exists x, y
+  where (x, y) elem [(1, 2), (1, 3), (4, 3)];
+> val it = true : bool
+
+exists x
+  where (x, 2) elem [(1, 2), (1, 3), (4, 3)];
+> val it = true : bool
+
+exists x
+  where (x, 0) elem [(1, 2), (1, 3), (4, 3)];
+> val it = false : bool
+
+(*) w, y unused
+exists w, x, y
+  where (x, 2) elem [(1, 2), (1, 3), (4, 3)];
+> val it = true : bool
+
+exists w, x, y
+  where (x, 0) elem [(1, 2), (1, 3), (4, 3)];
+> val it = false : bool
+
+exists w, x where x = 3;
+> val it = true : bool
+
+exists w, x where x = 3 andalso x < 10;
+> val it = true : bool
+
+exists w, x where x = 3 andalso x > 10;
+> val it = false : bool
+
+(*) 'on' in 'from'
+from i in [1, 2, 3],
+  j in [2, 3, 4] on j = i;
+> i j
+> - -
+> 2 2
+> 3 3
+>
+> val it : {i:int, j:int} list
+
+from a in [1, 2],
+    b in [3, 4, 5] on a + b = 6
+where b < 5
+join c in [6, 7] on b + c = 10,
+    d in [7, 8];
+> a b c d
+> - - - -
+> 2 4 6 7
+> 2 4 6 8
+>
+> val it : {a:int, b:int, c:int, d:int} list
+
+from dno, name, loc
+where {deptno = dno, dname = name, loc} elem scott.depts
+  andalso dno > 20;
+> dno loc     name
+> --- ------- ----------
+>  30 CHICAGO SALES
+>  40 BOSTON  OPERATIONS
+>
+> val it : {dno:int, loc:string, name:string} bag
+
+(*) As previous but with a literal in the record.
+from dno, name
+where {deptno = dno, dname = name, loc = "CHICAGO"} elem scott.depts
+  andalso dno > 20;
+> dno name
+> --- -----
+>  30 SALES
+>
+> val it : {dno:int, name:string} bag
+
+(*) Equivalent to previous, splitting 'where'
+from dno, name
+where {deptno = dno, dname = name, loc = "CHICAGO"} elem scott.depts
+where dno > 20;
+> dno name
+> --- -----
+>  30 SALES
+>
+> val it : {dno:int, name:string} bag
+
+(*) Variables 'dno', 'name' are infinite until constrained by conditions.
+from v, dno, name
+where v elem scott.depts
+where v.deptno = dno
+where name = v.dname
+where v.loc = "CHICAGO"
+yield {dno, name = #dname v};
+> dno name
+> --- -----
+>  30 SALES
+>
+> val it : {dno:int, name:string} bag
+
+(* Forward references are required. 'dno' is infinite until we see the
+ * condition 'v.deptno = dno', and at that point we haven't declared
+ * 'v'. So we defer 'dno' until after 'v'. *)
+from dno, name, v
+where v elem scott.depts
+where v.deptno = dno
+where name = v.dname
+where v.loc = "CHICAGO"
+yield {dno = #deptno v, name = #dname v};
+> dno name
+> --- -----
+>  30 SALES
+>
+> val it : {dno:int, name:string} bag
+
+(*) An extra condition on 'dno' yields empty result.
+from dno, name, v
+where v elem scott.depts
+where v.deptno = dno
+where name = v.dname
+where v.loc = "CHICAGO"
+where dno = 20
+yield {dno = #deptno v, name = #dname v};
+> dno name
+> --- ----
+>
+> val it : {dno:int, name:string} bag
+
+(*) Inequality on 'dno'
+from dno, name, v
+where v elem scott.depts
+where v.deptno = dno
+where name = v.dname
+where v.loc = "CHICAGO"
+where dno > 20
+yield {dno = #deptno v, name = #dname v};
+> dno name
+> --- -----
+>  30 SALES
+>
+> val it : {dno:int, name:string} bag
+
+(*) Finite-type extent materialization.
+from b where b orelse not b;
+> val it = [false,true] : bool bag
+
+(*) Datatype extent, constructors in name order.
+from ob where Option.getOpt (ob, false) orelse true;
+> val it = [NONE,SOME false,SOME true] : bool option bag
+
+(*) A quantifier over a finite extent.
+exists b where b;
+> val it = true : bool
+
+(*) We can iterate over a finite datatype
+from i
+where Option.getOpt i;
+> 1    2
+> ---- -----
+>      true
+> true false
+> true true
+>
+> val it : (bool option * bool) bag
+
+(*) If the expression is 'elem set' we can deduce the extent.
+from e
+  where (e elem scott.emps)
+  where e.deptno = 20
+  yield e.ename;
+> val it = ["SMITH","JONES","SCOTT","ADAMS","FORD"] : string bag
+
+(*) A function that finds its data internally.
+let
+  fun isEmp e =
+    e elem scott.emps
+in
+  from e
+    where isEmp e
+    where e.deptno = 20
+    yield e.ename
+end;
+> val it = ["SMITH","JONES","SCOTT","ADAMS","FORD"] : string bag
+
+(*) As above, using 'andalso' rather than 'where'
+let
+  fun isEmp e =
+    e elem scott.emps
+in
+  from e
+    where isEmp e andalso e.deptno = 20
+    yield e.ename
+end;
+> val it = ["SMITH","JONES","SCOTT","ADAMS","FORD"] : string bag
+
+(*) As previous, but 'fun' followed by 'from' without using 'let'
+fun isEmp e =
+  e elem scott.emps;
+> val isEmp = fn
+>   : {comm:real, deptno:int, empno:int, ename:string, hiredate:string,
+>       job:string, mgr:int, sal:real}
+>      -> bool
+from e
+  where isEmp e andalso e.deptno = 20
+  yield e.ename;
+> val it = ["SMITH","JONES","SCOTT","ADAMS","FORD"] : string bag
+
+(*) Similar to 'isEmp' but with a conjunctive condition.
+fun isClerk e =
+  e elem scott.emps andalso e.job = "CLERK";
+> val isClerk = fn
+>   : {comm:real, deptno:int, empno:int, ename:string, hiredate:string,
+>       job:string, mgr:int, sal:real}
+>      -> bool
+from e
+  where isClerk e andalso e.deptno = 20
+  yield e.ename;
+> val it = ["SMITH","ADAMS"] : string bag
+
+(*) A disjunctive condition prevents the extent.
+let
+  fun isEmp50 e =
+    e elem scott.emps orelse e.deptno = 50
+in
+  from e
+    where isEmp50 e
+    yield e.ename
+end;
+> stdIn:5.8 Error: pattern 'e' is not grounded
+>   raised at: stdIn:5.8
+
+(* A string function with external extent.
+ * Given s2, we could generate finite s1. *)
+fun isPrefix (s1, s2) =
+  String.isPrefix s1 s2;
+> val isPrefix = fn : string * string -> bool
+
+(* Invert a function that tests membership of table --------------- *)
+
+fun isClerk e =
+  e elem scott.emps andalso e.job = "CLERK";
+> val isClerk = fn
+>   : {comm:real, deptno:int, empno:int, ename:string, hiredate:string,
+>       job:string, mgr:int, sal:real}
+>      -> bool
+
+let
+  fun enumerate predicate =
+    from r where predicate r
+in
+  enumerate isClerk
+end;
+> comm deptno empno ename  hiredate   job   mgr  sal
+> ---- ------ ----- ------ ---------- ----- ---- ----
+>    0     20  7369 SMITH  1980-12-17 CLERK 7902  800
+>    0     20  7876 ADAMS  1987-05-23 CLERK 7788 1100
+>    0     30  7900 JAMES  1981-12-03 CLERK 7698  950
+>    0     10  7934 MILLER 1982-01-23 CLERK 7782 1300
+>
+> val it : {comm:real, deptno:int, empno:int, ename:string, hiredate:string, job:string, mgr:int, sal:real} bag
+
+(* -------------------------------------------------------------------
+ * The following example is from Souffle,
+ * https://souffle-lang.github.io/simple.
+ *
+ * Say we have a Datalog file example.dl, whose contents are as shown:
+ *
+ *   .decl edge(x:number, y:number)
+ *   .input edge
+ *
+ *   .decl path(x:number, y:number)
+ *   .output path
+ *
+ *   path(x, y) :- edge(x, y).
+ *   path(x, y) :- path(x, z), edge(z, y).
+ *
+ * We see that edge is a .input relation, and so will be read from disk. Also,
+ * path is a .output relation, and so will be written to disk.
+ *
+ * The last two lines say that 1) "there is a path from x to y if there is an
+ * edge from x to y", and 2) "there is a path from x to y if there is a path
+ * from x to some z, and there is an edge from that z to y".
+ *
+ * So if the input edge relation is pairs of vertices in a graph, by these two
+ * rules the output path relation will give us all pairs of vertices x and y for
+ * which a path exists in that graph from x to y.
+ *
+ * For instance, if the contents of the tab-separated input file edge.facts is
+ *
+ *   1  2
+ *   2  3
+ *
+ * The contents of the output file path.csv, after we evaluate this program,
+ * will be
+ *
+ *   1  2
+ *   2  3
+ *   1  3
+ *)
+val edges = [
+ {x = 1, y = 2},
+ {x = 2, y = 3}];
+> x y
+> - -
+> 1 2
+> 2 3
+>
+> val edges : {x:int, y:int} list
+
+fun edge (x, y) = {x, y} elem edges;
+> val edge = fn : int * int -> bool
+fun path (x, y) =
+  edge (x, y)
+  orelse (exists z where path (x, z) andalso edge (z, y));
+> val path = fn : int * int -> bool
+
+(* More edges *)
+(*
+   1 --> 4 ----+
+   |     |     |
+   |     v     v
+   +---> 2 --> 3
+*)
+val edges = [(1, 2), (2, 3), (1, 4), (4, 2), (4, 3)];
+> 1 2
+> - -
+> 1 2
+> 2 3
+> 1 4
+> 4 2
+> 4 3
+>
+> val edges : (int * int) list
+
+fun edge (x, y) = (x, y) elem edges;
+> val edge = fn : int * int -> bool
+
+(* Safety ------------------------------------------------------------
+ * A rule is safe if:
+ * 1. Each distinguished variable,
+ * 2. Each variable in an arithmetic subgoal, and
+ * 3. Each variable in a negated subgoal,
+ *
+ * also appears in a non-negated, relational sub-goal.
+ *
+ * Each of the following is unsafe and not allowed:
+ *
+ * 1. S(x) <- R(y)
+ * 2. S(x) <- R(y) AND NOT R(x)
+ * 3. S(x) <- R(y) AND x < y
+ *
+ * In each case, an infinite number of values of x can satisfy the
+ * rule, even if R is a finite relation.
+ *
+ * If rules are safe, we can use the following evaluation approach:
+ * For each subgoal, consider all tuples that make the subgoal true.
+ * If a selection of tuples define a single value for each variable,
+ * then add the head to the result.
+ *
+ * Leads to finite search for P(x) <- Q(x), but P(x) <- Q(y) is
+ * problematic.
+ *)
+fun isR y = true;
+> val isR = fn : 'a -> bool
+(* TODO
+fun isS1 x = exists y where isR y;
+> val isS1 = fn : 'a -> bool
+*)
+
+(*) isS1 is unsafe
+(* TODO should throw unsafe
+from x where isS1 x;
+> Unsafe
+*)
+
+(*
+fun isS2 x = exists (from y where isR y andalso not (isR x));
+*)
+
+(*) isS2 is unsafe
+(* TODO should throw unsafe
+from x where isS2 x;
+> Unsafe
+*)
+
+(*
+fun isS3 x = exists (from y where isR y andalso x < y);
+*)
+
+(*) isS3 is unsafe
+(* TODO should throw unsafe
+from x where isS3 x;
+> Unsafe
+*)
+
+(* Ungrounded tuple-pattern call. The body of `tuPair` places no
+ * constraint on its arguments, so neither component of `p` can
+ * be grounded. morel-java reports `pattern 'p' is not grounded`;
+ * `destructure_tuple_extents_for_fn_calls` splits `p` into
+ * `p__1, p__2` before this point, so morel-rust reports the
+ * same shape using the destructured component name. *)
+fun tuPair (a, b) = true;
+> val tuPair = fn : 'a * 'b -> bool
+from p where tuPair p;
+> stdIn:1.6 Error: pattern 'p' is not grounded
+>   raised at: stdIn:1.6
+from x, y where tuPair (x, y);
+> stdIn:1.6 Error: pattern 'x' is not grounded
+>   raised at: stdIn:1.6
+
+(* Joe's bar ---------------------------------------------------------
+ *
+ * See http://infolab.stanford.edu/~ullman/fcdb/aut07/slides/dlog.pdf.
+ *)
+
+val barPatrons = [
+  {bar = "squirrel", patron = "shaggy"},
+  {bar = "cask", patron = "fred"},
+  {bar = "cask", patron = "scooby"},
+  {bar = "cask", patron = "shaggy"},
+  {bar = "cask", patron = "velma"}];
+> bar      patron
+> -------- ------
+> squirrel shaggy
+> cask     fred
+> cask     scooby
+> cask     shaggy
+> cask     velma
+>
+> val barPatrons : {bar:string, patron:string} list
+
+val barBeers = [
+  {bar =  "squirrel", beer =  "ipa", price =  2},
+  {bar =  "squirrel", beer =  "pale", price =  2},
+  {bar =  "squirrel", beer =  "amber", price =  3},
+  {bar =  "cask", beer =  "stout", price =  4},
+  {bar =  "cask", beer =  "ipa", price =  5},
+  {bar =  "big_al", beer =  "pale", price =  1}];
+> bar      beer  price
+> -------- ----- -----
+> squirrel ipa       2
+> squirrel pale      2
+> squirrel amber     3
+> cask     stout     4
+> cask     ipa       5
+> big_al   pale      1
+>
+> val barBeers : {bar:string, beer:string, price:int} list
+
+val patronBeers = [
+  {patron =  "shaggy", beer = "amber"},
+  {patron =  "fred", beer = "amber"},
+  {patron =  "velma", beer = "stout"}];
+> beer  patron
+> ----- ------
+> amber shaggy
+> amber fred
+> stout velma
+>
+> val patronBeers : {beer:string, patron:string} list
+
+fun frequents (patron, bar) =
+  {patron, bar} elem barPatrons;
+> val frequents = fn : string * string -> bool
+fun likes (patron, beer) =
+  {patron, beer} elem patronBeers;
+> val likes = fn : string * string -> bool
+fun sells (bar, beer, price) =
+  {bar, beer, price} elem barBeers;
+> val sells = fn : string * string * int -> bool
+
+(* Family relationships ----------------------------------------------
+ *
+ * Datalog:
+ *   Sib(x,y) <- Par(x,p) AND Par(y,p) AND x<>y
+ *   Cousin(x,y) <- Sib(x,y)
+ *   Cousin(x,y) <- Par(x,xp) AND Par(y,yp) AND Cousin(xp,yp)
+ *
+ * The data:
+ *         a       d       h
+ *       /   \   /   \    /
+ *      b      c      e  /
+ *      |     /       | /
+ *      f    g        i
+ *    /   \ /
+ *   j     k
+ *
+ * Siblings: {b, c}, {c, e}, {j, k}
+ *)
+fun par (x, p) =
+  (p, x) elem [
+    ("a", "b"),
+    ("a", "c"),
+    ("d", "c"),
+    ("d", "e"),
+    ("b", "f"),
+    ("c", "g"),
+    ("e", "i"),
+    ("f", "j"),
+    ("f", "k"),
+    ("g", "k"),
+    ("h", "i")];
+> val par = fn : string * string -> bool
+
+(* TODO
+from p where cousin2 p;
+> Error: non-stratified
+*)
+
+(* -------------------------------------------------------------------
+ * Coloring Australia using three colors.
+ * (From "Basic Modelling in MiniZinc".)
+ *
+ * Australia has six federated states (New South Wales, Queensland,
+ * South Australia, Tasmania, Victoria, and Western Australia) and
+ * Northern Territories. Bordering states/territories must not be the
+ * same color.
+ *
+ *                   _,__        .:
+ *           Darwin <*  /        | \
+ *              .-./     |.     :  :,
+ *             /  |        |-._/     \_
+ *            /   |   NT   |   '       \
+ *          .'    |        |      Q    *: Brisbane
+ *       .-'      |________|___.         ;
+ *       |    WA  |            |         |
+ *       \        |     SA     |-------./
+ *        |       |            |  NSW  /
+ *  Perth  \*     |  __.--._   |`--.__/
+ *          \     |.'       \:.|   V  |
+ *          >__,-'             \_/*_.-'
+ *                                Melbourne
+ *                               :--,
+ *                               'T/
+ *)
+datatype Color = BLUE | GREEN | RED;
+> datatype Color = BLUE | GREEN | RED
+from wa, nt, sa, q, nsw, v, t
+where q = RED
+  andalso t = GREEN
+  andalso wa <> nt
+  andalso wa <> sa
+  andalso nt <> sa
+  andalso nt <> q
+  andalso sa <> q
+  andalso sa <> nsw
+  andalso sa <> v
+  andalso nsw <> v;
+> val it =
+>   [{nsw=BLUE,nt=BLUE,q=RED,sa=GREEN,t=GREEN,v=RED,wa=RED},
+>    {nsw=RED,nt=BLUE,q=RED,sa=GREEN,t=GREEN,v=BLUE,wa=RED},
+>    {nsw=GREEN,nt=GREEN,q=RED,sa=BLUE,t=GREEN,v=RED,wa=RED},
+>    {nsw=RED,nt=GREEN,q=RED,sa=BLUE,t=GREEN,v=GREEN,wa=RED}]
+>   : {nsw:Color, nt:Color, q:Color, sa:Color, t:Color, v:Color, wa:Color} bag
+(* Expected code:
+ * "from(sink
+ *   join(pat e, exp tuple(
+ *   tuple(constant(10), constant(100), constant(Fred)),
+ *   tuple(constant(20), constant(101), constant(Velma)),
+ *   tuple(constant(30), constant(102), constant(Shaggy)),
+ *   tuple(constant(30), constant(103), constant(Scooby))),
+ *  sink yield(codes [tuple(apply(fnValue nth:2, argCode get(name e)), apply(fnValue nth:0, argCode get(name e)))], sink join(pat n_1, exp tuple( apply(fnValue nth:0, argCode get(name v$1))), sink join(pat d_1, exp tuple(constant(30)), sink where(condition apply2(fnValue elem,
+ *                             tuple(get(name n), get(name d)), from(sink join(pat e, exp tuple(
+ *   tuple(constant(10), constant(100), constant(Fred)),
+ *   tuple(constant(20), constant(101), constant(Velma)),
+ *   tuple(constant(30), constant(102), constant(Shaggy)),
+ *   tuple(constant(30), constant(103), constant(Scooby))), sink yield(codes [tuple(apply(fnValue nth:2, argCode get(name e)), apply(fnValue nth:0, argCode get(name e)))], sink apply(fnValue $.extent, argCode constant(()))))), sink where(condition apply2(fnValue =, get(name d), constant(30)), sink collect(tuple(get(name d), get(name n)))))))))))" *)
+(*
+Sys.planEx "code";
+> [actual output would appear here]
+*)
+
+(* testFromSuchThat2 - Complex function with division and elem *)
+(* TODO - currently not fully working
+let
+  fun hasJob (d, job) =
+    (d div 2, job)
+      elem (from e in scott.emps yield (e.deptno, e.job))
+in
+  from d in scott.depts, j
+    where hasJob (d.deptno, j)
+    yield j
+end;
+> val it : string bag
+Sys.planEx "code";
+> val it =
+ "from(sink join(pat d_1,
+     exp apply(fnValue nth:1, argCode get(name scott)),
+   sink join(pat j,
+       exp apply(
+         fnCode apply(fnValue List.filter,
+           argCode match(j,
+             apply(fnCode match((d, job),
+               apply2(fnValue elem,
+                 tuple(apply2(fnValue div, get(name d), constant(2)),
+                 get(name job)),
+               from(
+               sink join(pat e,
+                 exp apply(fnValue nth:2, argCode get(name scott)),
+                 sink collect(
+                   tuple(apply(fnValue nth:1, argCode get(name e)),
+                     apply(fnValue nth:5, argCode get(name e)))))))),
+               argCode tuple(
+                 apply(fnValue nth:0, argCode get(name d)),
+                 get(name j))))),
+         argCode apply(fnValue $.extent, argCode constant(()))),
+     sink collect(get(name j)))))"
+*)
+
+(* testFromSuchThat2b - Simple "d elem list" pattern *)
+from d where d elem scott.depts;
+> deptno dname      loc
+> ------ ---------- --------
+>     10 ACCOUNTING NEW YORK
+>     20 RESEARCH   DALLAS
+>     30 SALES      CHICAGO
+>     40 OPERATIONS BOSTON
+>
+> val it : {deptno:int, dname:string, loc:string} bag
+
+(* testFromSuchThat2c - Record pattern with field renaming *)
+from loc, deptno, name
+where {deptno, loc, dname = name} elem scott.depts;
+> deptno loc      name
+> ------ -------- ----------
+>     10 NEW YORK ACCOUNTING
+>     20 DALLAS   RESEARCH
+>     30 CHICAGO  SALES
+>     40 BOSTON   OPERATIONS
+>
+> val it : {deptno:int, loc:string, name:string} bag
+
+(* testFromSuchThat2d - Record pattern with literal and additional
+   constraint. Same as testFromSuchThat2c but with a literal. *)
+from dno, name
+  where {deptno = dno, dname = name, loc = "CHICAGO"}
+      elem scott.depts
+    andalso dno > 20;
+> dno name
+> --- -----
+>  30 SALES
+>
+> val it : {dno:int, name:string} bag
+
+(* testFromSuchThat2d3 - Forward references with equality constraint *)
+from dno, name, v
+where v elem scott.depts
+where v.deptno = dno
+where name = v.dname
+where v.loc = "CHICAGO"
+where dno = 30
+yield {dno = #deptno v, name = #dname v};
+> dno name
+> --- -----
+>  30 SALES
+>
+> val it : {dno:int, name:string} bag
+
+(* testFromSuchThat2d4 - Forward references with inequality constraint *)
+from dno, name, v
+where v elem scott.depts
+where v.deptno = dno
+where name = v.dname
+where v.loc = "CHICAGO"
+where dno > 25
+yield {dno = #deptno v, name = #dname v};
+> dno name
+> --- -----
+>  30 SALES
+>
+> val it : {dno:int, name:string} bag
+
+(* testFromSuchThat2e - Function inlining with elem predicate.
+ * As testFromSuchThat2d but using a function. (Simple enough
+ * that the function can be handled by inlining. *)
+fun isDept d =
+  d elem scott.depts;
+> val isDept = fn : {deptno:int, dname:string, loc:string} -> bool
+from d
+  where isDept d andalso d.deptno = 20
+  yield d.dname;
+> val it = ["RESEARCH"] : string bag
+
+(* testFromSuchThat2f - Join via suchthat with two functions *)
+let
+  fun isDept d =
+    d elem scott.depts
+  fun isEmp e =
+    e elem scott.emps
+in
+  from d, e
+    where isDept d
+    andalso isEmp e
+    andalso d.deptno = e.deptno
+    andalso d.deptno = 20
+    yield d.dname
+end;
+> val it = ["RESEARCH","RESEARCH","RESEARCH","RESEARCH","RESEARCH"] : string bag
+
+(* testProvenanceThroughFunction - Provenance propagation through
+ * function inversion. When 'f x' appears in WHERE, maybeFunction
+ * inlines the body and creates a Collection generator for x. The
+ * provenance system adds 'f x' to the generator's provenance,
+ * so expandFrom2 can remove it from WHERE. At plan level 999,
+ * there is no WHERE clause. *)
+let
+  val xs = [1, 2, 3]
+  fun f x = x elem xs
+in
+  from x where f x
+end;
+> val it = [1,2,3] : int bag
+
+(* testProvenanceThroughFunctionWithFilter - Same as above but
+ * with an additional filter. Provenance removes 'f x'
+ * but keeps 'x > 1'. *)
+let
+  val xs = [1, 2, 3]
+  fun f x = x elem xs
+in
+  from x where f x andalso x > 1
+end;
+> val it = [2,3] : int bag
+(* Expected code:
+ * "from(sink
+ *   join(pat (n_1, d_1),
+ *   exp apply(
+ *     fnCode apply(fnValue List.filter,
+ *       argCode match(v$0,
+ *         apply(fnCode match((n_1, d_1),
+ *             apply(fnCode match((n, d),
+ *                 apply2(fnValue elem,
+ *                   tuple(get(name n), get(name d)),
+ *                   from(sink
+ *                     join(pat e, exp tuple(
+ *   tuple(constant(30), constant(102), constant(Shaggy)),
+ *   tuple(constant(30), constant(103), constant(Scooby))),
+ *       sink collect(tuple(apply(fnValue nth:2, argCode get(name e)),
+ *         apply(fnValue nth:0, argCode get(name e)))))))),
+ *                argCode tuple(get(name n), get(name d)))),
+ *             argCode get(name v$0)))),
+ *           argCode apply(fnValue $.extent, argCode constant(()))),
+ *         sink where(condition apply2(fnValue =, get(name d), constant(30)),
+ *           sink collect(tuple(get(name d), get(name n))))))" *)
+(*
+Sys.planEx "code";
+> [actual output would appear here]
+*)
+
+(*) End such-that.smli

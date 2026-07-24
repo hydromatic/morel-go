@@ -595,6 +595,186 @@ val western_pairs =
 >    ("OR","NV"),("OR","ID"),("OR","WA"),("UT","ID"),("UT","CO"),("UT","NM"),
 >    ("UT","AZ"),("UT","NV"),("WA","ID"),("WA","OR")] : (string * string) list
 
+(* 1. Triangles ------------------------------------------------------
+ * In Datalog:
+ *   Triangle(x, y, z) :- R(x, y), S(y, z), T(x, z).
+ *)
+
+from x, y, z
+  where (x, y) elem pairs
+    andalso (y, z) elem pairs
+    andalso (z, x) elem pairs
+  order (x, y, z);
+> val it =
+>   [{x="AL",y="FL",z="GA"},{x="AL",y="GA",z="FL"},{x="AL",y="GA",z="TN"},
+>    {x="AL",y="MS",z="TN"},{x="AL",y="TN",z="GA"},{x="AL",y="TN",z="MS"},
+>    {x="AR",y="LA",z="MS"},{x="AR",y="LA",z="TX"},{x="AR",y="MO",z="OK"},
+>    {x="AR",y="MO",z="TN"},{x="AR",y="MS",z="LA"},{x="AR",y="MS",z="TN"},
+>    {x="AR",y="OK",z="MO"},{x="AR",y="OK",z="TX"},{x="AR",y="TN",z="MO"},
+>    {x="AR",y="TN",z="MS"},{x="AR",y="TX",z="LA"},{x="AR",y="TX",z="OK"},
+>    {x="AZ",y="CA",z="NV"},{x="AZ",y="CO",z="NM"},{x="AZ",y="CO",z="UT"},
+>    {x="AZ",y="NM",z="CO"},{x="AZ",y="NM",z="UT"},{x="AZ",y="NV",z="CA"},
+>    {x="AZ",y="NV",z="UT"},{x="AZ",y="UT",z="CO"},{x="AZ",y="UT",z="NM"},
+>    {x="AZ",y="UT",z="NV"},{x="CA",y="AZ",z="NV"},{x="CA",y="NV",z="AZ"},
+>    {x="CA",y="NV",z="OR"},{x="CA",y="OR",z="NV"},{x="CO",y="AZ",z="NM"},
+>    {x="CO",y="AZ",z="UT"},{x="CO",y="KS",z="NE"},{x="CO",y="KS",z="OK"},
+>    {x="CO",y="NE",z="KS"},{x="CO",y="NE",z="WY"},{x="CO",y="NM",z="AZ"},
+>    {x="CO",y="NM",z="OK"},{x="CO",y="NM",z="UT"},{x="CO",y="OK",z="KS"},
+>    {x="CO",y="OK",z="NM"},{x="CO",y="UT",z="AZ"},{x="CO",y="UT",z="NM"},
+>    {x="CO",y="UT",z="WY"},{x="CO",y="WY",z="NE"},{x="CO",y="WY",z="UT"},
+>    {x="CT",y="MA",z="NY"},{x="CT",y="MA",z="RI"},{x="CT",y="NY",z="MA"},
+>    {x="CT",y="RI",z="MA"},{x="DC",y="MD",z="VA"},{x="DC",y="VA",z="MD"},
+>    {x="DE",y="MD",z="PA"},{x="DE",y="NJ",z="PA"},{x="DE",y="PA",z="MD"},
+>    {x="DE",y="PA",z="NJ"},{x="FL",y="AL",z="GA"},{x="FL",y="GA",z="AL"},
+>    {x="GA",y="AL",z="FL"},{x="GA",y="AL",z="TN"},{x="GA",y="FL",z="AL"},
+>    {x="GA",y="NC",z="SC"},{x="GA",y="NC",z="TN"},{x="GA",y="SC",z="NC"},
+>    {x="GA",y="TN",z="AL"},{x="GA",y="TN",z="NC"},{x="IA",y="IL",z="MO"},
+>    {x="IA",y="IL",z="WI"},{x="IA",y="MN",z="SD"},{x="IA",y="MN",z="WI"},
+>    {x="IA",y="MO",z="IL"},{x="IA",y="MO",z="NE"},{x="IA",y="NE",z="MO"},
+>    {x="IA",y="NE",z="SD"},{x="IA",y="SD",z="MN"},{x="IA",y="SD",z="NE"},
+>    {x="IA",y="WI",z="IL"},{x="IA",y="WI",z="MN"},{x="ID",y="MT",z="WY"},
+>    {x="ID",y="NV",z="OR"},{x="ID",y="NV",z="UT"},{x="ID",y="OR",z="NV"},
+>    {x="ID",y="OR",z="WA"},{x="ID",y="UT",z="NV"},{x="ID",y="UT",z="WY"},
+>    {x="ID",y="WA",z="OR"},{x="ID",y="WY",z="MT"},{x="ID",y="WY",z="UT"},
+>    {x="IL",y="IA",z="MO"},{x="IL",y="IA",z="WI"},{x="IL",y="IN",z="KY"},
+>    {x="IL",y="KY",z="IN"},{x="IL",y="KY",z="MO"},{x="IL",y="MO",z="IA"},
+>    {x="IL",y="MO",z="KY"},{x="IL",y="WI",z="IA"},{x="IN",y="IL",z="KY"},
+>    {x="IN",y="KY",z="IL"},{x="IN",y="KY",z="OH"},{x="IN",y="MI",z="OH"},
+>    {x="IN",y="OH",z="KY"},{x="IN",y="OH",z="MI"},{x="KS",y="CO",z="NE"},
+>    {x="KS",y="CO",z="OK"},{x="KS",y="MO",z="NE"},{x="KS",y="MO",z="OK"},
+>    {x="KS",y="NE",z="CO"},{x="KS",y="NE",z="MO"},{x="KS",y="OK",z="CO"},
+>    {x="KS",y="OK",z="MO"},{x="KY",y="IL",z="IN"},{x="KY",y="IL",z="MO"},
+>    {x="KY",y="IN",z="IL"},{x="KY",y="IN",z="OH"},{x="KY",y="MO",z="IL"},
+>    {x="KY",y="MO",z="TN"},{x="KY",y="OH",z="IN"},{x="KY",y="OH",z="WV"},
+>    {x="KY",y="TN",z="MO"},{x="KY",y="TN",z="VA"},{x="KY",y="VA",z="TN"},
+>    {x="KY",y="VA",z="WV"},{x="KY",y="WV",z="OH"},{x="KY",y="WV",z="VA"},
+>    {x="LA",y="AR",z="MS"},{x="LA",y="AR",z="TX"},{x="LA",y="MS",z="AR"},
+>    {x="LA",y="TX",z="AR"},{x="MA",y="CT",z="NY"},{x="MA",y="CT",z="RI"},
+>    {x="MA",y="NH",z="VT"},{x="MA",y="NY",z="CT"},{x="MA",y="NY",z="VT"},
+>    {x="MA",y="RI",z="CT"},{x="MA",y="VT",z="NH"},{x="MA",y="VT",z="NY"},
+>    {x="MD",y="DC",z="VA"},{x="MD",y="DE",z="PA"},{x="MD",y="PA",z="DE"},
+>    {x="MD",y="PA",z="WV"},{x="MD",y="VA",z="DC"},{x="MD",y="VA",z="WV"},
+>    {x="MD",y="WV",z="PA"},{x="MD",y="WV",z="VA"},{x="MI",y="IN",z="OH"},
+>    {x="MI",y="OH",z="IN"},{x="MN",y="IA",z="SD"},{x="MN",y="IA",z="WI"},
+>    {x="MN",y="ND",z="SD"},{x="MN",y="SD",z="IA"},{x="MN",y="SD",z="ND"},
+>    {x="MN",y="WI",z="IA"},{x="MO",y="AR",z="OK"},{x="MO",y="AR",z="TN"},
+>    {x="MO",y="IA",z="IL"},{x="MO",y="IA",z="NE"},{x="MO",y="IL",z="IA"},
+>    {x="MO",y="IL",z="KY"},{x="MO",y="KS",z="NE"},{x="MO",y="KS",z="OK"},
+>    {x="MO",y="KY",z="IL"},{x="MO",y="KY",z="TN"},{x="MO",y="NE",z="IA"},
+>    {x="MO",y="NE",z="KS"},{x="MO",y="OK",z="AR"},{x="MO",y="OK",z="KS"},
+>    {x="MO",y="TN",z="AR"},{x="MO",y="TN",z="KY"},{x="MS",y="AL",z="TN"},
+>    {x="MS",y="AR",z="LA"},{x="MS",y="AR",z="TN"},{x="MS",y="LA",z="AR"},
+>    {x="MS",y="TN",z="AL"},{x="MS",y="TN",z="AR"},{x="MT",y="ID",z="WY"},
+>    {x="MT",y="ND",z="SD"},{x="MT",y="SD",z="ND"},{x="MT",y="SD",z="WY"},
+>    {x="MT",y="WY",z="ID"},{x="MT",y="WY",z="SD"},{x="NC",y="GA",z="SC"},
+>    {x="NC",y="GA",z="TN"},{x="NC",y="SC",z="GA"},{x="NC",y="TN",z="GA"},
+>    {x="NC",y="TN",z="VA"},{x="NC",y="VA",z="TN"},{x="ND",y="MN",z="SD"},
+>    {x="ND",y="MT",z="SD"},{x="ND",y="SD",z="MN"},{x="ND",y="SD",z="MT"},
+>    {x="NE",y="CO",z="KS"},{x="NE",y="CO",z="WY"},{x="NE",y="IA",z="MO"},
+>    {x="NE",y="IA",z="SD"},{x="NE",y="KS",z="CO"},{x="NE",y="KS",z="MO"},
+>    {x="NE",y="MO",z="IA"},{x="NE",y="MO",z="KS"},{x="NE",y="SD",z="IA"},
+>    {x="NE",y="SD",z="WY"},{x="NE",y="WY",z="CO"},{x="NE",y="WY",z="SD"},
+>    {x="NH",y="MA",z="VT"},{x="NH",y="VT",z="MA"},{x="NJ",y="DE",z="PA"},
+>    {x="NJ",y="NY",z="PA"},{x="NJ",y="PA",z="DE"},{x="NJ",y="PA",z="NY"},
+>    {x="NM",y="AZ",z="CO"},{x="NM",y="AZ",z="UT"},{x="NM",y="CO",z="AZ"},
+>    {x="NM",y="CO",z="OK"},{x="NM",y="CO",z="UT"},{x="NM",y="OK",z="CO"},
+>    {x="NM",y="OK",z="TX"},{x="NM",y="TX",z="OK"},{x="NM",y="UT",z="AZ"},
+>    {x="NM",y="UT",z="CO"},{x="NV",y="AZ",z="CA"},{x="NV",y="AZ",z="UT"},
+>    {x="NV",y="CA",z="AZ"},{x="NV",y="CA",z="OR"},{x="NV",y="ID",z="OR"},
+>    {x="NV",y="ID",z="UT"},{x="NV",y="OR",z="CA"},{x="NV",y="OR",z="ID"},
+>    {x="NV",y="UT",z="AZ"},{x="NV",y="UT",z="ID"},{x="NY",y="CT",z="MA"},
+>    {x="NY",y="MA",z="CT"},{x="NY",y="MA",z="VT"},{x="NY",y="NJ",z="PA"},
+>    {x="NY",y="PA",z="NJ"},{x="NY",y="VT",z="MA"},{x="OH",y="IN",z="KY"},
+>    {x="OH",y="IN",z="MI"},{x="OH",y="KY",z="IN"},{x="OH",y="KY",z="WV"},
+>    {x="OH",y="MI",z="IN"},{x="OH",y="PA",z="WV"},{x="OH",y="WV",z="KY"},
+>    {x="OH",y="WV",z="PA"},{x="OK",y="AR",z="MO"},{x="OK",y="AR",z="TX"},
+>    {x="OK",y="CO",z="KS"},{x="OK",y="CO",z="NM"},{x="OK",y="KS",z="CO"},
+>    {x="OK",y="KS",z="MO"},{x="OK",y="MO",z="AR"},{x="OK",y="MO",z="KS"},
+>    {x="OK",y="NM",z="CO"},{x="OK",y="NM",z="TX"},{x="OK",y="TX",z="AR"},
+>    {x="OK",y="TX",z="NM"},{x="OR",y="CA",z="NV"},{x="OR",y="ID",z="NV"},
+>    {x="OR",y="ID",z="WA"},{x="OR",y="NV",z="CA"},{x="OR",y="NV",z="ID"},
+>    {x="OR",y="WA",z="ID"},{x="PA",y="DE",z="MD"},{x="PA",y="DE",z="NJ"},
+>    {x="PA",y="MD",z="DE"},{x="PA",y="MD",z="WV"},{x="PA",y="NJ",z="DE"},
+>    {x="PA",y="NJ",z="NY"},{x="PA",y="NY",z="NJ"},{x="PA",y="OH",z="WV"},
+>    {x="PA",y="WV",z="MD"},{x="PA",y="WV",z="OH"},{x="RI",y="CT",z="MA"},
+>    {x="RI",y="MA",z="CT"},{x="SC",y="GA",z="NC"},{x="SC",y="NC",z="GA"},
+>    {x="SD",y="IA",z="MN"},{x="SD",y="IA",z="NE"},{x="SD",y="MN",z="IA"},
+>    {x="SD",y="MN",z="ND"},{x="SD",y="MT",z="ND"},{x="SD",y="MT",z="WY"},
+>    {x="SD",y="ND",z="MN"},{x="SD",y="ND",z="MT"},{x="SD",y="NE",z="IA"},
+>    {x="SD",y="NE",z="WY"},{x="SD",y="WY",z="MT"},{x="SD",y="WY",z="NE"},
+>    {x="TN",y="AL",z="GA"},{x="TN",y="AL",z="MS"},{x="TN",y="AR",z="MO"},
+>    {x="TN",y="AR",z="MS"},{x="TN",y="GA",z="AL"},{x="TN",y="GA",z="NC"},
+>    {x="TN",y="KY",z="MO"},{x="TN",y="KY",z="VA"},{x="TN",y="MO",z="AR"},
+>    {x="TN",y="MO",z="KY"},{x="TN",y="MS",z="AL"},{x="TN",y="MS",z="AR"},
+>    {x="TN",y="NC",z="GA"},{x="TN",y="NC",z="VA"},{x="TN",y="VA",z="KY"},
+>    {x="TN",y="VA",z="NC"},{x="TX",y="AR",z="LA"},{x="TX",y="AR",z="OK"},
+>    {x="TX",y="LA",z="AR"},{x="TX",y="NM",z="OK"},{x="TX",y="OK",z="AR"},
+>    {x="TX",y="OK",z="NM"},{x="UT",y="AZ",z="CO"},{x="UT",y="AZ",z="NM"},
+>    {x="UT",y="AZ",z="NV"},{x="UT",y="CO",z="AZ"},{x="UT",y="CO",z="NM"},
+>    {x="UT",y="CO",z="WY"},{x="UT",y="ID",z="NV"},{x="UT",y="ID",z="WY"},
+>    {x="UT",y="NM",z="AZ"},{x="UT",y="NM",z="CO"},{x="UT",y="NV",z="AZ"},
+>    {x="UT",y="NV",z="ID"},{x="UT",y="WY",z="CO"},{x="UT",y="WY",z="ID"},
+>    {x="VA",y="DC",z="MD"},{x="VA",y="KY",z="TN"},{x="VA",y="KY",z="WV"},
+>    {x="VA",y="MD",z="DC"},{x="VA",y="MD",z="WV"},{x="VA",y="NC",z="TN"},
+>    {x="VA",y="TN",z="KY"},{x="VA",y="TN",z="NC"},{x="VA",y="WV",z="KY"},
+>    {x="VA",y="WV",z="MD"},{x="VT",y="MA",z="NH"},{x="VT",y="MA",z="NY"},
+>    {x="VT",y="NH",z="MA"},{x="VT",y="NY",z="MA"},{x="WA",y="ID",z="OR"},
+>    {x="WA",y="OR",z="ID"},{x="WI",y="IA",z="IL"},{x="WI",y="IA",z="MN"},
+>    {x="WI",y="IL",z="IA"},{x="WI",y="MN",z="IA"},{x="WV",y="KY",z="OH"},
+>    {x="WV",y="KY",z="VA"},{x="WV",y="MD",z="PA"},{x="WV",y="MD",z="VA"},
+>    {x="WV",y="OH",z="KY"},{x="WV",y="OH",z="PA"},{x="WV",y="PA",z="MD"},
+>    {x="WV",y="PA",z="OH"},{x="WV",y="VA",z="KY"},{x="WV",y="VA",z="MD"},
+>    {x="WY",y="CO",z="NE"},{x="WY",y="CO",z="UT"},{x="WY",y="ID",z="MT"},
+>    {x="WY",y="ID",z="UT"},{x="WY",y="MT",z="ID"},{x="WY",y="MT",z="SD"},
+>    {x="WY",y="NE",z="CO"},{x="WY",y="NE",z="SD"},{x="WY",y="SD",z="MT"},
+>    {x="WY",y="SD",z="NE"},{x="WY",y="UT",z="CO"},{x="WY",y="UT",z="ID"}]
+>   : {x:string, y:string, z:string} list
+
+(*) Equivalent, using a function
+(*
+from x in states, y in states, z in states
+  where is_adjacent x y
+    andalso is_adjacent y z
+    andalso is_adjacent z x;
+> val it =
+>   [{x="AL",y="FL",z="GA"},{x="AL",y="GA",z="FL"},{x="AL",y="GA",z="TN"},
+>    {x="AL",y="MS",z="TN"},{x="AL",y="TN",z="GA"},{x="AL",y="TN",z="MS"},
+>    {x="AR",y="LA",z="MS"},{x="AR",y="LA",z="TX"},{x="AR",y="MO",z="OK"},
+>    {x="AR",y="MO",z="TN"},{x="AR",y="MS",z="LA"},{x="AR",y="MS",z="TN"},
+>    {x="AR",y="OK",z="MO"},{x="AR",y="OK",z="TX"},{x="AR",y="TN",z="MO"},
+>    {x="AR",y="TN",z="MS"},{x="AR",y="TX",z="LA"},{x="AR",y="TX",z="OK"},
+>    {x="AZ",y="CA",z="NV"},{x="AZ",y="CO",z="NM"},{x="AZ",y="CO",z="UT"},
+>    {x="AZ",y="NM",z="CO"},{x="AZ",y="NM",z="UT"},{x="AZ",y="NV",z="CA"},
+>    {x="AZ",y="NV",z="UT"},{x="AZ",y="UT",z="CO"},{x="AZ",y="UT",z="NM"},
+>    {x="AZ",y="UT",z="NV"},{x="CA",y="AZ",z="NV"},{x="CA",y="NV",z="AZ"},
+>    {x="CA",y="NV",z="OR"},{x="CA",y="OR",z="NV"},{x="CO",y="AZ",z="NM"},
+>    {x="CO",y="AZ",z="UT"},{x="CO",y="KS",z="NE"},{x="CO",y="KS",z="OK"},
+>    {x="CO",y="NE",z="KS"},{x="CO",y="NE",z="WY"},{x="CO",y="NM",z="AZ"},
+>    {x="CO",y="NM",z="OK"},{x="CO",y="NM",z="UT"},{x="CO",y="OK",z="KS"},
+>    {x="CO",y="OK",z="NM"},{x="CO",y="UT",z="AZ"},{x="CO",y="UT",z="NM"},
+>    {x="CO",y="UT",z="WY"},{x="CO",y="WY",z="NE"},{x="CO",y="WY",z="UT"},
+>    {x="CT",y="MA",z="NY"},{x="CT",y="MA",z="RI"},{x="CT",y="NY",z="MA"},
+>    {x="CT",y="RI",z="MA"},{x="DC",y="MD",z="VA"},{x="DC",y="VA",z="MD"},
+>    {x="DE",y="MD",z="PA"},{x="DE",y="NJ",z="PA"},{x="DE",y="PA",z="MD"},
+>    {x="DE",y="PA",z="NJ"},{x="FL",y="AL",z="GA"},{x="FL",y="GA",z="AL"},
+>    {x="GA",y="AL",z="FL"},{x="GA",y="AL",z="TN"},{x="GA",y="FL",z="AL"},
+>    {x="GA",y="NC",z="SC"},...] : {x:string, y:string, z:string} list
+*)
+
+(* 2. Count Triangles ------------------------------------------------
+ * In Datalog:
+ *   CountTriangle(; w: long) :-
+ *       R(x, y), S(y, z), T(z, x); w=<<COUNT(*)>>.
+ * (The formula in the EmptyHeaded paper contains an error.)
+ *)
+
+from x, y, z
+  where (x, y) elem pairs
+    andalso (y, z) elem pairs
+    andalso (z, x) elem pairs
+  group {} compute count over ();
+> val it = [366] : int bag
+
 (* A 3-node graph has no 4-clique. Grounding must not delete a
  * conjunct whose generator was cached but never scanned; when it did,
  * this returned rows in which x = y. *)

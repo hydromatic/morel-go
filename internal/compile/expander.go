@@ -19,6 +19,8 @@ package compile
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/hydromatic/morel-go/internal/ast"
 	"github.com/hydromatic/morel-go/internal/core"
@@ -129,12 +131,9 @@ func (x *expander) improveGenerators() {
 		if g == nil || g.card != infinite {
 			continue
 		}
-		for _, conjunct := range x.constraints {
-			if g2 := maybePointGenerator(x.sys, pat,
-				conjunct); g2 != nil {
-				x.cache.add(g2)
-				break
-			}
+		if g2 := maybeGenerator(x.sys, pat,
+			x.constraints); g2 != nil {
+			x.cache.add(g2)
 		}
 	}
 }
@@ -298,14 +297,115 @@ func (r *rebuilder) addGeneratorScan(pat *core.IDPat) {
 			return
 		}
 	}
-	r.steps = append(r.steps, &core.Scan{Pat: g.pat, Exp: g.exp})
-	if !r.x.isExtentScanExp(g.exp) {
-		// Re-emitting the variable's own extent scan is not a
-		// change; substituting anything else is.
-		r.changed = true
+	// Of the variables the generator's pattern binds, only the
+	// unbound extent variables still need it; the rest are
+	// already scanned, and become join conditions.
+	expanded := core.PatIDs(g.pat)
+	var required []*core.IDPat
+	for _, p := range expanded {
+		if r.isExtentPat(p) && r.state[p] != done {
+			required = append(required, p)
+		}
 	}
-	for _, id := range core.PatIDs(g.pat) {
+	if len(required) < len(expanded) {
+		for _, p := range expanded {
+			if r.x.scanPats[p] && r.state[p] != done &&
+				!slices.Contains(required, p) {
+				// A bound component not yet scheduled; retry
+				// when a later step pulls the generator in.
+				delete(r.state, pat)
+				return
+			}
+		}
+		r.steps = append(r.steps, r.projectedScan(g, required))
+		r.changed = true
+	} else {
+		r.steps = append(r.steps,
+			&core.Scan{Pat: g.pat, Exp: g.exp})
+		if !r.x.isExtentScanExp(g.exp) {
+			// Re-emitting the variable's own extent scan is not
+			// a change; substituting anything else is.
+			r.changed = true
+		}
+	}
+	for _, id := range required {
 		r.state[id] = done
+	}
+}
+
+// projectedScan builds the scan of a generator only some of whose
+// variables are still unbound: a subquery that scans the
+// generator with the bound variables renamed, equates each
+// renamed variable with its binding, and yields the required
+// ones. The subquery's variables are fresh; the outer scan binds
+// the required variables themselves.
+func (r *rebuilder) projectedScan(g *generator,
+	required []*core.IDPat,
+) core.FromStep {
+	fresh := map[*core.IDPat]*core.IDPat{}
+	scanPat := clonePat(g.pat, fresh)
+	var joins []core.Exp
+	for orig, renamed := range fresh {
+		if slices.Contains(required, orig) {
+			continue
+		}
+		renamed.Name += "'"
+		joins = append(joins, eqExp(r.x.sys,
+			&core.ID{Pat: renamed}, &core.ID{Pat: orig}))
+	}
+	steps := []core.FromStep{&core.Scan{Pat: scanPat, Exp: g.exp}}
+	if len(joins) > 0 {
+		steps = append(steps,
+			&core.Where{Exp: composeConjuncts(r.x.sys, joins)})
+	}
+	yieldExp, outerPat := rowOf(r.x.sys, required, fresh)
+	steps = append(steps, &core.Yield{Exp: yieldExp})
+	sub := &core.From{
+		T:     r.x.sys.Named("bag", outerPat.Type()),
+		Steps: steps,
+		Kind:  ast.FromOp,
+	}
+	return &core.Scan{Pat: outerPat, Exp: sub}
+}
+
+// rowOf builds the yielded row of a projected scan and the outer
+// pattern that rebinds it: the sole variable, or a record (a
+// sorted tuple) of them. The yield reads the subquery's fresh
+// copies; the outer pattern binds the originals.
+func rowOf(sys *types.System, required []*core.IDPat,
+	fresh map[*core.IDPat]*core.IDPat,
+) (core.Exp, core.Pat) {
+	if len(required) == 1 {
+		p := required[0]
+		return &core.ID{Pat: fresh[p]}, p
+	}
+	sorted := append([]*core.IDPat(nil), required...)
+	slices.SortFunc(sorted, func(a, b *core.IDPat) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	fields := make([]types.Field, len(sorted))
+	args := make([]core.Exp, len(sorted))
+	pats := make([]core.Pat, len(sorted))
+	for i, p := range sorted {
+		fields[i] = types.Field{Label: p.Name, Type: p.T}
+		args[i] = &core.ID{Pat: fresh[p]}
+		pats[i] = p
+	}
+	t := sys.Record(fields)
+	return &core.Tuple{T: t, Args: args},
+		&core.TuplePat{T: t, Args: pats}
+}
+
+// eqExp builds an equality between two expressions.
+func eqExp(sys *types.System, a, b core.Exp) core.Exp {
+	argType := sys.Tuple(a.Type(), b.Type())
+	return &core.Apply{
+		T: sys.Bool,
+		Fn: &core.ID{Pat: &core.IDPat{
+			T:    sys.Fn(argType, sys.Bool),
+			Name: eqOpName,
+		}},
+		Arg: &core.Tuple{T: argType, Args: []core.Exp{a, b}},
 	}
 }
 
