@@ -809,28 +809,7 @@ func (r *resolver) toPat(pat ast.Pat) (core.Pat, error) {
 		}
 		return literalPat, nil
 	case *ast.RecordPat:
-		if p.Ellipsis {
-			return nil, &Error{
-				Span: pat.Span(),
-				Msg: "cannot convert to core: pattern " +
-					"with ellipsis",
-			}
-		}
-		sorted := make([]ast.PatField, len(p.Fields))
-		copy(sorted, p.Fields)
-		sort.Slice(sorted, func(i, j int) bool {
-			return types.LabelLess(sorted[i].Label,
-				sorted[j].Label)
-		})
-		args := make([]core.Pat, len(sorted))
-		for i, f := range sorted {
-			arg, err := r.toPat(f.Pat)
-			if err != nil {
-				return nil, err
-			}
-			args[i] = arg
-		}
-		return &core.TuplePat{T: t, Args: args}, nil
+		return r.toRecordPat(p, t)
 	case *ast.TuplePat:
 		if len(p.Args) == 0 {
 			return &core.WildcardPat{T: t}, nil
@@ -892,6 +871,37 @@ func (r *resolver) toConsPat(p *ast.ConsPat,
 		return nil, err
 	}
 	return &core.ConsPat{T: t, Head: head, Tail: tail}, nil
+}
+
+// toRecordPat converts a record pattern to a tuple pattern over the
+// record type's fields in canonical order: each named field uses its
+// sub-pattern, and any field the pattern omits (only possible under
+// "...") matches a wildcard. A non-record type is unit ("{}").
+func (r *resolver) toRecordPat(p *ast.RecordPat,
+	t types.Type,
+) (core.Pat, error) {
+	rec, ok := t.(*types.Record)
+	if !ok {
+		return &core.WildcardPat{T: t}, nil
+	}
+	byLabel := make(map[string]ast.Pat, len(p.Fields))
+	for _, f := range p.Fields {
+		byLabel[f.Label] = f.Pat
+	}
+	args := make([]core.Pat, len(rec.Fields))
+	for i, f := range rec.Fields {
+		fp, named := byLabel[f.Label]
+		if !named {
+			args[i] = &core.WildcardPat{T: f.Type}
+			continue
+		}
+		arg, err := r.toPat(fp)
+		if err != nil {
+			return nil, err
+		}
+		args[i] = arg
+	}
+	return &core.TuplePat{T: t, Args: args}, nil
 }
 
 func (r *resolver) toListPat(p *ast.ListPat,

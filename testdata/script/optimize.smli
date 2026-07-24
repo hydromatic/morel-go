@@ -104,6 +104,17 @@ in
 end;
 > val it = "one:a" : string
 
+(*) Record case.
+let
+  val t = {a = 1, b = "a"}
+in
+  case t of
+     {a = 0, ...} => "zero"
+   | {a = 1, b = s} => "one:" ^ s
+   | _ => "other"
+end;
+> val it = "one:a" : string
+
 (*) Enum case
 let
   val ordering = LESS
