@@ -90,7 +90,11 @@ type outputSplit struct {
 func splitOutput(s string) outputSplit {
 	start := valueStart(s)
 	colon := lastTopColon(s)
-	if colon < 0 {
+	// The value is s[start:colon-1]; when the last top-level colon
+	// falls at or before the value start (e.g. a ":"-annotated
+	// binding pattern, "val a : b = c"), that slice would invert and
+	// panic, so treat the line as having no value or type.
+	if colon < start+1 {
 		return outputSplit{prefix: s}
 	}
 	return outputSplit{

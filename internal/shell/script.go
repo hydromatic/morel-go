@@ -54,12 +54,14 @@ func RunScript(exec Executor, name, src string) (string, error) {
 	var actuals []string
 	var expected strings.Builder
 	flush := func() {
-		if len(actuals) == 0 {
-			return
+		if len(actuals) > 0 {
+			out.WriteString(resolveOutput(matcher, actuals,
+				expected.String()))
+			actuals = actuals[:0]
 		}
-		out.WriteString(resolveOutput(matcher, actuals,
-			expected.String()))
-		actuals = actuals[:0]
+		// Always drop the expected block, even with no actuals, so a
+		// statement's expected output never concatenates onto the
+		// next -- which would silently disable semantic matching.
 		expected.Reset()
 	}
 	for _, line := range strings.SplitAfter(src, "\n") {

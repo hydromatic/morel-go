@@ -713,3 +713,13 @@ func TestExecuteItOnlyOnSuccess(t *testing.T) {
 		{"it;", "val it = 7 : int"},
 	})
 }
+
+func TestEquivalentOutputNoPanic(t *testing.T) {
+	// The last top-level colon falls before the value start, so
+	// splitOutput once inverted a slice and panicked (outside the
+	// recover wrapper); it must return not-equivalent instead.
+	k := shell.NewKernel("test")
+	if k.EquivalentOutput("val a : b = c", "val a : b = c") {
+		t.Error("expected not equivalent (line has no value/type)")
+	}
+}

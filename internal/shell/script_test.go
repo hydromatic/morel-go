@@ -18,6 +18,7 @@
 package shell_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -51,6 +52,36 @@ func checkScript(t *testing.T, exec shell.Executor, src,
 	if again != got {
 		t.Errorf("not idempotent:\n got %q\nthen %q", got, again)
 	}
+}
+
+// matchExec is a semantic-matching Executor: two outputs are
+// equivalent when they are anagrams (a stand-in for bag/whitespace
+// equivalence), so a kept expected block can be observed.
+type matchExec map[string]string
+
+func (m matchExec) Execute(stmt string) string {
+	return m[strings.TrimSpace(stmt)]
+}
+
+func (matchExec) EquivalentOutput(actual, expected string) bool {
+	return sortStr(actual) == sortStr(expected)
+}
+
+func sortStr(s string) string {
+	b := []byte(s)
+	slices.Sort(b)
+	return string(b)
+}
+
+// After a statement whose Split fails, its trailing expected block
+// must not carry over to the next statement (which once disabled
+// semantic matching there: the anagram "ab" would not be kept).
+func TestScriptExpectedResetAfterSplitError(t *testing.T) {
+	exec := matchExec{"val y = 2;": "ba"}
+	checkScript(t, exec,
+		"val x = ?;\n> broken\nval y = 2;\n> ab\n",
+		"val x = ?;\n> t.smli:1.9: illegal character\n"+
+			"val y = 2;\n> ab\n")
 }
 
 func TestScriptReplacesExpectedOutput(t *testing.T) {
