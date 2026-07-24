@@ -355,22 +355,29 @@ func (p *Parser) leftChain(ops map[token.Kind]ast.Op,
 // applyChain parses one or more atoms (each with postfix field
 // selections); juxtaposition is left-associative application.
 func (p *Parser) applyChain() (ast.Expr, error) {
+	var e ast.Expr
 	if p.tok.Kind == token.TypeString {
 		start := p.tok.Span.Start
 		err := p.next()
 		if err != nil {
 			return nil, err
 		}
-		operand, err := p.applyChain()
+		// The operand is an atom with field selections (expression9),
+		// not a full application, so "type_string f x" is
+		// "(type_string f) x" -- x juxtaposes as an argument (a type
+		// error).
+		operand, err := p.atomSuffixed()
 		if err != nil {
 			return nil, err
 		}
 		span := token.Span{Start: start, End: operand.Span().End}
-		return ast.NewTypeStringExp(span, operand), nil
-	}
-	e, err := p.atomSuffixed()
-	if err != nil {
-		return nil, err
+		e = ast.NewTypeStringExp(span, operand)
+	} else {
+		var err error
+		e, err = p.atomSuffixed()
+		if err != nil {
+			return nil, err
+		}
 	}
 	for isAtomStart(p.tok.Kind) {
 		arg, err := p.atomSuffixed()
