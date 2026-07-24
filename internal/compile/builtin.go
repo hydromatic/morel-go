@@ -41,6 +41,7 @@ const (
 	opDiv      = "op div"
 	opMod      = "op mod"
 	opNegate   = "op ~"
+	absName    = "abs"
 	opAt       = "op @"
 	opCaret    = "op ^"
 	opCons     = "op ::"
@@ -66,7 +67,7 @@ const (
 // signature file declares: the operators, and the top-level
 // aliases of common functions.
 var topBuiltins = map[string]topBuiltin{
-	"abs":       {"'a -> 'a", intName},
+	absName:     {"'a -> 'a", intName},
 	"app":       {"('a -> unit) -> 'a list -> unit", ""},
 	"bag":       {"'a list -> 'a bag", ""},
 	"ceil":      {realToInt, ""},

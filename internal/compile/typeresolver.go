@@ -209,7 +209,7 @@ func fieldNames(t types.Type) []string {
 // so a bad operand is a unification conflict, not an excluded class
 // member. 'abs' is int and real only, as a word is unsigned.
 var numericOpDomain = map[string]map[string]bool{
-	"abs":    {intName: true, realName: true},
+	absName:  {intName: true, realName: true},
 	opTimes:  {intName: true, realName: true, wordName: true},
 	opPlus:   {intName: true, realName: true, wordName: true},
 	opMinus:  {intName: true, realName: true, wordName: true},

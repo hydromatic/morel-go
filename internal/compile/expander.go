@@ -63,6 +63,7 @@ func expandFrom(sys *types.System, recFns map[string]*core.Fn,
 		extentPats: map[*core.IDPat]token.Span{},
 		used:       map[*core.IDPat]bool{},
 	}
+	from = applyFbbt(sys, from)
 	from = rangePushdown(sys, from)
 	x.deduce(from)
 	x.markUsed(from)
@@ -202,6 +203,127 @@ func stepRefs(step core.FromStep) []*core.IDPat {
 		}
 	}
 	return pats
+}
+
+// applyFbbt strengthens a query's filters before inversion: the
+// unbounded variables (extent scans, and one-sided range-list
+// scans, whose ranges inject the bounds they imply) feed
+// interval propagation, and deduced constant bounds join the
+// filters for the range extractor to consume. The injected
+// implied bounds are stripped again — the scan ranges already
+// enforce them.
+func applyFbbt(sys *types.System, from *core.From) *core.From {
+	var unbounded []*core.IDPat
+	var implied []core.Exp
+	for _, step := range from.Steps {
+		scan, ok := step.(*core.Scan)
+		if !ok {
+			continue
+		}
+		if isInfiniteExtent(scan.Exp) {
+			unbounded = append(unbounded,
+				core.PatIDs(scan.Pat)...)
+			continue
+		}
+		if pat, b := impliedRangeBound(sys, scan); pat != nil {
+			unbounded = append(unbounded, pat)
+			implied = append(implied, b)
+		}
+	}
+	if len(unbounded) == 0 {
+		return from
+	}
+	steps := append([]core.FromStep(nil), from.Steps...)
+	injected := false
+	changed := false
+	for i, step := range steps {
+		where, ok := step.(*core.Where)
+		if !ok {
+			continue
+		}
+		exp := where.Exp
+		if !injected && len(implied) > 0 {
+			exp = composeConjuncts(sys,
+				append(slices.Clone(implied), exp))
+			injected = true
+		}
+		exp = fbbtStrengthen(sys, unbounded, exp)
+		exp = stripByIdentity(sys, exp, implied)
+		if exp != where.Exp {
+			steps[i] = &core.Where{Exp: exp}
+			changed = true
+		}
+	}
+	if !changed {
+		return from
+	}
+	return &core.From{T: from.T, Steps: steps, Kind: from.Kind}
+}
+
+// impliedRangeBound is the comparison a one-sided range-list
+// scan implies for its variable.
+func impliedRangeBound(sys *types.System, scan *core.Scan,
+) (*core.IDPat, core.Exp) {
+	pat, ok := scan.Pat.(*core.IDPat)
+	if !ok {
+		return nil, nil
+	}
+	rl, ok := scan.Exp.(*core.RangeList)
+	if !ok || len(rl.Items) != 1 {
+		return nil, nil
+	}
+	item := rl.Items[0]
+	var op string
+	var v core.Exp
+	// lint: sort until '^\t}' where '^\tcase '
+	switch item.Kind {
+	case ast.RangeAtLeast:
+		op, v = opGe, item.Lo
+	case ast.RangeAtMost:
+		op, v = opLe, item.Hi
+	case ast.RangeGreaterThan:
+		op, v = opGt, item.Lo
+	case ast.RangeLessThan:
+		op, v = opLt, item.Hi
+	default:
+		return nil, nil
+	}
+	pairT := sys.Tuple(pat.T, pat.T)
+	return pat, &core.Apply{
+		T: sys.Bool,
+		Fn: &core.ID{Pat: &core.IDPat{
+			T:    sys.Fn(pairT, sys.Bool),
+			Name: op,
+		}},
+		Arg: &core.Tuple{T: pairT, Args: []core.Exp{
+			&core.ID{Pat: pat}, v,
+		}},
+	}
+}
+
+// stripByIdentity removes the injected conjuncts from a filter,
+// by pointer.
+func stripByIdentity(sys *types.System, exp core.Exp,
+	injected []core.Exp,
+) core.Exp {
+	if len(injected) == 0 {
+		return exp
+	}
+	var conjuncts []core.Exp
+	decomposeConjuncts(exp, &conjuncts)
+	var remaining []core.Exp
+	stripped := false
+	for _, c := range conjuncts {
+		if slices.Contains(injected, c) {
+			stripped = true
+			continue
+		}
+		remaining = append(remaining, c)
+	}
+	if !stripped {
+		return exp
+	}
+	return composeConjuncts(sys, remaining)
 }
 
 // rangePushdown tightens each scan over a one-sided range list
