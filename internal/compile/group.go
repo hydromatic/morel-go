@@ -19,6 +19,7 @@ package compile
 
 import (
 	"github.com/hydromatic/morel-go/internal/ast"
+	"github.com/hydromatic/morel-go/internal/token"
 	"github.com/hydromatic/morel-go/internal/types"
 	"github.com/hydromatic/morel-go/internal/unify"
 )
@@ -39,6 +40,10 @@ func (r *typeResolver) deduceGroup(stepEnv typeEnv,
 	group *ast.GroupStep, compute *ast.ComputeStep,
 	inputElem, inputOrd unify.Term,
 ) ([]labelTerm, unify.Term, error) {
+	err := validateGroup(group, compute)
+	if err != nil {
+		return nil, nil, err
+	}
 	keyFields, keyElem, err := r.deduceYield(stepEnv, group.Exp)
 	if err != nil {
 		return nil, nil, err
@@ -86,11 +91,20 @@ func (r *typeResolver) deduceCompute(stepEnv typeEnv,
 		elementsColl)
 	if rec, ok := computeExp.(*ast.Record); ok && rec.With == nil {
 		fields := make([]labelTerm, len(rec.Fields))
+		seen := map[string]bool{}
 		for i, f := range rec.Fields {
 			label := f.Label
+			span := f.LabelSpan
 			if label == "" {
-				label = implicitLabel(f.Exp)
+				label, span = implicitLabel(f.Exp), f.Exp.Span()
 			}
+			if seen[label] {
+				return nil, &Error{
+					Span: span,
+					Msg:  "duplicate field '" + label + "' in record",
+				}
+			}
+			seen[label] = true
 			v := r.u.Variable()
 			err := r.deduceAggregate(aggEnv, f.Exp, inputElem, inputOrd, v)
 			if err != nil {
@@ -212,4 +226,96 @@ func aggKindOfType(t types.Type) aggKindT {
 		}
 	}
 	return aggPolymorphic
+}
+
+// validateGroup reports the first placement error in a group: a
+// non-record group or compute expression whose label cannot be
+// derived, or a label that repeats among the keys and aggregates.
+// An atom group (one bare field) is exempt.
+func validateGroup(group *ast.GroupStep,
+	compute *ast.ComputeStep,
+) error {
+	nFields := stepFieldCount(group.Exp)
+	if compute != nil {
+		nFields += stepFieldCount(compute.Exp)
+	}
+	if groupRowIsAtom(group, compute, nFields) {
+		return nil
+	}
+	if !isRecordExpr(group.Exp) && implicitLabel(group.Exp) == "" {
+		return &Error{
+			Span: group.Exp.Span(),
+			Msg:  "cannot derive label for group expression",
+		}
+	}
+	if compute != nil && !isRecordExpr(compute.Exp) &&
+		implicitLabel(compute.Exp) == "" {
+		return &Error{
+			Span: compute.Exp.Span(),
+			Msg:  "cannot derive label for compute expression",
+		}
+	}
+	// Only a label shared between the keys and the aggregates is a
+	// group duplicate; a repeat within a single key or compute record
+	// is a record duplicate, left to the record typing to report.
+	if compute == nil {
+		return nil
+	}
+	keySet := map[string]bool{}
+	for _, kl := range groupFieldLabels(group.Exp) {
+		if kl.label != "" {
+			keySet[kl.label] = true
+		}
+	}
+	for _, al := range groupFieldLabels(compute.Exp) {
+		if al.label != "" && keySet[al.label] {
+			return &Error{
+				Span: al.span,
+				Msg: "duplicate field name '" + al.label +
+					"' in group",
+			}
+		}
+	}
+	return nil
+}
+
+// isRecordExpr reports whether an expression is a record literal.
+func isRecordExpr(exp ast.Expr) bool {
+	_, ok := exp.(*ast.Record)
+	return ok
+}
+
+// stepFieldCount is the number of fields a group-key or compute
+// expression contributes: a record's field count, or 1 for a bare
+// expression.
+func stepFieldCount(exp ast.Expr) int {
+	if rec, ok := exp.(*ast.Record); ok && rec.With == nil {
+		return len(rec.Fields)
+	}
+	return 1
+}
+
+// groupLabel is a group field's derived label and the source range
+// to blame for a duplicate: the label if explicit, else the field
+// expression.
+type groupLabel struct {
+	label string
+	span  token.Span
+}
+
+// groupFieldLabels returns the label and blame-span of each field of
+// a group-key or compute expression.
+func groupFieldLabels(exp ast.Expr) []groupLabel {
+	if rec, ok := exp.(*ast.Record); ok && rec.With == nil {
+		out := make([]groupLabel, 0, len(rec.Fields))
+		for _, f := range rec.Fields {
+			label, span := f.Label, f.LabelSpan
+			if label == "" {
+				label, span = implicitLabel(f.Exp), f.Exp.Span()
+			}
+			out = append(out, groupLabel{label, span})
+		}
+		return out
+	}
+	return []groupLabel{{implicitLabel(exp), exp.Span()}}
 }

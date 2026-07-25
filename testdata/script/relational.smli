@@ -733,6 +733,22 @@ from i in [2, 1, 2]
   group i compute (sum over i);
 > val it = [{i=2,sum=4},{i=1,sum=1}] : {i:int, sum:int} list
 
+(* Duplicate field name across 'group' and 'compute' clauses. The
+ * error points at the offending label (the second occurrence). *)
+from e in [{x = 1, y = 5}]
+  group {a = e.x}
+  compute {a = sum over e.y};
+> stdIn:3.12 Error: duplicate field name 'a' in group
+>   raised at: stdIn:3.12
+
+(* When the duplicate label is implicit (derived from the field
+ * expression), the error position is the field expression itself. *)
+from e in [{x = 1, y = 5}]
+  group {sum = e.x}
+  compute sum over e.y;
+> stdIn:3.11-3.23 Error: duplicate field name 'sum' in group
+>   raised at: stdIn:3.11-3.23
+
 (* Duplicate field name within the 'compute' record itself. The error
  * position is the second occurrence of the label. *)
 from e in [{x = 1, y = 5}, {x = 0, y = 1}, {x = 1, y = 1}]
@@ -744,6 +760,12 @@ from e in [{x = 1, y = 5}, {x = 0, y = 1}, {x = 1, y = 1}]
   group {e.x, x = e.y};
 > stdIn:2.15 Error: duplicate field 'x' in record
 >   raised at: stdIn:2.15
+
+from e in [{x = 1, y = 5}]
+  group {a = e.x}
+  compute {c = sum over e.y, c = sum over e.x};
+> stdIn:3.30 Error: duplicate field 'c' in record
+>   raised at: stdIn:3.30
 
 (* -------------------------------------------------------------------
  * A 'binder' is an identifier in a yield, yieldAll or group that
