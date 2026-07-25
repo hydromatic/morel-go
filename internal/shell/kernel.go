@@ -178,6 +178,8 @@ func NewKernel(name string) *Kernel {
 	maps.Copy(values, k.datalogBuiltins())
 	// The internal extent builtin backs sourceless query scans.
 	values[compile.ExtentName] = eval.Fn(eval.ExtentValues)
+	// The internal raise builtin backs the "raise" expression.
+	values[compile.RaiseName] = eval.Fn(eval.RaiseFn)
 	// Build the structure records first, so that a structure defined
 	// in embedded Morel source can reference any other structure;
 	// then evaluate those sources and rebuild, wiring in the
@@ -530,7 +532,11 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	datatypeDecl, isDatatype := resolved.Decl.(*ast.DatatypeDecl)
 	if isDatatype {
 		// The declaration registered its datatype and
-		// constructors in the type system; the shell echoes it.
+		// constructors in the type system. Re-bind each
+		// constructor name, so that it shadows a same-named
+		// built-in binding (a user datatype's Empty must hide
+		// exn's); the shell then echoes the declaration.
+		k.bindDatatypeCons(datatypeDecl)
 		return ast.UnparseDatatypeDecl(datatypeDecl)
 	}
 	if typeDecl, isType := resolved.Decl.(*ast.TypeDecl); isType {
@@ -702,6 +708,26 @@ func (k *Kernel) recordInlineExp(decl core.Decl) {
 			if okPat && okFn {
 				k.recFns[pat.Name] = fn
 			}
+		}
+	}
+}
+
+// bindDatatypeCons binds a datatype declaration's constructors as
+// values, so later statements resolve them ahead of any
+// same-named built-in constructor binding. Their types come from
+// the type system, where the declaration just registered them.
+func (k *Kernel) bindDatatypeCons(decl *ast.DatatypeDecl) {
+	for _, b := range decl.Binds {
+		for _, c := range b.Cons {
+			tc, ok := k.sys.LookupTyCon(c.Name)
+			if !ok {
+				continue
+			}
+			t := tc.Result
+			if tc.Arg != nil {
+				t = k.sys.Fn(tc.Arg, tc.Result)
+			}
+			k.bind(c.Name, t)
 		}
 	}
 }

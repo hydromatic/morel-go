@@ -70,6 +70,7 @@ const (
 	FnOp
 	CaseOp
 	MatchOp
+	RaiseOp
 
 	// Patterns.
 
@@ -178,6 +179,7 @@ var opNames = map[Op]string{
 	FnOp:    "fn",
 	CaseOp:  "case",
 	MatchOp: "match",
+	RaiseOp: "raise",
 
 	IDPatOp:            "id_pat",
 	WildcardPatOp:      "wildcard_pat",

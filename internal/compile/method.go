@@ -170,6 +170,8 @@ func (reg *MethodRegistry) rewriteExpr(e ast.Expr) ast.Expr {
 		}
 	case *ast.PrefixCall:
 		x.A = reg.rewriteExpr(x.A)
+	case *ast.Raise:
+		x.E = reg.rewriteExpr(x.E)
 	case *ast.Record:
 		for i := range x.Fields {
 			x.Fields[i].Exp = reg.rewriteExpr(x.Fields[i].Exp)

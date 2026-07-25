@@ -124,6 +124,11 @@ DESC (DESC "a");
 (* "eqtype string" maps to "String" *)
 "x";
 > val it = "x" : string
+(* "type substring" maps to "Substring" *)
+(*) TODO substring
+(* "type exn" maps to "General" *)
+Empty;
+> val it = Empty : exn
 (* "eqtype 'a array" maps to "Array" *)
 (*) TODO 'a array
 (* "eqtype 'a vector" maps to "Vector" *)
@@ -143,11 +148,46 @@ LESS;
 (* "datatype 'a list = nil | :: of ('a * 'a list)" is primitive *)
 [];
 > val it = [] : 'a list
+
+(* Exceptions ----------------------------------------------------- *)
+(* "exception Bind" maps to "General" *)
+Bind;
+> val it = Bind : exn
+(* "exception Chr" maps to "General" *)
+Chr;
+> val it = Chr : exn
+(* "exception Div" maps to "General" *)
+Div;
+> val it = Div : exn
+(* "exception Domain" maps to "General" *)
+Domain;
+> val it = Domain : exn
+(* "exception Empty" maps to "List" *)
+Empty;
+> val it = Empty : exn
+(* "exception Fail of string" maps to "General" *)
+Fail "x";
+> val it = Fail "x" : exn
+(* "exception Match" maps to "General" *)
+Match;
+> val it = Match : exn
 (* "exception Option" maps to "Option". The structure "Option" shadows the
  * exception, so we reach it via "valOf", which raises it. *)
 valOf NONE;
 > uncaught exception Option
 >   raised at: stdIn:1.1-1.11
+(* "exception Overflow" maps to "General" *)
+Overflow;
+> val it = Overflow : exn
+(* "exception Size" maps to "General" *)
+Size;
+> val it = Size : exn
+(* "exception Span" maps to "General" *)
+Span;
+> val it = Span : exn
+(* "exception Subscript" maps to "General" *)
+Subscript;
+> val it = Subscript : exn
 
 (* Values --------------------------------------------------------- *)
 
@@ -239,7 +279,15 @@ concat;
 > val it = fn : string list -> string
 String.concat;
 > val it = fn : string list -> string
+
+(* "val exnMessage : exn -> string" maps to "General.exnMessage" *)
+exnMessage;
+> val it = fn : exn -> string
 General.exnMessage;
+> val it = fn : exn -> string
+
+(* "val exnName : exn -> string" maps to "General.exnName" *)
+exnName;
 > val it = fn : exn -> string
 General.exnName;
 > val it = fn : exn -> string

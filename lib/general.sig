@@ -36,8 +36,12 @@ sig
   (**
    * is the type of exceptions. Every exception constructor creates a value
    * of this type, and the `raise` and `handle` constructs operate on it.
+   * The built-in exceptions are its constructors — including those that
+   * other structures document (`Empty` from List, `UnequalLengths` from
+   * ListPair, `Unordered` from IEEEReal) — matching the reference
+   * implementation's EXN datatype; only `Fail` carries a payload.
    *)
-  type exn = exn
+  datatype exn = Bind | Chr | Div | Domain | Empty | Fail of string | Match | Overflow | Size | Span | Subscript | UnequalLengths | Unordered
 
   (** is raised when pattern matching fails in a `val` binding. *)
   exception Bind

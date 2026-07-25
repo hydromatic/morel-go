@@ -323,6 +323,8 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 			Arg:  arg,
 			Span: e.Span(),
 		}, nil
+	case *ast.Raise:
+		return r.toRaise(env, e, t)
 	case *ast.RangeList:
 		return r.toRangeList(env, e, t)
 	case *ast.Record:
@@ -443,7 +445,8 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 				}
 			}
 			groupSteps, groupRowVars, newCur, err := r.toGroupStep(
-				cur, g, compute)
+				cur, g, compute,
+			)
 			if err != nil {
 				return nil, err
 			}
@@ -819,6 +822,34 @@ func (r *resolver) toScanStep(cur *coreEnv, s *ast.Scan) (
 // ExtentName is the name of the internal builtin that returns an
 // extent's values.
 const ExtentName = "$.extent"
+
+// RaiseName is the name of the internal builtin behind the
+// "raise" expression; the kernel binds it to eval.RaiseFn.
+const RaiseName = "$.raise"
+
+// exnTypeName names the exception datatype.
+const exnTypeName = "exn"
+
+// toRaise converts "raise e" to a call of the internal raise
+// builtin. The application's span is the whole raise expression,
+// which is where the report says the exception was raised.
+func (r *resolver) toRaise(env *coreEnv, raise *ast.Raise,
+	t types.Type,
+) (core.Exp, error) {
+	arg, err := r.toExp(env, raise.E)
+	if err != nil {
+		return nil, err
+	}
+	return &core.Apply{
+		T: t,
+		Fn: &core.ID{Pat: &core.IDPat{
+			T:    r.typeMap.sys.Fn(arg.Type(), t),
+			Name: RaiseName,
+		}},
+		Arg:  arg,
+		Span: raise.Span(),
+	}, nil
+}
 
 // extentExp builds the source of a sourceless scan: a call of the
 // internal extent builtin on the (materialized, if finite) extent
@@ -1508,14 +1539,16 @@ func literalValue(kind ast.Op, text string) (any, error) {
 		return []rune(text)[0], nil
 	case ast.IntLiteralOp, ast.IntLiteralPatOp:
 		i, err := strconv.ParseInt(
-			strings.ReplaceAll(text, "~", "-"), 10, 32)
+			strings.ReplaceAll(text, "~", "-"), 10, 32,
+		)
 		if err != nil {
 			return nil, &Error{Msg: "invalid literal: " + text}
 		}
 		return int32(i), nil
 	case ast.RealLiteralOp, ast.RealLiteralPatOp:
 		f, err := strconv.ParseFloat(
-			strings.ReplaceAll(text, "~", "-"), 32)
+			strings.ReplaceAll(text, "~", "-"), 32,
+		)
 		if err != nil {
 			return nil, &Error{Msg: "invalid literal: " + text}
 		}

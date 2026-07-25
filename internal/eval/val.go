@@ -60,6 +60,11 @@ type Relation struct {
 type MorelError struct {
 	Span token.Span
 	Exn  string
+	// ExnValue is the exn value a "raise" expression threw (nil
+	// when a built-in raised directly); a payload it carries
+	// appears in the report's brackets, e.g.
+	// "uncaught exception Fail [Fail: boom]".
+	ExnValue Val
 }
 
 func (e *MorelError) Error() string {
@@ -86,6 +91,8 @@ func (e *MorelError) Describe() string {
 	s := "uncaught exception " + e.Exn
 	if d, ok := exnDescriptions[e.Exn]; ok {
 		s += " [" + d + "]"
+	} else if con, ok := e.ExnValue.(Con); ok && con.Arg != nil {
+		s += " [" + exnMessage(con) + "]"
 	}
 	if e.Span != (token.Span{}) {
 		s += "\n  raised at: stdIn:" + e.Span.String()

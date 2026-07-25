@@ -448,7 +448,7 @@ func isAtomStart(kind token.Kind) bool {
 		token.Exists, token.Fn, token.Forall, token.From,
 		token.Ident, token.If, token.Label, token.LParen,
 		token.LBracket, token.LBrace, token.Let, token.Ordinal,
-		token.QuotedIdent:
+		token.QuotedIdent, token.Raise:
 		return true
 	default:
 		return false
@@ -508,9 +508,26 @@ func (p *Parser) atom() (ast.Expr, error) {
 		}
 		return ast.NewID(tok.Span,
 			unquoteIdent(tok.Text)), nil
+	case token.Raise:
+		return p.raiseExpr()
 	default:
 		return p.literal()
 	}
+}
+
+// raiseExpr parses "raise e".
+func (p *Parser) raiseExpr() (ast.Expr, error) {
+	start := p.tok.Span.Start
+	err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	e, err := p.expr()
+	if err != nil {
+		return nil, err
+	}
+	span := token.Span{Start: start, End: e.Span().End}
+	return ast.NewRaise(span, e), nil
 }
 
 // opExpr parses "op <operator>", an operator used as a first-class

@@ -59,6 +59,7 @@ func deduce(t *testing.T, src string) (*compile.Resolved, error) {
 	sys.DeclareDatatype("bag", 1)
 	sys.DeclareDatatype("vector", 1)
 	sys.DeclareDatatype("order", 0)
+	sys.DeclareDatatype("exn", 0)
 	order := sys.Named("order")
 	sys.DeclareTyCon("LESS", nil, order)
 	sys.DeclareTyCon("EQUAL", nil, order)
@@ -233,7 +234,8 @@ func TestDeduce(t *testing.T) {
 				t.Fatalf("deduce %q: %v", tc.src, err)
 			}
 			typ, err := resolved.TypeMap.TypeOf(
-				firstPat(t, resolved))
+				firstPat(t, resolved),
+			)
 			if err != nil {
 				t.Fatal(err)
 			}

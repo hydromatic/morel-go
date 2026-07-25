@@ -379,6 +379,21 @@ func (r *typeResolver) meetOrderedness(o, o0, o1 *unify.Var) {
 	})
 }
 
+// deduceRaise types "raise e": the argument is an exn; the
+// result is free, since a raise never returns.
+func (r *typeResolver) deduceRaise(env typeEnv, e *ast.Raise,
+	v *unify.Var,
+) error {
+	vExn := r.u.Variable()
+	err := r.deduceExp(env, e.E, vExn)
+	if err != nil {
+		return err
+	}
+	r.equiv(vExn, unify.Apply(exnTypeName))
+	r.reg(e, v)
+	return nil
+}
+
 // ordSubstKey is the subst slot (below any real type-variable
 // ordinal) holding an instantiation's shared collection
 // orderedness.
@@ -1057,6 +1072,8 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 	case *ast.PrefixCall:
 		return r.deduceOpCall(env, opNegate, e,
 			[]ast.Expr{e.A}, v)
+	case *ast.Raise:
+		return r.deduceRaise(env, e, v)
 	case *ast.RangeList:
 		return r.deduceRangeList(env, e, v)
 	case *ast.Record:

@@ -324,6 +324,22 @@ func NewIf(span token.Span, cond, ifTrue, ifFalse Expr) *If {
 // Op implements Node.
 func (*If) Op() Op { return IfOp }
 
+// Raise is "raise e": e evaluates to an exn value, which is
+// raised. The expression never returns, so its own type is free.
+type Raise struct {
+	exprBase
+
+	E Expr
+}
+
+// NewRaise returns a raise expression.
+func NewRaise(span token.Span, e Expr) *Raise {
+	return &Raise{exprBase: exprBase{base{span}}, E: e}
+}
+
+// Op implements Node.
+func (*Raise) Op() Op { return RaiseOp }
+
 // Match is one rule of a fn or case: a pattern and its result.
 type Match struct {
 	base
