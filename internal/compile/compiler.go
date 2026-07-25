@@ -145,7 +145,7 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch e := exp.(type) {
 	case *core.Apply:
-		return c.compileApply(e)
+		return c.compileApply(e, false)
 	case *core.Case:
 		return c.compileCase(e)
 	case *core.Con:
@@ -179,7 +179,7 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 		}
 		return nil, &Error{Msg: "not found: " + e.Pat.Name}
 	case *core.Let:
-		return c.compileLet(e)
+		return c.compileLet(e, false)
 	case *core.List:
 		args := make([]eval.Code, len(e.Args))
 		for i, arg := range e.Args {
@@ -659,7 +659,7 @@ func (c *compiler) compileFn(fn *core.Fn) (eval.Code, error) {
 	if err != nil {
 		return nil, err
 	}
-	body, err := inner.compileExp(fn.Exp)
+	body, err := inner.compileTail(fn.Exp)
 	if err != nil {
 		return nil, err
 	}
@@ -667,8 +667,22 @@ func (c *compiler) compileFn(fn *core.Fn) (eval.Code, error) {
 		inner.captures, inner.nSlots), nil
 }
 
-// compileApply compiles a function application.
-func (c *compiler) compileApply(e *core.Apply) (eval.Code, error) {
+// compileBody compiles a let body, in tail position if the let is.
+func (c *compiler) compileBody(exp core.Exp, tail bool) (eval.Code,
+	error,
+) {
+	if tail {
+		return c.compileTail(exp)
+	}
+	return c.compileExp(exp)
+}
+
+// compileApply compiles a function application; tail is true when
+// it is in tail position (rendered as tailApply). The function and
+// argument are never in tail position.
+func (c *compiler) compileApply(e *core.Apply, tail bool) (eval.Code,
+	error,
+) {
 	fn, err := c.compileExp(e.Fn)
 	if err != nil {
 		return nil, err
@@ -678,7 +692,22 @@ func (c *compiler) compileApply(e *core.Apply) (eval.Code, error) {
 		return nil, err
 	}
 	name, arity, curried := c.builtinFnInfo(e.Fn, fn)
-	return eval.Apply(fn, arg, e.Span, name, arity, curried), nil
+	return eval.Apply(fn, arg, e.Span, name, arity, curried, tail), nil
+}
+
+// compileTail compiles an expression in tail position. Tail-ness
+// flows to a let's body (not its init) and to an application (shown
+// as tailApply); anything else compiles normally.
+func (c *compiler) compileTail(exp core.Exp) (eval.Code, error) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch e := exp.(type) {
+	case *core.Apply:
+		return c.compileApply(e, true)
+	case *core.Let:
+		return c.compileLet(e, true)
+	default:
+		return c.compileExp(exp)
+	}
 }
 
 func (c *compiler) compileCase(caseExp *core.Case) (eval.Code,
@@ -808,7 +837,9 @@ func (c *compiler) compileRangeList(e *core.RangeList) (eval.Code,
 	return eval.RangeList(items), nil
 }
 
-func (c *compiler) compileLet(let *core.Let) (eval.Code, error) {
+func (c *compiler) compileLet(let *core.Let, tail bool) (eval.Code,
+	error,
+) {
 	switch d := let.Decl.(type) {
 	case *core.NonRecValDecl:
 		init, err := c.compileExp(d.Exp)
@@ -819,7 +850,7 @@ func (c *compiler) compileLet(let *core.Let) (eval.Code, error) {
 		if err != nil {
 			return nil, err
 		}
-		body, err := c.compileExp(let.Exp)
+		body, err := c.compileBody(let.Exp, tail)
 		if err != nil {
 			return nil, err
 		}
@@ -830,7 +861,7 @@ func (c *compiler) compileLet(let *core.Let) (eval.Code, error) {
 				c.allocSlot(idPat)
 			}
 		}
-		body, err := c.compileExp(let.Exp)
+		body, err := c.compileBody(let.Exp, tail)
 		if err != nil {
 			return nil, err
 		}

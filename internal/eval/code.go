@@ -165,7 +165,7 @@ func (c *makeClosureCode) Describe() string {
 // to render the compiled plan; fnName is empty for any other
 // function.
 func Apply(fn, arg Code, span token.Span, fnName string,
-	fnArity, fnCurried int,
+	fnArity, fnCurried int, tail bool,
 ) Code {
 	return &applyCode{
 		fn:        fn,
@@ -174,6 +174,7 @@ func Apply(fn, arg Code, span token.Span, fnName string,
 		fnName:    fnName,
 		fnArity:   fnArity,
 		fnCurried: fnCurried,
+		tail:      tail,
 	}
 }
 
@@ -187,6 +188,9 @@ type applyCode struct {
 	// arguments (arrows in its type), used to collapse a fully
 	// applied curried built-in to apply2/apply3 in the plan.
 	fnCurried int
+	// tail is true when the application is in tail position, shown
+	// as tailApply rather than apply in the plan.
+	tail bool
 }
 
 func (c *applyCode) Eval(f *Frame) (Val, error) {
@@ -233,17 +237,27 @@ func (c *applyCode) Describe() string {
 	}
 	// A built-in whose argument is a tuple of the arity it expects
 	// is described the same way, with the tuple's elements spread.
+	// (apply2/apply3 have no tail variant.)
 	if c.fnName != "" {
 		if tup, ok := c.arg.(*tupleCode); ok &&
 			len(tup.args) == c.fnArity &&
 			(c.fnArity == 2 || c.fnArity == 3) {
 			return applyN(c.fnName, tup.args)
 		}
-		return "apply(fnValue " + c.fnName + ", argCode " +
-			c.arg.Describe() + ")"
+		return c.applyWord() + "(fnValue " + c.fnName +
+			", argCode " + c.arg.Describe() + ")"
 	}
-	return "apply(fnCode " + c.fn.Describe() + ", argCode " +
-		c.arg.Describe() + ")"
+	return c.applyWord() + "(fnCode " + c.fn.Describe() +
+		", argCode " + c.arg.Describe() + ")"
+}
+
+// applyWord is "tailApply" for an application in tail position,
+// else "apply".
+func (c *applyCode) applyWord() string {
+	if c.tail {
+		return "tailApply"
+	}
+	return "apply"
 }
 
 // curriedSpine returns the built-in name and argument codes of a
