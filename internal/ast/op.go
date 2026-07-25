@@ -120,6 +120,7 @@ const (
 	ScanOp
 	WhereOp
 	YieldOp
+	YieldAllOp
 	GroupOp
 	ComputeOp
 	OrderOp
@@ -222,6 +223,7 @@ var opNames = map[Op]string{
 	ScanOp:       "scan",
 	WhereOp:      "where",
 	YieldOp:      "yield",
+	YieldAllOp:   "yieldAll",
 	GroupOp:      "group",
 	ComputeOp:    "compute",
 	OrderOp:      "order",

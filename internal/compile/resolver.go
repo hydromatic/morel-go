@@ -450,22 +450,28 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 		// A "group" absorbs the "compute" that follows it, so the
 		// aggregates are typed over the pre-group rows.
 		if g, ok := step.(*ast.GroupStep); ok {
-			var compute *ast.ComputeStep
-			if i+1 < len(from.Steps) {
-				if c, ok := from.Steps[i+1].(*ast.ComputeStep); ok {
-					compute = c
-					i++
-				}
-			}
-			groupSteps, groupRowVars, newCur, err := r.toGroupStep(
-				cur, rowVars, g, compute,
-			)
+			gs, gVars, newCur, ni, err := r.toGroupAbsorb(
+				cur, rowVars, from, g, i)
 			if err != nil {
 				return nil, err
 			}
-			steps = append(steps, groupSteps...)
+			steps = append(steps, gs...)
 			cur = newCur
-			rowVars = groupRowVars
+			rowVars = gVars
+			i = ni
+			continue
+		}
+		// A "yieldAll" flattens: scan the collection per row, the
+		// element becoming the whole row, named by the binder or
+		// "current".
+		if ya, ok := step.(*ast.YieldAllStep); ok {
+			yaSteps, pat, err := r.toYieldAllStep(cur, ya)
+			if err != nil {
+				return nil, err
+			}
+			steps = append(steps, yaSteps...)
+			cur = cur.bind(pat)
+			rowVars = []*core.IDPat{pat}
 			continue
 		}
 		// A standalone "compute" is a group with no keys whose
@@ -496,21 +502,46 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 		return nil, unsupported
 	}
 	if computeScalar {
-		// The query's type is the scalar; the inner from collects
-		// the empty-key group's single row, and "only" unwraps it.
-		sys := r.typeMap.sys
-		bagT := sys.Named("bag", t)
-		return &core.Apply{
-			T: t,
-			Fn: &core.ID{Pat: &core.IDPat{
-				T:    sys.Fn(bagT, t),
-				Name: onlyName,
-			}},
-			Arg:  &core.From{T: bagT, Steps: steps, Kind: from.Kind},
-			Span: from.Span(),
-		}, nil
+		return r.onlyWrap(t, steps, from), nil
 	}
 	return &core.From{T: t, Steps: steps, Kind: from.Kind}, nil
+}
+
+// toGroupAbsorb converts a "group" step at index i, absorbing the
+// "compute" that follows it (so the aggregates are typed over the
+// pre-group rows); it returns the index of the last step consumed.
+func (r *resolver) toGroupAbsorb(cur *coreEnv,
+	rowVars []*core.IDPat, from *ast.From, g *ast.GroupStep, i int,
+) ([]core.FromStep, []*core.IDPat, *coreEnv, int, error) {
+	var compute *ast.ComputeStep
+	if i+1 < len(from.Steps) {
+		if c, ok := from.Steps[i+1].(*ast.ComputeStep); ok {
+			compute = c
+			i++
+		}
+	}
+	groupSteps, groupRowVars, newCur, err := r.toGroupStep(
+		cur, rowVars, g, compute)
+	return groupSteps, groupRowVars, newCur, i, err
+}
+
+// onlyWrap wraps a standalone-compute query in "only": the inner
+// from collects the empty-key group's single row, and "only"
+// unwraps it to the scalar.
+func (r *resolver) onlyWrap(t types.Type, steps []core.FromStep,
+	from *ast.From,
+) core.Exp {
+	sys := r.typeMap.sys
+	bagT := sys.Named("bag", t)
+	return &core.Apply{
+		T: t,
+		Fn: &core.ID{Pat: &core.IDPat{
+			T:    sys.Fn(bagT, t),
+			Name: onlyName,
+		}},
+		Arg:  &core.From{T: bagT, Steps: steps, Kind: from.Kind},
+		Span: from.Span(),
+	}
 }
 
 // updateRowVars adjusts the current row's variables after a step: a

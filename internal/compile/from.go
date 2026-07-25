@@ -254,6 +254,8 @@ func (st *fromState) step(step ast.FromStep) error {
 		return nil
 	case *ast.WhereStep:
 		return st.boolStep(s.Exp)
+	case *ast.YieldAllStep:
+		return st.yieldAllStep(s)
 	case *ast.YieldStep:
 		return st.yieldStep(s)
 	default:
@@ -479,6 +481,30 @@ func (r *typeResolver) deduceScan(env typeEnv, scan *ast.Scan,
 		r.equiv(vBool, r.primTerm(boolName))
 	}
 	return fields, sourceOrd, nil
+}
+
+// yieldAllStep types "yieldAll [binder in] exp": exp is a
+// collection whose element becomes the row, named by the binder
+// or "current"; the query's orderedness meets the collection's.
+func (st *fromState) yieldAllStep(s *ast.YieldAllStep) error {
+	r := st.r
+	vElem := r.u.Variable()
+	vColl := r.u.Variable()
+	err := r.deduceExp(st.env, s.Exp, vColl)
+	if err != nil {
+		return err
+	}
+	sourceOrd := r.u.Variable()
+	r.equiv(vColl, r.collectionTerm(vElem, sourceOrd))
+	st.ord = r.meetSourceOrd(st.ord, sourceOrd)
+	label := s.Binder
+	if label == "" {
+		label = currentName
+	}
+	st.fields = []labelTerm{{label: label, term: vElem}}
+	st.curElem = vElem
+	st.env = r.bindStep(st.rootEnv, st.fields, vElem)
+	return nil
 }
 
 // yieldStep types a "yield [binder =] exp" step, updating the

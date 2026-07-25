@@ -151,6 +151,38 @@ func (r *resolver) toOverExp(e *ast.InfixCall) (core.Exp, error) {
 	}
 }
 
+// toYieldAllStep converts "yieldAll [binder in] exp": a scan of
+// the collection into a hidden variable, then a yield rebinding
+// the row to the element alone (named by the binder, or
+// "current"), so the pre-flattening variables leave the row.
+func (r *resolver) toYieldAllStep(cur *coreEnv,
+	ya *ast.YieldAllStep,
+) ([]core.FromStep, *core.IDPat, error) {
+	exp, err := r.toExp(cur, ya.Exp)
+	if err != nil {
+		return nil, nil, err
+	}
+	elemT := collectionElem(exp.Type())
+	if elemT == nil {
+		return nil, nil, &Error{
+			Span: ya.Span(),
+			Msg:  "cannot convert to core: yieldAll",
+		}
+	}
+	name := ya.Binder
+	if name == "" {
+		name = "current"
+	}
+	hidden := &core.IDPat{T: elemT, Name: "$yieldAll"}
+	pat := &core.IDPat{T: elemT, Name: name}
+	return []core.FromStep{
+		&core.Scan{Pat: hidden, Exp: exp},
+		&core.Yield{Fields: []core.YieldField{
+			{Pat: pat, Exp: &core.ID{Pat: hidden}},
+		}},
+	}, pat, nil
+}
+
 // aggNodes collects the aggregating subexpressions of a compute
 // field — "fn over arg" aggregates and "elements" — without
 // descending into a hoisted node itself or into a nested query's

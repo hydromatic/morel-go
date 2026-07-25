@@ -108,6 +108,28 @@ type exprStep struct {
 	Exp Expr
 }
 
+// YieldAllStep is "yieldAll [binder in] exp": exp is a collection
+// whose elements are emitted, flattening; each element becomes
+// the row, named by the binder or referenced as "current".
+type YieldAllStep struct {
+	exprStep
+
+	Binder string
+}
+
+// NewYieldAllStep returns a yieldAll step.
+func NewYieldAllStep(span token.Span, exp Expr,
+	binder string,
+) *YieldAllStep {
+	return &YieldAllStep{
+		exprStep: exprStep{stepBase{base{span}}, exp},
+		Binder:   binder,
+	}
+}
+
+// Op implements Node.
+func (*YieldAllStep) Op() Op { return YieldAllOp }
+
 // GroupStep is "group [binder =] exp".
 type GroupStep struct {
 	exprStep

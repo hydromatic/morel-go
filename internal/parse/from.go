@@ -111,6 +111,8 @@ func (p *Parser) fromStep() ([]ast.FromStep, error) {
 		}
 		return []ast.FromStep{ast.NewBareStep(span,
 			ast.UnorderOp)}, nil
+	case token.YieldAll:
+		return p.yieldAllStep()
 	default:
 		return nil, nil
 	}
@@ -152,6 +154,44 @@ func (p *Parser) exprStep(kind ast.Op) ([]ast.FromStep, error) {
 	default:
 	}
 	return []ast.FromStep{step}, nil
+}
+
+// yieldAllStep parses "yieldAll [binder in] exp".
+func (p *Parser) yieldAllStep() ([]ast.FromStep, error) {
+	kwStart := p.tok.Span.Start
+	err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	binder, err := p.yieldAllBinder()
+	if err != nil {
+		return nil, err
+	}
+	exp, err := p.expr()
+	if err != nil {
+		return nil, err
+	}
+	span := token.Span{Start: kwStart, End: exp.Span().End}
+	return []ast.FromStep{
+		ast.NewYieldAllStep(span, exp, binder),
+	}, nil
+}
+
+// yieldAllBinder recognizes "name in" after "yieldAll".
+func (p *Parser) yieldAllBinder() (string, error) {
+	if p.tok.Kind != token.Ident {
+		return "", nil
+	}
+	kind, err := p.peek()
+	if err != nil || kind != token.In {
+		return "", err
+	}
+	binder := p.tok.Text
+	err = p.next()
+	if err != nil {
+		return "", err
+	}
+	return binder, p.next()
 }
 
 // stepBinder recognizes "name =" before a group, compute, or yield
