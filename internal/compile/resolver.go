@@ -876,6 +876,17 @@ func (r *resolver) toScanStep(cur *coreEnv, s *ast.Scan) (
 	var exp core.Exp
 	// lint: sort until '^\t}' where '^\tcase '
 	switch s.Kind {
+	case ast.ScanEq:
+		// "pat = exp" binds the pattern to the value of exp; it
+		// lowers to a scan of the singleton list of that value.
+		val, valErr := r.toExp(cur, s.Exp)
+		if valErr != nil {
+			return nil, nil, valErr
+		}
+		exp = &core.List{
+			T:    r.typeMap.sys.List(val.Type()),
+			Args: []core.Exp{val},
+		}
 	case ast.ScanIn:
 		// The source is in the current scope, so a later scan may
 		// depend on an earlier scan's variables.

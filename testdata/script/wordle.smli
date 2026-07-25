@@ -98,6 +98,20 @@ fun f (guess, remainingWords: 'a list) =
     compute count over ();
 > val f = fn : string * string list -> int
 
+(* Returns the best guesses in "sampleWords".
+   A good guess is one that, in the worst case scenario,
+   namely a mask shared by a lot of words, minimizes the
+   size of that set of words. *)
+fun bestGuesses2 (sampleWords: 'a list, remainingWords: 'a list) =
+  from w in sampleWords,
+    f = f (w, remainingWords)
+    order DESC f;
+> val bestGuesses2 = fn : string list * string list -> {f:int, w:string} list
+
+fun bestGuesses words =
+  bestGuesses2 (words, words);
+> val bestGuesses = fn : string list -> {f:int, w:string} list
+
 (* Returns the words left after applying a set of filters from previous
    guesses. *)
 fun remaining (words: 'a list, []) = words
@@ -110,5 +124,28 @@ fun remaining2 (words: 'a list, guess, m) =
   from w in words
     where mask (guess, w) = m;
 > val remaining2 = fn : string list * string * int -> string list
+
+(*) Solves the puzzle from a starting word.
+fun solve (firstGuess, answer, words) =
+  let
+    fun solve2 ([], steps) = "*" :: steps
+      | solve2 (remainingWord :: nil, steps) = remainingWord :: steps
+      | solve2 (remainingWords, steps) =
+      case (bestGuesses remainingWords) of
+          [] => "*" :: steps
+        | {f, w = guess} :: guesses =>
+            solve3 (guess, remainingWords, steps)
+    and solve3 (guess, remainingWords, steps) =
+      if guess = answer then
+        guess :: steps
+      else
+        solve2 (remaining2 (remainingWords,
+                            guess,
+                            mask (guess, answer)),
+                guess :: steps)
+  in
+    List.rev (solve3 (firstGuess, words, []))
+  end;
+> val solve = fn : string * string * string list -> string list
 
 (*) End wordle.smli

@@ -1092,6 +1092,11 @@ fun maskCount (guess, remainingWords: string list) =
     group {m = mask (guess, w)} compute {c = count over ()}
     compute count over ();
 > val maskCount = fn : string * string list -> int
+fun bestGuesses words =
+  from w in words,
+    maskCount = maskCount (w, words)
+    order DESC maskCount;
+> val bestGuesses = fn : string list -> {maskCount:int, w:string} list
 fun remaining (words: string list, []) = words
   | remaining (words, (guess, m) :: rest) =
       from w in (remaining (words, rest))
@@ -1557,6 +1562,20 @@ from s in shipments,
 >  2 cider          4
 >
 > val it : {id:int, product:string, quantity:int} list
+
+(* Single-row scan. Iterate over a list of integers and compute whether
+   they are odd. *)
+from i in [1, 2, 3, 4, 5],
+    odd = (i mod 2 = 1);
+> i odd
+> - -----
+> 1 true
+> 2 false
+> 3 true
+> 4 false
+> 5 true
+>
+> val it : {i:int, odd:bool} list
 
 (* Equivalent using "in" and a singleton list. *)
 from i in [1, 2, 3, 4, 5],
