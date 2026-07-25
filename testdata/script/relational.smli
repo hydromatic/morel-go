@@ -597,6 +597,9 @@ from i in [1,2] yield r = i + 1 join u in [3,4];
 from i in [1,2,3] yield (i = 2);
 > val it = [false,true,false] : bool list
 
+from i in [1,2,3] group g = {g = i} yield g.g;
+> val it = [1,2,3] : int list
+
 (*) singleton record 'yield' followed by singleton 'group'
 from e in emps
   yield {d = e.deptno}
@@ -669,6 +672,46 @@ from e in emps
   group d compute {c = count over ()}
   order d;
 > val it = [{c=1,d=10},{c=1,d=20},{c=2,d=30}] : {c:int, d:int} list
+
+(* A binder ('group g = {keys} compute {aggs}') names the whole group
+ * row -- the union of the key and computed fields -- 'g'. *)
+from i in [1,2,3] group g = {x=i} compute {c = count over ()} order g.x;
+> val it = [{c=1,x=1},{c=1,x=2},{c=1,x=3}] : {c:int, x:int} list
+from i in [1,2,3] group g = {x=i} order g.x;
+> val it = [{x=1},{x=2},{x=3}] : {x:int} list
+from i in [1,2,3] group g = {} compute {c = count over ()};
+> val it = [{c=3}] : {c:int} list
+from i in [1,2] group g = i compute {c = count over ()} order g.i;
+> val it = [{c=1,i=1},{c=1,i=2}] : {c:int, i:int} list
+from i in [1,2,3]
+  group g = {x=i} compute {c = count over ()}
+  where current.x > 1
+  order g.x;
+> val it = [{c=1,x=2},{c=1,x=3}] : {c:int, x:int} list
+
+from i in [1,2,3]
+  group g = {x=i} compute {c = count over ()}
+  where g.c >= 1
+  order g.x;
+> val it = [{c=1,x=1},{c=1,x=2},{c=1,x=3}] : {c:int, x:int} list
+
+(*) A 'join' followed by a 'group' with a binder.
+from e in emps, d in depts
+  where e.deptno = d.deptno
+  group g = {dept = d.name} compute {total = sum over e.id}
+  order g.dept;
+> val it =
+>   [{dept="Engineering",total=205},{dept="HR",total=101},
+>    {dept="Sales",total=100}] : {dept:string, total:int} list
+
+(* A 'yield' binder before a 'group': the aggregate arguments in
+ * 'compute' reference fields through the binder 'r'. *)
+from e in emps
+  yield r = {dept = e.deptno, eid = e.id}
+  group g = {r.dept} compute {total = sum over r.eid}
+  order g.dept;
+> val it = [{dept=10,total=100},{dept=20,total=101},{dept=30,total=205}]
+>   : {dept:int, total:int} list
 
 (*) record whose only field is a record with only one field
 from x in [{a = {a = 1}}, {a = {a = 2}}]

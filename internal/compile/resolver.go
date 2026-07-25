@@ -416,13 +416,14 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 					i++
 				}
 			}
-			groupStep, newCur, err := r.toGroupStep(cur, g, compute)
+			groupSteps, groupRowVars, newCur, err := r.toGroupStep(
+				cur, g, compute)
 			if err != nil {
 				return nil, err
 			}
-			steps = append(steps, groupStep)
+			steps = append(steps, groupSteps...)
 			cur = newCur
-			rowVars = groupVars(groupStep)
+			rowVars = groupRowVars
 			continue
 		}
 		newSteps, newCur, _, err := r.toQueryStep(env, cur, step)
@@ -437,23 +438,6 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 		return nil, unsupported
 	}
 	return &core.From{T: t, Steps: steps, Kind: from.Kind}, nil
-}
-
-// groupVars is the output variables a group binds: its keys and
-// aggregates.
-func groupVars(step core.FromStep) []*core.IDPat {
-	g, ok := step.(*core.Group)
-	if !ok {
-		return nil
-	}
-	vars := make([]*core.IDPat, 0, len(g.Keys)+len(g.Aggs))
-	for _, k := range g.Keys {
-		vars = append(vars, k.Pat)
-	}
-	for _, a := range g.Aggs {
-		vars = append(vars, a.Pat)
-	}
-	return vars
 }
 
 // updateRowVars adjusts the current row's variables after a step: a
@@ -534,12 +518,12 @@ func (r *resolver) toQueryStep(env, cur *coreEnv, step ast.FromStep,
 // become the query's variables downstream.
 func (r *resolver) toGroupStep(cur *coreEnv, group *ast.GroupStep,
 	compute *ast.ComputeStep,
-) (core.FromStep, *coreEnv, error) {
+) ([]core.FromStep, []*core.IDPat, *coreEnv, error) {
 	var keys []core.GroupKey
 	for _, f := range r.stepFields(group.Exp) {
 		exp, err := r.toExp(cur, f.exp)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		keys = append(keys, core.GroupKey{
 			Pat: &core.IDPat{T: exp.Type(), Name: f.label},
@@ -551,19 +535,78 @@ func (r *resolver) toGroupStep(cur *coreEnv, group *ast.GroupStep,
 		for _, f := range r.stepFields(compute.Exp) {
 			agg, err := r.toGroupAgg(cur, f)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			aggs = append(aggs, agg)
 		}
 	}
-	newCur := cur
+	groupStep := &core.Group{Keys: keys, Aggs: aggs}
+	fieldPats := make([]*core.IDPat, 0, len(keys)+len(aggs))
 	for _, k := range keys {
-		newCur = newCur.bind(k.Pat)
+		fieldPats = append(fieldPats, k.Pat)
 	}
 	for _, a := range aggs {
-		newCur = newCur.bind(a.Pat)
+		fieldPats = append(fieldPats, a.Pat)
 	}
-	return &core.Group{Keys: keys, Aggs: aggs}, newCur, nil
+	if group.Binder == "" {
+		newCur := cur
+		for _, p := range fieldPats {
+			newCur = newCur.bind(p)
+		}
+		return []core.FromStep{groupStep}, fieldPats, newCur, nil
+	}
+	// A binder names the whole group row. Emit a following "yield"
+	// that assembles the key and aggregate fields into that row -- a
+	// record, or the bare value when the group is an atom (a single
+	// field from a non-record key or aggregate) -- and binds it to
+	// the binder, the only variable visible downstream.
+	var yieldExp core.Exp
+	if groupRowIsAtom(group, compute, len(fieldPats)) {
+		yieldExp = &core.ID{Pat: fieldPats[0]}
+	} else {
+		yieldExp = r.recordExp(fieldPats)
+	}
+	binderPat := &core.IDPat{T: yieldExp.Type(), Name: group.Binder}
+	yieldStep := &core.Yield{
+		Fields: []core.YieldField{{Pat: binderPat, Exp: yieldExp}},
+	}
+	return []core.FromStep{groupStep, yieldStep},
+		[]*core.IDPat{binderPat}, cur.bind(binderPat), nil
+}
+
+// groupRowIsAtom reports whether a group's row is a single bare
+// value rather than a record: exactly one field (nFields == 1)
+// that comes from a non-record expression, so neither the key nor
+// the compute clause is a singleton record literal.
+func groupRowIsAtom(group *ast.GroupStep, compute *ast.ComputeStep,
+	nFields int,
+) bool {
+	return nFields == 1 &&
+		!isSingletonRecord(group.Exp) &&
+		(compute == nil || !isSingletonRecord(compute.Exp))
+}
+
+// isSingletonRecord reports whether an expression is a record
+// literal with exactly one field.
+func isSingletonRecord(exp ast.Expr) bool {
+	rec, ok := exp.(*ast.Record)
+	return ok && rec.With == nil && len(rec.Fields) == 1
+}
+
+// recordExp builds a record of the given variables, sorted by name
+// (the canonical field order), each field bound to its variable.
+func (r *resolver) recordExp(pats []*core.IDPat) core.Exp {
+	sorted := append([]*core.IDPat(nil), pats...)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Name < sorted[j].Name
+	})
+	fields := make([]types.Field, len(sorted))
+	args := make([]core.Exp, len(sorted))
+	for i, v := range sorted {
+		fields[i] = types.Field{Label: v.Name, Type: v.T}
+		args[i] = &core.ID{Pat: v}
+	}
+	return &core.Tuple{T: r.typeMap.sys.Record(fields), Args: args}
 }
 
 // toYieldStep converts a "yield" that is not the last step: each
