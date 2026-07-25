@@ -19,6 +19,7 @@ package shell
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -64,6 +65,14 @@ type Config struct {
 	// and "scriptDirectory" properties report it.
 	Directory string
 
+	// ShowUnsupported surfaces not-yet-implemented compile errors
+	// and recovered panics instead of suppressing them. Script
+	// (idempotent) mode keeps them silent, so unpulled corpus
+	// statements replay quietly; the interactive shell and "-e"
+	// turn this on, so a user sees why a statement produced
+	// nothing.
+	ShowUnsupported bool
+
 	// sys resolves datatype constructors when printing their
 	// values.
 	sys *types.System
@@ -78,6 +87,10 @@ type Kernel struct {
 	sys      *types.System
 	bindings []compile.Binding
 	values   map[string]eval.Val
+	// gaps counts the not-yet-implemented errors and panics that
+	// suppression hid, by message — the inventory of what running
+	// the input would need. Gaps reports it.
+	gaps map[string]int
 }
 
 // NewKernel returns a kernel; name (e.g. "stdIn" or a file name)
@@ -124,7 +137,14 @@ func NewKernel(name string) *Kernel {
 		sys:      sys,
 		bindings: bindings,
 		values:   values,
+		gaps:     map[string]int{},
 	}
+}
+
+// Gaps reports what suppression hid: each not-yet-implemented
+// message with the number of statements it silenced.
+func (k *Kernel) Gaps() map[string]int {
+	return k.gaps
 }
 
 // Config returns the kernel's configuration; the kernel is its
@@ -155,6 +175,13 @@ func (k *Kernel) Execute(stmt string) string {
 	}
 	n, err := parse.Stmt(k.name, stmt)
 	if err != nil {
+		// A parse failure is silent in script mode (the grammar
+		// gap inventory records it); the interactive shell shows
+		// it.
+		k.gaps[err.Error()]++
+		if k.config.ShowUnsupported {
+			return err.Error()
+		}
 		return k.lexValidate(stmt)
 	}
 	e, isExpr := n.(ast.Expr)
@@ -189,7 +216,12 @@ func (k *Kernel) executeStatement(n ast.Node) string {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
+				msg := fmt.Sprintf("internal error: %v", r)
+				k.gaps[msg]++
 				out = ""
+				if k.config.ShowUnsupported {
+					out = msg
+				}
 			}
 		}()
 		out = k.runStatement(n)
@@ -207,7 +239,7 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	}
 	resolved, err := compile.Deduce(k.sys, k.bindings, decl)
 	if err != nil {
-		return formatCompileError(err)
+		return k.formatCompileError(err)
 	}
 	datatypeDecl, isDatatype := resolved.Decl.(*ast.DatatypeDecl)
 	if isDatatype {
@@ -217,11 +249,11 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	}
 	coreDecl, err := compile.Resolve(resolved)
 	if err != nil {
-		return formatCompileError(err)
+		return k.formatCompileError(err)
 	}
 	compiled, err := compile.Statement(coreDecl, k.values)
 	if err != nil {
-		return formatCompileError(err)
+		return k.formatCompileError(err)
 	}
 	frame := eval.NewFrame(compiled.Slots)
 	_, err = compiled.Code.Eval(frame)
@@ -260,12 +292,18 @@ func notImplemented(name string) eval.Fn {
 //
 // An error that means "not implemented yet" produces no output,
 // so unpulled corpus statements stay silent.
-func formatCompileError(err error) string {
+func (k *Kernel) formatCompileError(err error) string {
 	var compileErr *compile.Error
 	if !errors.As(err, &compileErr) ||
-		compileErr.Span == (token.Span{}) ||
-		unsupported(compileErr.Msg) {
+		compileErr.Span == (token.Span{}) {
+		k.gaps[err.Error()]++
 		return ""
+	}
+	if unsupported(compileErr.Msg) {
+		k.gaps[compileErr.Msg]++
+		if !k.config.ShowUnsupported {
+			return ""
+		}
 	}
 	pos := "stdIn:" + compileErr.Span.String()
 	return pos + " Error: " + compileErr.Msg +
@@ -355,7 +393,7 @@ func (k *Kernel) executeTypeOnly(src string) string {
 	}
 	resolved, err := compile.Deduce(k.sys, k.bindings, decl)
 	if err != nil {
-		return formatCompileError(err)
+		return k.formatCompileError(err)
 	}
 	valDecl, ok := resolved.Decl.(*ast.ValDecl)
 	if !ok {

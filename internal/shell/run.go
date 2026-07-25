@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -36,6 +37,7 @@ func (a *Args) Run(in io.Reader, out io.Writer) error {
 		kernel.Config().Directory = a.Directory
 	}
 	if a.HasEval {
+		kernel.Config().ShowUnsupported = true
 		return runEval(kernel, a.Eval, out)
 	}
 	if len(a.Files) == 0 {
@@ -98,6 +100,9 @@ func (a *Args) runReader(kernel *Kernel, name string,
 	reader io.Reader, out io.Writer,
 ) error {
 	if !a.Idempotent {
+		// Interactive and batch modes surface not-implemented
+		// errors; only idempotent (script) mode keeps them silent.
+		kernel.Config().ShowUnsupported = true
 		return NewRunner(kernel, reader, out, name).Run()
 	}
 	src, err := io.ReadAll(reader)
@@ -112,5 +117,25 @@ func (a *Args) runReader(kernel *Kernel, name string,
 	if err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
+	reportGaps(kernel)
 	return nil
+}
+
+// reportGaps prints the suppressed not-implemented tally to
+// standard error when MOREL_GAPS is set, one "gap: N x msg" line
+// per distinct message, so a corpus sweep can rank what running
+// the inputs would need.
+func reportGaps(kernel *Kernel) {
+	if os.Getenv("MOREL_GAPS") == "" {
+		return
+	}
+	gaps := kernel.Gaps()
+	msgs := make([]string, 0, len(gaps))
+	for msg := range gaps {
+		msgs = append(msgs, msg)
+	}
+	sort.Strings(msgs)
+	for _, msg := range msgs {
+		fmt.Fprintf(os.Stderr, "gap: %d x %s\n", gaps[msg], msg)
+	}
 }

@@ -280,10 +280,29 @@ def make_runner(binary):
         with open(path, "w") as f:
             f.write(text)
         r = subprocess.run(
-            [binary, path], capture_output=True, text=True)
+            [binary, path], capture_output=True, text=True,
+            env=dict(os.environ, MOREL_GAPS="1"))
+        for line in r.stderr.splitlines():
+            if line.startswith("gap: "):
+                n, _, msg = line[len("gap: "):].partition(" x ")
+                GAPS[msg] = GAPS.get(msg, 0) + int(n)
         return r.stdout
 
     return run
+
+
+# Suppressed not-implemented tally, aggregated across every replay
+# this run performs; reported at exit as a ranked worklist.
+GAPS = {}
+
+
+def report_gaps():
+    if not GAPS:
+        return
+    print("\ngaps (not-implemented errors suppressed during "
+          "replays, largest first):")
+    for msg, n in sorted(GAPS.items(), key=lambda kv: -kv[1]):
+        print(f"  {n:5} x {msg}")
 
 
 def smli_files(root):
@@ -418,6 +437,7 @@ def main():
         verb = "created" if args.apply else "to create"
         print(f"\n  {created} {verb}, {deferred} deferred "
               f"(mostly failing)")
+    report_gaps()
     return 0
 
 
