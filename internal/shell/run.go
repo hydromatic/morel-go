@@ -143,7 +143,11 @@ func reportGaps(kernel *Kernel) {
 		msgs = append(msgs, msg)
 	}
 	sort.Strings(msgs)
+	samples := kernel.GapSamples()
 	for _, msg := range msgs {
 		fmt.Fprintf(os.Stderr, "gap: %d x %s\n", gaps[msg], msg)
+		if sample, ok := samples[msg]; ok {
+			fmt.Fprintf(os.Stderr, "gap-sample: %s\n", sample)
+		}
 	}
 }

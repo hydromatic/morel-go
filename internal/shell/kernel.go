@@ -130,8 +130,12 @@ type Kernel struct {
 	bootValues   map[string]eval.Val
 	// gaps counts the not-yet-implemented errors and panics that
 	// suppression hid, by message — the inventory of what running
-	// the input would need. Gaps reports it.
-	gaps map[string]int
+	// the input would need. Gaps reports it; gapSample keeps the
+	// first statement that produced each message, and currentStmt
+	// is the statement being executed, for that sample.
+	gaps        map[string]int
+	gapSample   map[string]string
+	currentStmt string
 	// pendingLines is extra output the current statement's
 	// built-ins have produced (use's "[opening f]"); runStatement
 	// drains it into the statement's output.
@@ -169,6 +173,7 @@ func NewKernel(name string) *Kernel {
 		gaps:       map[string]int{},
 		inlineExps: map[string]core.Exp{},
 		recFns:     map[string]*core.Fn{},
+		gapSample:  map[string]string{},
 	}
 	// Method overloads that the signature files cannot express (a
 	// record has one field per name): Range.contains dispatched on
@@ -241,6 +246,12 @@ func (k *Kernel) Config() *Config {
 	return &k.config
 }
 
+// GapSamples reports the first statement that produced each gap
+// message, truncated to one line.
+func (k *Kernel) GapSamples() map[string]string {
+	return k.gapSample
+}
+
 // EquivalentOutput reports whether an actual statement output is
 // semantically equivalent to an expected one — bag values compared
 // as multisets, whitespace normalized — unless the "matchStrict"
@@ -269,6 +280,7 @@ func (k *Kernel) Execute(stmt string) string {
 	// first token (comments become spaces, so columns survive)
 	// and drop the resulting blank lines.
 	stmt = normalizeLeading(stmt)
+	k.currentStmt = stmt
 	if typeOnly {
 		return k.executeTypeOnly(stmt)
 	}
@@ -277,7 +289,7 @@ func (k *Kernel) Execute(stmt string) string {
 		// A parse failure is silent in script mode (the grammar
 		// gap inventory records it); the interactive shell shows
 		// it.
-		k.gaps[err.Error()]++
+		k.recordGap(err.Error())
 		if k.config.ShowUnsupported {
 			return err.Error()
 		}
@@ -298,6 +310,20 @@ func (k *Kernel) Execute(stmt string) string {
 		}
 	}
 	return k.executeStatement(n)
+}
+
+// recordGap counts a suppressed message and keeps the statement
+// that first produced it.
+func (k *Kernel) recordGap(msg string) {
+	k.gaps[msg]++
+	if _, ok := k.gapSample[msg]; !ok {
+		sample := strings.ReplaceAll(k.currentStmt, "\n", " ")
+		const maxSample = 120
+		if len(sample) > maxSample {
+			sample = sample[:maxSample] + "..."
+		}
+		k.gapSample[msg] = sample
+	}
 }
 
 // adaptRelationalAggregates rewrites the "Relational" structure's
@@ -532,7 +558,7 @@ func (k *Kernel) executeStatement(n ast.Node) string {
 					panic(r)
 				}
 				msg := fmt.Sprintf("internal error: %v", r)
-				k.gaps[msg]++
+				k.recordGap(msg)
 				out = ""
 				if k.config.ShowUnsupported {
 					out = msg
@@ -797,11 +823,11 @@ func (k *Kernel) formatCompileError(err error) string {
 	var compileErr *compile.Error
 	if !errors.As(err, &compileErr) ||
 		compileErr.Span == (token.Span{}) {
-		k.gaps[err.Error()]++
+		k.recordGap(err.Error())
 		return ""
 	}
 	if unsupported(compileErr.Msg) {
-		k.gaps[compileErr.Msg]++
+		k.recordGap(compileErr.Msg)
 		if !k.config.ShowUnsupported {
 			return ""
 		}
