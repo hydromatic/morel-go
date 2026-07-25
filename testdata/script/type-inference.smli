@@ -471,6 +471,17 @@ from d in [{a=1,b=true}], i in [2] yield {d} yield a;
 > val it : {count:int, i:int} list
 :t from i in bag [1] group i compute count over i;
 > val it : {count:int, i:int} bag
+:t from (r, s) in [(1.0, "a")]
+  group r compute {x = 1 + sum over size s};
+> val it : {r:real, x:int} list
+:t from (r, s) in [(1.0, "a")]
+  group r compute {x = 1 + sum over size s,
+                   y = 0,
+                   z = concat over s};
+> val it : {r:real, x:int, y:int, z:string} list
+:t from p in [{r=1.0, s="a"}]
+  group p.r compute {x = r};
+> val it : {r:real, x:real} list
 :t fn f => from i in [1, 2, 3] join j in [3, 4] on f (i, j) yield i + j;
 > val it : (int * int -> bool) -> int list
 :t fn f => from i in [1, 2, 3] where f i;

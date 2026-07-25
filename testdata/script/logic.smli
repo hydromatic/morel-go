@@ -37,6 +37,12 @@ exists e in emps
 not (Bag.null (from e in emps where e.sal < 900.0));
 > val it = true : bool
 
+(* Answer to Q1 using 'from' and 'compute'. *)
+(from e in emps
+  where e.sal < 900.0
+  compute count over ()) > 0;
+> val it = true : bool
+
 (* Q2. Do all employees have a salary greater than 1,000? *)
 forall e in emps
   require e.sal > 1000.0;

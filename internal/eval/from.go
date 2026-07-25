@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/hydromatic/morel-go/internal/core"
+	"github.com/hydromatic/morel-go/internal/token"
 )
 
 // A query runs as a sequence of stages over a list of rows. A row
@@ -461,11 +462,13 @@ type GroupKeyCode struct {
 
 // GroupAggCode is an aggregate: Fn is the aggregate function, Arg
 // the per-row value it aggregates (nil to count the rows), and Slot
-// where its result is written.
+// where its result is written. An error the aggregate raises is
+// reported at Span, the aggregate's source range.
 type GroupAggCode struct {
 	Fn   Code
 	Arg  Code
 	Slot int
+	Span token.Span
 }
 
 type groupRows struct {
@@ -482,15 +485,20 @@ func (s *GroupStage) transform(q *fromCode, f *Frame, rows [][]Val,
 	out := make([][]Val, 0, len(order))
 	for _, k := range order {
 		g := groups[k]
+		for _, slot := range q.slots {
+			f.Slots[slot] = nil
+		}
+		// Keys are set before the aggregates run, because an
+		// aggregate function may be a closure over a key.
+		for i, key := range s.Keys {
+			f.Slots[key.Slot] = g.key[i]
+		}
 		aggs := make([]Val, len(s.Aggs))
 		for i, a := range s.Aggs {
 			aggs[i], err = a.eval(q, f, g.rows)
 			if err != nil {
 				return nil, err
 			}
-		}
-		for _, slot := range q.slots {
-			f.Slots[slot] = nil
 		}
 		for i, key := range s.Keys {
 			f.Slots[key.Slot] = g.key[i]
@@ -562,7 +570,11 @@ func (a *GroupAggCode) eval(q *fromCode, f *Frame, rows [][]Val,
 			return nil, err
 		}
 	}
-	return ApplyVal(fn, args)
+	v, err := ApplyVal(fn, args)
+	if err != nil {
+		return nil, stampSpan(err, a.Span)
+	}
+	return v, nil
 }
 
 // ThroughStage applies Fn to the collection of input rows (each

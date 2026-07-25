@@ -204,9 +204,6 @@ var (
 		token.Div:   ast.DivOp,
 		token.Mod:   ast.ModOp,
 	}
-	overOps = map[token.Kind]ast.Op{
-		token.Over: ast.OverOp,
-	}
 	// opNames maps an operator token to the name of the binding it
 	// denotes when written as a value: "op +" is the curried form
 	// of the "+" operator, "List.foldl (op +) 0 xs".
@@ -319,11 +316,28 @@ func (p *Parser) expr7() (ast.Expr, error) {
 	return p.leftChain(level7Ops, p.overChain)
 }
 
-// overChain parses the "over" level (between the multiplicative
-// level and application), used by aggregate expressions such as
-// "count over e".
+// overChain parses the "over" level: an application-level
+// aggregate function, optionally followed by "over" and an
+// argument that extends down to level 5, so "sum over e.id +
+// e.deptno" aggregates the per-row sums.
 func (p *Parser) overChain() (ast.Expr, error) {
-	return p.leftChain(overOps, p.applyChain)
+	e, err := p.applyChain()
+	if err != nil {
+		return nil, err
+	}
+	if p.tok.Kind != token.Over {
+		return e, nil
+	}
+	err = p.next()
+	if err != nil {
+		return nil, err
+	}
+	rhs, err := p.expr5()
+	if err != nil {
+		return nil, err
+	}
+	return ast.NewInfixCall(spanOver(e, rhs), ast.OverOp, e,
+		rhs), nil
 }
 
 // leftChain parses "next {op next}" for a left-associative
@@ -463,12 +477,18 @@ func (p *Parser) atom() (ast.Expr, error) {
 	switch tok.Kind {
 	case token.Case:
 		return p.caseExpr()
-	case token.Current, token.Elements, token.Ordinal:
+	case token.Current, token.Ordinal:
 		err := p.next()
 		if err != nil {
 			return nil, err
 		}
 		return ast.NewID(tok.Span, tok.Text), nil
+	case token.Elements:
+		err := p.next()
+		if err != nil {
+			return nil, err
+		}
+		return ast.NewElements(tok.Span), nil
 	case token.Exists:
 		return p.fromExpr(ast.ExistsOp)
 	case token.Fn:

@@ -612,6 +612,7 @@ func (c *compiler) compileGroup(g *core.Group) (eval.FromStage,
 		}
 		aggs[i] = eval.GroupAggCode{
 			Fn: fn, Arg: arg, Slot: c.allocSlot(a.Pat),
+			Span: a.Span,
 		}
 		outPats = append(outPats, a.Pat)
 	}

@@ -24,7 +24,7 @@ import (
 	"github.com/hydromatic/morel-go/internal/unify"
 )
 
-// elementsName is the keyword bound in a "compute" clause to the
+// elementsName labels the "elements" keyword bound in a "compute"
 // collection of grouped rows.
 const elementsName = "elements"
 
@@ -86,9 +86,14 @@ func (r *typeResolver) deduceCompute(stepEnv typeEnv,
 	computeExp ast.Expr, keyFields []labelTerm,
 	inputElem, inputOrd unify.Term,
 ) ([]labelTerm, error) {
-	elementsColl := r.collectionTerm(inputElem, inputOrd)
-	aggEnv := bind(bindFields(stepEnv, keyFields), elementsName,
-		elementsColl)
+	aggEnv := bindFields(stepEnv, keyFields)
+	frame := &computeFrame{
+		elem: inputElem, ord: inputOrd, argEnv: stepEnv,
+	}
+	r.computeFrames = append(r.computeFrames, frame)
+	defer func() {
+		r.computeFrames = r.computeFrames[:len(r.computeFrames)-1]
+	}()
 	if rec, ok := computeExp.(*ast.Record); ok && rec.With == nil {
 		fields := make([]labelTerm, len(rec.Fields))
 		seen := map[string]bool{}
@@ -106,7 +111,7 @@ func (r *typeResolver) deduceCompute(stepEnv typeEnv,
 			}
 			seen[label] = true
 			v := r.u.Variable()
-			err := r.deduceAggregate(aggEnv, f.Exp, inputElem, inputOrd, v)
+			err := r.deduceExp(aggEnv, f.Exp, v)
 			if err != nil {
 				return nil, err
 			}
@@ -122,7 +127,7 @@ func (r *typeResolver) deduceCompute(stepEnv typeEnv,
 		label = currentName
 	}
 	v := r.u.Variable()
-	err := r.deduceAggregate(aggEnv, computeExp, inputElem, inputOrd, v)
+	err := r.deduceExp(aggEnv, computeExp, v)
 	if err != nil {
 		return nil, err
 	}
@@ -160,6 +165,18 @@ func (r *typeResolver) deduceAggregate(aggEnv typeEnv,
 	}
 	cArg := r.u.Variable()
 	r.equiv(vAgg, r.fnTerm(cArg, v))
+	r.linkAggOrderedness(fnExp, cArg, vArg, inputOrd)
+	return nil
+}
+
+// linkAggOrderedness constrains an aggregate function's collection
+// parameter cArg (of element vArg) by the function's kind: a
+// bag-parameter aggregate always receives a bag, a list-parameter
+// aggregate a list, a polymorphic one the input's orderedness, and
+// an unknown user function's own type decides.
+func (r *typeResolver) linkAggOrderedness(fnExp ast.Expr,
+	cArg, vArg *unify.Var, inputOrd unify.Term,
+) {
 	// lint: sort until '^	}' where '^	case '
 	switch r.aggKind(fnExp) {
 	case aggBag:
@@ -175,7 +192,6 @@ func (r *typeResolver) deduceAggregate(aggEnv typeEnv,
 		// Leave the orderedness free; the function's own type decides.
 		r.equiv(cArg, r.collectionTerm(vArg, r.u.Variable()))
 	}
-	return nil
 }
 
 // aggKindT classifies how an aggregate function's parameter links

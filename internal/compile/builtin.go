@@ -59,6 +59,7 @@ const (
 	boolName   = "bool"
 	intName    = "int"
 	sumName    = "sum"
+	onlyName   = "only"
 	realName   = "real"
 	wordName   = "word"
 	stringName = "string"
@@ -201,7 +202,7 @@ func collectionBindings(sys *types.System) []Binding {
 		{Name: "max", Type: collToElem},
 		{Name: "min", Type: collToElem},
 		{Name: sumName, Type: collToElem},
-		{Name: "only", Type: collToElem},
+		{Name: onlyName, Type: collToElem},
 	}
 }
 
@@ -223,7 +224,7 @@ func CollectionAggType(sys *types.System, member string,
 		return nil
 	}
 	switch member {
-	case "count", "empty", "max", "min", "nonEmpty", "only", sumName:
+	case "count", "empty", "max", "min", "nonEmpty", onlyName, sumName:
 		return sys.Fn(sys.Collection(bag.Args[0]), fn.Result)
 	case "iterate":
 		// Every bag in the signature becomes a collection; their

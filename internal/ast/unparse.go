@@ -468,6 +468,8 @@ func unparseExpr(b *strings.Builder, e Expr, prec int) {
 			b.WriteString(" ")
 			unparseExpr(b, n.Arg, applyPrec+1)
 		})
+	case *Elements:
+		b.WriteString("elements")
 	case *From:
 		unparseParen(b, prec, 1, func() { unparseFrom(b, n) })
 	case *ID:

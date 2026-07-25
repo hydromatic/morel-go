@@ -879,10 +879,22 @@ from e in emps
   order g.dept;
 > val it = [{dept=10,total=100},{dept=20,total=101},{dept=30,total=205}]
 >   : {dept:int, total:int} list
+
+(* a singleton compute expression does not need a derivable label
+   if group key is empty *)
+from i in [1,2]
+  group {} compute 1 + 2;
+> val it = [3] : int list
 from i in [1,2]
   group i compute 1 + 2;
 > stdIn:2.19-2.24 Error: cannot derive label for compute expression
 >   raised at: stdIn:2.19-2.24
+from i in [1,2]
+  group i compute {three = 1 + 2};
+> val it = [{i=1,three=3},{i=2,three=3}] : {i:int, three:int} list
+from i in [1,2]
+  compute 1 + 2;
+> val it = 3 : int
 
 (*) singleton record 'yield' followed by 'order'
 from e in emps
@@ -927,9 +939,87 @@ from x in [{a = {a = 1}}, {a = {a = 2}}]
 from (x, y) in [(1,2),(3,4),(3,0)]
   group x + y;
 > val it = [3,7] : int list
+
+(* "over" is only valid inside "compute" *)
+from i in [2, 1, 2]
+  where (sum over i) > 3;
+> stdIn:2.10-2.20 Error: 'over' is only valid in 'compute'
+>   raised at: stdIn:2.10-2.20
+from i in [2, 1, 2]
+  group (sum over i);
+> stdIn:2.10-2.20 Error: 'over' is only valid in 'compute'
+>   raised at: stdIn:2.10-2.20
+from i in [2, 1, 2]
+  yield (sum over i);
+> stdIn:2.10-2.20 Error: 'over' is only valid in 'compute'
+>   raised at: stdIn:2.10-2.20
+from i in [2, 1, 2]
+  skip (sum over i);
+> stdIn:2.9-2.19 Error: 'over' is only valid in 'compute'
+>   raised at: stdIn:2.9-2.19
+from i in [2, 1, 2]
+  take (sum over i);
+> stdIn:2.9-2.19 Error: 'over' is only valid in 'compute'
+>   raised at: stdIn:2.9-2.19
+from i in [2, 1, 2]
+  order (sum over i);
+> stdIn:2.10-2.20 Error: 'over' is only valid in 'compute'
+>   raised at: stdIn:2.10-2.20
+
+(* "over" is not valid inside "over" *)
+from (i, j) in [(2, 5), (1, 1), (2, 7)]
+  group i compute {min over (max over j)};
+> stdIn:2.30-2.40 Error: 'over' is not valid in 'over'
+>   raised at: stdIn:2.30-2.40
+
+from (i, j) in [(2, 5), (1, 1), (2, 7)]
+  group i compute {min over (count over ())};
+> stdIn:2.30-2.43 Error: 'over' is not valid in 'over'
+>   raised at: stdIn:2.30-2.43
+
+from i in [2, 1, 2]
+  compute sum over i;
+> val it = 5 : int
+from i in [2, 1, 2]
+  compute {s = sum over i, t = 1 + sum over i * 3};
+> val it = {s=5,t=16} : {s:int, t:int}
 from i in [2, 1, 2]
   group i compute (sum over i);
 > val it = [{i=2,sum=4},{i=1,sum=1}] : {i:int, sum:int} list
+(*) Aggregate used in a subquery
+from i in [2, 1, 2]
+  group i compute {x = from j in [3, 4] yield j + (sum over i)};
+> val it = [{i=2,x=[7,8]},{i=1,x=[4,5]}] : {i:int, x:int list} list
+from (i, j) in [(2, 5), (1, 1), (2, 7)]
+  group i compute {mid = ((min over j) + (max over j)) div 2};
+> val it = [{i=2,mid=6},{i=1,mid=1}] : {i:int, mid:int} list
+
+(* 'max' and 'min' over an empty collection raise 'Empty', like 'List.hd
+ * []', rather than crashing with a Java exception. *)
+from i in ([] : int list) compute max over i;
+> uncaught exception Empty
+>   raised at: stdIn:1.35-1.45
+from i in ([] : int list) compute min over i;
+> uncaught exception Empty
+>   raised at: stdIn:1.35-1.45
+
+(* The same holds when the element type is a datatype ('int option') and the
+ * 'int option bag' is emptied by a filter: the empty check happens before any
+ * comparison, so the datatype value is never compared. *)
+from x in (Bag.fromList [SOME 1, NONE, SOME 3]) where false compute max over x;
+> uncaught exception Empty
+>   raised at: stdIn:1.69-1.79
+
+from i in [2, 1, 2]
+  compute 1;
+> val it = 1 : int
+(*) "count" used as an ordinary function ("over" is not present)
+from i in [2, 1, 2]
+  compute count (bag ["a", "b"]);
+> val it = 2 : int
+from i in [2, 1, 2]
+  group i compute {c = count (bag ["a", "b"])};
+> val it = [{c=2,i=2},{c=2,i=1}] : {c:int, i:int} list
 
 (* Duplicate field name across 'group' and 'compute' clauses. The
  * error points at the offending label (the second occurrence). *)
@@ -1065,6 +1155,37 @@ fun listAgg list = List.hd list;
 > val listAgg = fn : 'a list -> 'a
 fun bagAgg bag = Bag.hd (Bag.tl bag);
 > val bagAgg = fn : 'a bag -> 'a
+
+from i in [1, 2]
+  compute listAgg over i;
+> val it = 1 : int
+from i in bag [1, 2]
+  compute bagAgg over i;
+> val it = 2 : int
+from i in bag [1, 2]
+  compute listAgg over i;
+> val it = 1 : int
+from i in [1, 2]
+  compute bagAgg over i;
+> val it = 2 : int
+
+(*) Polymorphic agg applied to list, then bag
+from i in [1, 2, 3]
+  compute Fn.id over i;
+> val it = [1,2,3] : int list
+from i in bag [1, 2, 3]
+  compute Fn.id over i;
+> val it = [1,2,3] : int bag
+
+(* Aggregate function that is a closure that references group key.
+ * Uses List.length (not sum) because sum is bag-only and anonymous
+ * functions in list context cannot yet adapt bag-only aggregates. *)
+from (k, v) in [(1, 5), (1, 6), (2, 7), (2, 10)]
+  group k compute {x = (fn vs => k + List.length vs) over v};
+> val it = [{k=1,x=3},{k=2,x=4}] : {k:int, x:int} list
+from (k, v) in [(1, 5), (1, 6), (2, 7), (2, 10)]
+  group {k2 = k} compute {x = (fn vs => k2 + List.length vs) over v};
+> val it = [{k2=1,x=3},{k2=2,x=4}] : {k2:int, x:int} list
 from e in [{a = 1, b = 5}, {a = 0, b = 1}, {a = 1, b = 1}]
   group e.a compute {rows = (fn x => x) over e};
 > val it = [{a=1,rows=[{a=1,b=5},{a=1,b=1}]},{a=0,rows=[{a=0,b=1}]}]
@@ -1091,10 +1212,116 @@ from (i, j) in [(1, 1), (2, 3), (3, 4)]
 > val it = [{count=2,j=1,sum=5},{count=1,j=0,sum=3}]
 >   : {count:int, j:int, sum:int} list
 
+(* Elements ------------------------------------------------------- *)
+
+from i in [1, 2, 3]
+  compute elements;
+> val it = [1,2,3] : int list
+
+from i in [1, 2, 3] unorder
+  compute elements;
+> val it = [1,2,3] : int bag
+
+from (i, j) in [("a", 1), ("b", 4), ("a", 3)]
+  compute elements;
+> val it = [{i="a",j=1},{i="b",j=4},{i="a",j=3}] : {i:string, j:int} list
+
+from t in [("a", 1), ("b", 4), ("a", 3)]
+  compute elements;
+> val it = [("a",1),("b",4),("a",3)] : (string * int) list
+
 from i in [1, 2, 3]
   group i compute length elements;
 > stdIn:2.19-2.34 Error: cannot derive label for compute expression
 >   raised at: stdIn:2.19-2.34
+
+from i in [1, 2, 3]
+  group i compute {l = length elements};
+> val it = [{i=1,l=1},{i=2,l=1},{i=3,l=1}] : {i:int, l:int} list
+
+from i in [1, 2, 3]
+  group i compute elements order i;
+> val it = [{`elements`=[1],i=1},{`elements`=[2],i=2},{`elements`=[3],i=3}]
+>   : {`elements`:int list, i:int} list
+
+(*) Use "elements" in a query
+from (i, j) in [("a", 1), ("b", 4), ("a", 3)]
+  group {i} compute {s = from r in elements compute sum over r.j} order i;
+> val it = [{i="a",s=4},{i="b",s=4}] : {i:string, s:int} list
+
+from (i, j) in [("a", 1), ("b", 4), ("a", 3)]
+  group {i} compute {s = from r in elements unorder compute sum over r.j} order i;
+> val it = [{i="a",s=4},{i="b",s=4}] : {i:string, s:int} list
+
+from (i, j) in [("a", 1), ("b", 4), ("a", 3)]
+  group {i} compute {s = from r in elements order r.j take 1 compute sum over r.j} order i;
+> val it = [{i="a",s=1},{i="b",s=4}] : {i:string, s:int} list
+
+from (i, j) in [("a", 1), ("b", 4), ("a", 3)]
+  group {i} compute {s = from r in elements where r.j < 2 compute sum over r.j}
+  order DESC i;
+> val it = [{i="b",s=0},{i="a",s=1}] : {i:string, s:int} list
+
+from (i, j) in [("a", 1), ("b", 4), ("a", 3)]
+  group {i} compute {c = length elements} order i;
+> val it = [{c=2,i="a"},{c=1,i="b"}] : {c:int, i:string} list
+
+from (i, j) in [("a", 1), ("b", 4), ("a", 3)]
+  group {i} compute {elements, c = (length elements) - 1} order i;
+> val it =
+>   [{c=1,`elements`=[{i="a",j=1},{i="a",j=3}],i="a"},
+>    {c=0,`elements`=[{i="b",j=4}],i="b"}]
+>   : {c:int, `elements`:{i:string, j:int} list, i:string} list
+
+from (i, j) in [("a", 1), ("b", 4), ("a", 3)]
+  group i compute elements order i;
+> val it =
+>   [{`elements`=[{i="a",j=1},{i="a",j=3}],i="a"},
+>    {`elements`=[{i="b",j=4}],i="b"}]
+>   : {`elements`:{i:string, j:int} list, i:string} list
+
+from (i, j) in [("a", 1), ("b", 4), ("a", 3)]
+  group {i} compute {s = from r in elements compute sum over r.j} order i;
+> val it = [{i="a",s=4},{i="b",s=4}] : {i:string, s:int} list
+
+(*) "elements" invalid in "group"
+from (i, j) in [("a", 1), ("b", 4), ("a", 3)]
+  group {i, elements} compute {one = 1};
+> stdIn:2.13-2.21 Error: 'elements' is only valid in a 'compute' clause
+>   raised at: stdIn:2.13-2.21
+
+(*) "elements" is invalid in "yield"
+from (i, j) in [("a", 1), ("b", 4), ("a", 3)]
+  yield length elements;
+> stdIn:2.16-2.24 Error: 'elements' is only valid in a 'compute' clause
+>   raised at: stdIn:2.16-2.24
+
+(* "elements" is invalid in a "yield" that follows a "group" whose "compute"
+   created a field called "elements". (Previously this crashed the compiler
+   because "elements" remained bound after the "compute" clause.) *)
+from i in [1, 2, 3]
+  group i compute {elements}
+  yield elements;
+> stdIn:3.9-3.17 Error: 'elements' is only valid in a 'compute' clause
+>   raised at: stdIn:3.9-3.17
+
+from i in [1, 2, 3]
+  group {j = i mod 2} compute {elements}
+  yield `elements`;
+> val it = [[1,3],[2]] : int list list
+
+(*) "elements" is invalid at top-level
+elements;
+> stdIn:1.1-1.9 Error: 'elements' is only valid in a 'compute' clause
+>   raised at: stdIn:1.1-1.9
+
+length elements;
+> stdIn:1.8-1.16 Error: 'elements' is only valid in a 'compute' clause
+>   raised at: stdIn:1.8-1.16
+
+from e in elements;
+> stdIn:1.11-1.19 Error: 'elements' is only valid in a 'compute' clause
+>   raised at: stdIn:1.11-1.19
 
 (* Yield ---------------------------------------------------------- *)
 
@@ -1602,6 +1829,17 @@ fun product [] = 1
 > val product = fn : int list -> int
 product (factorize 12);
 > val it = 12 : int
+fun hcf (m, n) =
+  from i in factorize m
+    intersect (factorize n)
+    compute product over i;
+> val hcf = fn : int * int -> int
+hcf (12, 18);
+> val it = 6 : int
+hcf (9, 8);
+> val it = 1 : int
+hcf (38024, 16296);
+> val it = 5432 : int
 
 (* Group ---------------------------------------------------------- *)
 
@@ -1699,6 +1937,33 @@ where false
 group {};
 > val it = [()] : unit list
 
+(*) 'group' with 'where' and complex argument to 'sum'
+from e in emps
+where e.deptno < 30
+group e.deptno
+  compute {sumId = sum over e.id,
+           sumIdPlusDeptno = sum over e.id + e.deptno}
+order deptno;
+> val it =
+>   [{deptno=10,sumId=100,sumIdPlusDeptno=110},
+>    {deptno=20,sumId=101,sumIdPlusDeptno=121}]
+>   : {deptno:int, sumId:int, sumIdPlusDeptno:int} list
+
+(*) 'group' with complex expression in 'compute'
+from e in emps
+  group e.deptno compute {x = 1 + sum over e.id * 2}
+  order deptno;
+> val it = [{deptno=10,x=201},{deptno=20,x=203},{deptno=30,x=411}]
+>   : {deptno:int, x:int} list
+
+(*) 'group' with complex expressions in 'compute'
+from e in emps
+  group e.deptno compute {x = 1 + sum over e.id * 2, y = 2, z = deptno + 3}
+  order deptno;
+> val it =
+>   [{deptno=10,x=201,y=2,z=13},{deptno=20,x=203,y=2,z=23},
+>    {deptno=30,x=411,y=2,z=33}] : {deptno:int, x:int, y:int, z:int} list
+
 (*) 'group' with 'nonEmpty' and 'empty' as aggregate functions
 from e in emps
 group e.deptno
@@ -1713,6 +1978,17 @@ order deptno;
 >    {deptno=30,existsId=true,existsStar=true,notExistsId=false,sumId=205}]
 >   : {deptno:int, existsId:bool, existsStar:bool, notExistsId:bool, sumId:int}
 >     list
+
+(*) 'compute' with 'empty' and 'nonEmpty' as an aggregate functions
+from e in emps
+compute {empty over (), nonEmpty over ()};
+> val it = {empty=false,nonEmpty=true} : {empty:bool, nonEmpty:bool}
+
+(*) 'compute' with 'empty' and 'nonEmpty' as an aggregate functions
+from e in emps
+where e.deptno = 50
+compute {empty over (), nonEmpty over ()};
+> val it = {empty=true,nonEmpty=false} : {empty:bool, nonEmpty:bool}
 
 (* 'group' with record key
  * (useful if we want to refer to 'e' later in the pipeline) *)
@@ -1768,6 +2044,23 @@ yield {e, d};
 from e in emps
 group {} compute sum over e.id;
 > val it = [406] : int list
+
+(* 'group' with aggregate function that references the key.
+ * Uses List.length (not sum) because sum is bag-only and anonymous
+ * functions in list context cannot yet adapt bag-only aggregates. *)
+from (k, v) in [(1, 5), (1, 6), (2, 7), (2, 10)]
+group k compute {x = (fn vs => k + List.length vs) over v};
+> val it = [{k=1,x=3},{k=2,x=4}] : {k:int, x:int} list
+
+from (x, y, z) in [("a", "p", "e"), ("m", "a", "n"), ("a", "l", "e"), ("a", "w", "e")]
+  group x compute {z = (fn ys => concat (x :: ys)) over y};
+> val it = [{x="a",z="aplw"},{x="m",z="ma"}] : {x:string, z:string} list
+
+(*) similar, but with composite key
+from (x, y, z) in [("a", "p", "e"), ("m", "a", "n"), ("a", "l", "e"), ("a", "w", "e")]
+  group {x, z} compute {a = (fn ys => x ^ ":" ^ z ^ ":" ^ (concat ys)) over y};
+> val it = [{a="a:e:plw",x="a",z="e"},{a="m:n:a",x="m",z="n"}]
+>   : {a:string, x:string, z:string} list
 
 (*) similar, but aggregate does not reference key
 from (x, y, z) in [("a", "p", "e"), ("m", "a", "n"), ("a", "l", "e"), ("a", "w", "e")]
@@ -2010,12 +2303,53 @@ from e in emps
 >    {dname="Engineering",ename="Shaggy"},{dname="Engineering",ename="Scooby"}]
 >   : {dname:string, ename:string} list
 
+(*) Single-row aggregates using 'only' function and 'compute' clause
+from e in emps
+  group {} compute {si = sum over e.id, c = count over (), si1 = sum over e.id + 1};
+> val it = [{c=4,si=406,si1=410}] : {c:int, si:int, si1:int} list
+(*) similar to previous, but the 'only' function converts a singleton set to a record
+only (
+  from e in emps
+    group {} compute {si = sum over e.id, c = count over (), si1 = sum over e.id + 1});
+> val it = {c=4,si=406,si1=410} : {c:int, si:int, si1:int}
+(*) equivalent to previous, using group-less 'compute' rather than 'only'
+from e in emps
+  compute {si = sum over e.id, c = count over (), si1 = sum over e.id + 1};
+> val it = {c=4,si=406,si1=410} : {c:int, si:int, si1:int}
+
+(*) Primitive 'yield' followed by composite 'compute'
+from e in emps
+  yield e.deptno
+  compute {sum over deptno, count over ()};
+> val it = {count=4,sum=90} : {count:int, sum:int}
+
+(* Row is an atom (type 'int', not a record) but can be referenced via 'deptno'. *)
+from e in emps
+  yield e.deptno
+  compute sum over deptno;
+> val it = 90 : int
+
 (* Reference to 'deptno' is not valid after it has been renamed to 'x'. *)
 from e in emps
   yield {x = e.deptno}
   compute sum over deptno;
 > stdIn:3.20-3.26 Error: unbound variable or constructor: deptno
 >   raised at: stdIn:3.20-3.26
+
+from e in emps
+  yield {e.deptno}
+  compute sum over deptno;
+> val it = 90 : int
+
+from e in emps
+  yield {x = e.deptno}
+  compute sum over x;
+> val it = 90 : int
+
+from e in emps
+  yield {e.id, e.deptno}
+  compute sum over deptno;
+> val it = 90 : int
 
 (*) Primitive 'yield' followed  by 'into'
 from e in emps
@@ -2471,6 +2805,45 @@ from d in scott.depts
 >    [{deptno=30,dname="SALES",loc="CHICAGO"}],
 >    [{deptno=40,dname="OPERATIONS",loc="BOSTON"}]]
 >   : {deptno:int, dname:string, loc:string} list bag
+
+(*) through a pivot function
+
+(* Pivot converts a list of lists into a list whose elements are
+ * the first element of each list, the second element of each list,
+ * and so forth. *)
+fun pivot listlists =
+  if listlists = [] then
+    []
+  else
+    let
+      val n = (from list in listlists compute min over length list)
+    in
+      List.tabulate (n,
+        fn i => (from list in listlists
+                 compute Fn.id over List.nth (list, i)))
+    end;
+> val pivot = fn : 'a list list -> 'a list list
+pivot [[1,2],[3,4],[5,6]];
+> val it = [[1,3,5],[2,4,6]] : int list list
+pivot [[1,2],[3,4,5,6],[7,8,9]];
+> val it = [[1,3,7],[2,4,8]] : int list list
+
+from list in [[1,2,3],[2,3,4],[3,4,5]]
+  through list2 in pivot
+  where List.nth (list2, 0) <> 2;
+> val it = [[1,2,3],[3,4,5]] : int list list
+
+(*) pivot squared is identity
+from list in [[1,2,3],[2,3,4],[3,4,5]]
+  through list2 in pivot
+  through list3 in pivot;
+> val it = [[1,2,3],[2,3,4],[3,4,5]] : int list list
+
+from list in [[1,2,3],[2,3,4],[3,4,5]]
+  through list2 in pivot
+  where List.nth (list2, 0) <> 2
+  through list3 in pivot;
+> val it = [[1,3],[2,4],[3,5]] : int list list
 
 (* let ------------------------------------------------------------ *)
 

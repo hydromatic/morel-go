@@ -221,6 +221,12 @@ end;
    in 'docs/reference.md'. *)
 Sys.set ("hybrid", true);
 > val it = () : unit
+from w in [0w1, 0wxFFFFFFFFFFFFFFFF] compute max over w;
+> val it = 0wxFFFFFFFFFFFFFFFF : word
+from p in [(1, 2), (2, 1), (1, 9)] compute max over p;
+> val it = (2,1) : int * int
+from ox in [SOME 1, NONE, SOME 3] compute min over ox;
+> val it = NONE : int option
 Sys.set ("hybrid", false);
 > val it = () : unit
 

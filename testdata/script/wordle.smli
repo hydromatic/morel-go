@@ -87,6 +87,17 @@ maskToString 5;
 maskToString (mask ("abcde", "spuds"));
 > val it = "bbbgb" : string
 
+(* For a guess, returns the number of mask groups.
+   The expected size of a mask group is the number of remaining
+   words divided by the number of groups. For all guesses, the
+   number of remaining words is the same. Therefore the best guess
+   is the one that returns the most mask groups. *)
+fun f (guess, remainingWords: 'a list) =
+  from w in remainingWords
+    group {m = mask (guess, w)} compute {c = count over ()}
+    compute count over ();
+> val f = fn : string * string list -> int
+
 (* Returns the words left after applying a set of filters from previous
    guesses. *)
 fun remaining (words: 'a list, []) = words

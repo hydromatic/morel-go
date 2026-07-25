@@ -324,6 +324,20 @@ func NewIf(span token.Span, cond, ifTrue, ifFalse Expr) *If {
 // Op implements Node.
 func (*If) Op() Op { return IfOp }
 
+// Elements is the "elements" keyword: inside a compute clause,
+// the current group's rows as a collection.
+type Elements struct {
+	exprBase
+}
+
+// NewElements returns an elements expression.
+func NewElements(span token.Span) *Elements {
+	return &Elements{exprBase: exprBase{base{span}}}
+}
+
+// Op implements Node.
+func (*Elements) Op() Op { return ElementsOp }
+
 // Raise is "raise e": e evaluates to an exn value, which is
 // raised. The expression never returns, so its own type is free.
 type Raise struct {

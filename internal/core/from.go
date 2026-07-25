@@ -19,6 +19,7 @@ package core
 
 import (
 	"github.com/hydromatic/morel-go/internal/ast"
+	"github.com/hydromatic/morel-go/internal/token"
 	"github.com/hydromatic/morel-go/internal/types"
 )
 
@@ -163,11 +164,14 @@ type GroupKey struct {
 
 // GroupAgg is one aggregate: Pat binds its output variable, Fn is
 // the aggregate function, and Arg is the per-row expression it
-// aggregates (nil to aggregate the rows themselves).
+// aggregates (nil to aggregate the rows themselves). Span is the
+// aggregate's source range; an exception the aggregate raises
+// (Empty from min or max of an empty group) is reported there.
 type GroupAgg struct {
-	Pat *IDPat
-	Fn  Exp
-	Arg Exp
+	Pat  *IDPat
+	Fn   Exp
+	Arg  Exp
+	Span token.Span
 }
 
 // Op implements FromStep.

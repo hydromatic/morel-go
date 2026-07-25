@@ -284,6 +284,61 @@ type typeResolver struct {
 	numericCalls  []numericCall
 	selectorCalls []selectorCall
 	tyVarScopes   []map[string]*unify.Var
+	// computeFrames tracks the enclosing compute clauses: "over"
+	// aggregates and "elements" are valid only inside one, and
+	// aggregate over the innermost frame's pre-group rows.
+	computeFrames []*computeFrame
+}
+
+// computeFrame is one enclosing compute clause: the pre-group
+// element type and orderedness its aggregates range over, and
+// whether an "over" argument is being typed (over nests no
+// further).
+type computeFrame struct {
+	elem       unify.Term
+	ord        unify.Term
+	argEnv     typeEnv
+	overActive bool
+}
+
+// deduceOver types an aggregate "fn over arg": the argument is
+// typed per pre-group row (keys are not in scope inside it), and
+// the function maps a collection of argument values to the
+// result, the collection's kind linked to the input's orderedness
+// by the function's kind.
+func (r *typeResolver) deduceOver(env typeEnv, call *ast.InfixCall,
+	v *unify.Var,
+) error {
+	if len(r.computeFrames) == 0 {
+		return &Error{
+			Span: call.Span(),
+			Msg:  "'over' is only valid in 'compute'",
+		}
+	}
+	frame := r.computeFrames[len(r.computeFrames)-1]
+	if frame.overActive {
+		return &Error{
+			Span: call.Span(),
+			Msg:  "'over' is not valid in 'over'",
+		}
+	}
+	frame.overActive = true
+	defer func() { frame.overActive = false }()
+	vArg := r.u.Variable()
+	err := r.deduceExp(frame.argEnv, call.A1, vArg)
+	if err != nil {
+		return err
+	}
+	vAgg := r.u.Variable()
+	err = r.deduceExp(env, call.A0, vAgg)
+	if err != nil {
+		return err
+	}
+	cArg := r.u.Variable()
+	r.equiv(vAgg, r.fnTerm(cArg, v))
+	r.linkAggOrderedness(call.A0, cArg, vArg, frame.ord)
+	r.reg(call, v)
+	return nil
 }
 
 // preferredType records that, if unification leaves v
@@ -391,6 +446,21 @@ func (r *typeResolver) deduceRaise(env typeEnv, e *ast.Raise,
 	}
 	r.equiv(vExn, unify.Apply(exnTypeName))
 	r.reg(e, v)
+	return nil
+}
+
+// deduceElements types the "elements" keyword: the enclosing
+// compute clause's pre-group rows as a collection.
+func (r *typeResolver) deduceElements(e *ast.Elements, v *unify.Var,
+) error {
+	if len(r.computeFrames) == 0 {
+		return &Error{
+			Span: e.Span(),
+			Msg:  "'elements' is only valid in a 'compute' clause",
+		}
+	}
+	frame := r.computeFrames[len(r.computeFrames)-1]
+	r.regEquiv(e, v, r.collectionTerm(frame.elem, frame.ord))
 	return nil
 }
 
@@ -1022,6 +1092,8 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 		return r.deduceApply(env, e, v)
 	case *ast.Case:
 		return r.deduceCase(env, e, v)
+	case *ast.Elements:
+		return r.deduceElements(e, v)
 	case *ast.Fn:
 		vResult := r.u.Variable()
 		for _, m := range e.Matches {
@@ -1491,6 +1563,8 @@ func (r *typeResolver) deduceInfix(env typeEnv, call *ast.InfixCall,
 	v *unify.Var,
 ) error {
 	switch call.Kind {
+	case ast.OverOp:
+		return r.deduceOver(env, call, v)
 	case ast.AndalsoOp, ast.ImpliesOp, ast.OrelseOp:
 		err := r.deduceExp(env, call.A0, v)
 		if err != nil {

@@ -31,7 +31,10 @@ import (
 
 // Resolve converts a type-resolved declaration to Core.
 func Resolve(resolved *Resolved) (core.Decl, error) {
-	r := &resolver{typeMap: resolved.TypeMap}
+	r := &resolver{
+		typeMap:  resolved.TypeMap,
+		aggSubst: map[ast.Node]*core.IDPat{},
+	}
 	decl, _, err := r.toDecl(nil, resolved.Decl)
 	return decl, err
 }
@@ -47,6 +50,10 @@ type resolver struct {
 	// inQuery is true while resolving a query's steps, where
 	// "ordinal" is a valid keyword.
 	inQuery bool
+	// aggSubst maps an "over" aggregate or "elements" node,
+	// hoisted out of a compute field into a hidden group
+	// aggregate, to the variable holding its per-group result.
+	aggSubst map[ast.Node]*core.IDPat
 }
 
 // buildRow is the value of a query row: the sole variable, or a
@@ -260,6 +267,8 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 		return r.toApply(env, e, t)
 	case *ast.Case:
 		return r.toCase(env, e, t)
+	case *ast.Elements:
+		return r.toElements(e)
 	case *ast.Fn:
 		return r.toFn(env, e, t)
 	case *ast.From:
@@ -286,6 +295,9 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 	case *ast.If:
 		return r.toIf(env, e, t)
 	case *ast.InfixCall:
+		if e.Kind == ast.OverOp {
+			return r.toOverExp(e)
+		}
 		return r.toInfix(env, e, t)
 	case *ast.Let:
 		return r.flattenLet(env, e.Decls, e.Exp)
@@ -417,6 +429,7 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 	r.inQuery = true
 	steps := make([]core.FromStep, 0, len(from.Steps))
 	cur := env
+	computeScalar := false
 	var rowVars []*core.IDPat
 	for i := 0; i < len(from.Steps); i++ {
 		step := from.Steps[i]
@@ -445,7 +458,7 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 				}
 			}
 			groupSteps, groupRowVars, newCur, err := r.toGroupStep(
-				cur, g, compute,
+				cur, rowVars, g, compute,
 			)
 			if err != nil {
 				return nil, err
@@ -453,6 +466,22 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 			steps = append(steps, groupSteps...)
 			cur = newCur
 			rowVars = groupRowVars
+			continue
+		}
+		// A standalone "compute" is a group with no keys whose
+		// single row is unwrapped to a scalar by a wrapping
+		// "only".
+		if c, ok := step.(*ast.ComputeStep); ok {
+			groupSteps, groupRowVars, newCur, err := r.toGroupStep(
+				cur, rowVars, nil, c,
+			)
+			if err != nil {
+				return nil, err
+			}
+			steps = append(steps, groupSteps...)
+			cur = newCur
+			rowVars = groupRowVars
+			computeScalar = true
 			continue
 		}
 		newSteps, newCur, _, err := r.toQueryStep(env, cur, step)
@@ -465,6 +494,21 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 	}
 	if _, ok := steps[0].(*core.Scan); !ok {
 		return nil, unsupported
+	}
+	if computeScalar {
+		// The query's type is the scalar; the inner from collects
+		// the empty-key group's single row, and "only" unwraps it.
+		sys := r.typeMap.sys
+		bagT := sys.Named("bag", t)
+		return &core.Apply{
+			T: t,
+			Fn: &core.ID{Pat: &core.IDPat{
+				T:    sys.Fn(bagT, t),
+				Name: onlyName,
+			}},
+			Arg:  &core.From{T: bagT, Steps: steps, Kind: from.Kind},
+			Span: from.Span(),
+		}, nil
 	}
 	return &core.From{T: t, Steps: steps, Kind: from.Kind}, nil
 }
@@ -548,44 +592,76 @@ func (r *resolver) toQueryStep(env, cur *coreEnv, step ast.FromStep,
 // follows it. The keys and aggregate arguments are computed over an
 // input row (the current scope); the key and aggregate fields
 // become the query's variables downstream.
-func (r *resolver) toGroupStep(cur *coreEnv, group *ast.GroupStep,
+func (r *resolver) toGroupStep(cur *coreEnv,
+	rowVars []*core.IDPat, group *ast.GroupStep,
 	compute *ast.ComputeStep,
 ) ([]core.FromStep, []*core.IDPat, *coreEnv, error) {
 	var keys []core.GroupKey
-	for _, f := range r.stepFields(group.Exp) {
-		exp, err := r.toExp(cur, f.exp)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		keys = append(keys, core.GroupKey{
-			Pat: &core.IDPat{T: exp.Type(), Name: f.label},
-			Exp: exp,
-		})
-	}
-	var aggs []core.GroupAgg
-	if compute != nil {
-		for _, f := range r.stepFields(compute.Exp) {
-			agg, err := r.toGroupAgg(cur, f)
+	if group != nil {
+		for _, f := range r.stepFields(group.Exp) {
+			exp, err := r.toExp(cur, f.exp)
 			if err != nil {
 				return nil, nil, nil, err
 			}
-			aggs = append(aggs, agg)
+			keys = append(keys, core.GroupKey{
+				Pat: &core.IDPat{T: exp.Type(), Name: f.label},
+				Exp: exp,
+			})
 		}
 	}
-	groupStep := &core.Group{Keys: keys, Aggs: aggs}
-	fieldPats := make([]*core.IDPat, 0, len(keys)+len(aggs))
+	// Keys are in scope in aggregate functions and residual
+	// expressions, but not in "over" arguments, which range over
+	// the pre-group rows.
+	keyEnv := cur
+	for _, k := range keys {
+		keyEnv = keyEnv.bind(k.Pat)
+	}
+	var aggs []core.GroupAgg
+	var residuals []core.YieldField
+	fieldPats := make([]*core.IDPat, 0, len(keys))
 	for _, k := range keys {
 		fieldPats = append(fieldPats, k.Pat)
 	}
-	for _, a := range aggs {
-		fieldPats = append(fieldPats, a.Pat)
+	if compute != nil {
+		var err error
+		aggs, residuals, fieldPats, err = r.toComputeFields(
+			cur, keyEnv, rowVars, compute, fieldPats)
+		if err != nil {
+			return nil, nil, nil, err
+		}
 	}
-	if group.Binder == "" {
+	groupStep := &core.Group{Keys: keys, Aggs: aggs}
+	groupSteps := []core.FromStep{groupStep}
+	if len(residuals) > 0 {
+		// Re-yield the visible row: keys and direct aggregates
+		// pass through; residual fields are computed from the
+		// hidden aggregates.
+		var yf []core.YieldField
+		for _, k := range keys {
+			yf = append(yf, core.YieldField{
+				Pat: k.Pat, Exp: &core.ID{Pat: k.Pat},
+			})
+		}
+		for _, a := range aggs {
+			if !strings.HasPrefix(a.Pat.Name, "$agg_") {
+				yf = append(yf, core.YieldField{
+					Pat: a.Pat, Exp: &core.ID{Pat: a.Pat},
+				})
+			}
+		}
+		yf = append(yf, residuals...)
+		groupSteps = append(groupSteps, &core.Yield{Fields: yf})
+	}
+	binder := ""
+	if group != nil {
+		binder = group.Binder
+	}
+	if binder == "" {
 		newCur := cur
 		for _, p := range fieldPats {
 			newCur = newCur.bind(p)
 		}
-		return []core.FromStep{groupStep}, fieldPats, newCur, nil
+		return groupSteps, fieldPats, newCur, nil
 	}
 	// A binder names the whole group row. Emit a following "yield"
 	// that assembles the key and aggregate fields into that row -- a
@@ -598,11 +674,11 @@ func (r *resolver) toGroupStep(cur *coreEnv, group *ast.GroupStep,
 	} else {
 		yieldExp = r.recordExp(fieldPats)
 	}
-	binderPat := &core.IDPat{T: yieldExp.Type(), Name: group.Binder}
+	binderPat := &core.IDPat{T: yieldExp.Type(), Name: binder}
 	yieldStep := &core.Yield{
 		Fields: []core.YieldField{{Pat: binderPat, Exp: yieldExp}},
 	}
-	return []core.FromStep{groupStep, yieldStep},
+	return append(groupSteps, yieldStep),
 		[]*core.IDPat{binderPat}, cur.bind(binderPat), nil
 }
 
@@ -672,37 +748,6 @@ func (r *resolver) toYieldStep(cur *coreEnv, s *ast.YieldStep) (
 		rowVars = append(rowVars, pat)
 	}
 	return &core.Yield{Fields: fields}, newCur, rowVars, nil
-}
-
-// toGroupAgg converts one aggregate field "label = fn over arg" (or
-// a bare "fn"), reading its result type from the type map.
-func (r *resolver) toGroupAgg(cur *coreEnv, f stepField) (
-	core.GroupAgg, error,
-) {
-	fnExp, argExp := f.exp, ast.Expr(nil)
-	if ic, ok := f.exp.(*ast.InfixCall); ok && ic.Kind == ast.OverOp {
-		fnExp, argExp = ic.A0, ic.A1
-	}
-	fn, err := r.toExp(cur, fnExp)
-	if err != nil {
-		return core.GroupAgg{}, err
-	}
-	var arg core.Exp
-	if argExp != nil {
-		arg, err = r.toExp(cur, argExp)
-		if err != nil {
-			return core.GroupAgg{}, err
-		}
-	}
-	t, err := r.typeMap.TypeOf(f.exp)
-	if err != nil {
-		return core.GroupAgg{}, err
-	}
-	return core.GroupAgg{
-		Pat: &core.IDPat{T: t, Name: f.label},
-		Fn:  fn,
-		Arg: arg,
-	}, nil
 }
 
 // stepField is a labelled expression in a group's keys or a

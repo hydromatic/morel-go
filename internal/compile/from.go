@@ -547,6 +547,8 @@ func implicitLabel(exp ast.Expr) string {
 		if sel, ok := e.Fn.(*ast.RecordSelector); ok {
 			return sel.Name
 		}
+	case *ast.Elements:
+		return elementsName
 	case *ast.ID:
 		return e.Name
 	case *ast.InfixCall:
