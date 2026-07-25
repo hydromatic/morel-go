@@ -46,6 +46,31 @@ func StructLibFilesForTest() []string {
 	return files
 }
 
+// UnimplementedMembersForTest boots a kernel and returns the
+// qualified name of every structure member that fell through to
+// the notImplemented placeholder — one for which
+// values["Struct.member"] is absent, the same signal
+// buildStructureRecords uses. It scans the boot snapshot, so
+// structures bound by evaluation (scott) are out of scope.
+func UnimplementedMembersForTest() []string {
+	k := NewKernel("test")
+	var missing []string
+	for i := range k.bootBindings {
+		b := &k.bootBindings[i]
+		record, ok := b.Type.(*types.Record)
+		if !ok {
+			continue
+		}
+		for _, f := range record.Fields {
+			qualified := b.Name + "." + f.Label
+			if _, ok := k.bootValues[qualified]; !ok {
+				missing = append(missing, qualified)
+			}
+		}
+	}
+	return missing
+}
+
 // UnimplementedStructLibMembersForTest boots a kernel and returns
 // the qualified names of any structLib structure member that fell
 // through to the notImplemented placeholder — that is, one for which

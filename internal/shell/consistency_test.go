@@ -19,6 +19,8 @@ package shell_test
 
 import (
 	"io/fs"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -62,6 +64,30 @@ func TestStructLibStructuresComplete(t *testing.T) {
 	missing := shell.UnimplementedStructLibMembersForTest()
 	if len(missing) > 0 {
 		t.Errorf("structLib members not implemented: %v", missing)
+	}
+}
+
+// TestUnimplementedMembers pins the structure members that still
+// fall through to the notImplemented placeholder (calling one
+// reports "not implemented: Struct.member"). A new signature
+// member cannot land without either an implementation or an entry
+// here; an implemented member must be removed from the list.
+func TestUnimplementedMembers(t *testing.T) {
+	want := []string{
+		"General.exnMessage",
+		"General.exnName",
+		"Interact.use",
+		"Interact.useSilently",
+		"Sys.clearEnv",
+		"Sys.colorSchemes",
+		"Sys.deduceColorScheme",
+		"Sys.file",
+	}
+	got := shell.UnimplementedMembersForTest()
+	sort.Strings(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("unimplemented members changed:\n got %v\nwant %v",
+			got, want)
 	}
 }
 
