@@ -1197,6 +1197,13 @@ func (r *typeResolver) deduceID(env typeEnv, id *ast.ID,
 	if !ok {
 		tc, isCon := r.sys.LookupTyCon(id.Name)
 		if !isCon {
+			if id.Name == currentName || id.Name == ordinalName {
+				return &Error{
+					Span: id.Span(),
+					Msg: "'" + id.Name +
+						"' is only valid in a query",
+				}
+			}
 			return &Error{
 				Span: id.Span(),
 				Msg: "unbound variable or constructor: " +

@@ -74,6 +74,10 @@ val recList = [{i=1,b=true}, {i=2,b=false}, {i=1,b=false}];
 val recBag = bag recList;
 > val recBag = [{b=true,i=1},{b=false,i=2},{b=false,i=1}] : {b:bool, i:int} bag
 
+(*) empty 'from' is ordered
+from;
+> val it = [()] : unit list
+
 (*) scan is ordered iff its input is ordered
 from i in [1];
 > val it = [1] : int list

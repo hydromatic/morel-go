@@ -1571,6 +1571,17 @@ from i in [1, 2, 3, 4, 5],
 >
 > val it : {i:int, odd:bool} list
 
+(* Empty scan. In case you are wondering, yes, a query with
+   no scans is legal. It produces one row with zero fields. *)
+from;
+> val it = [()] : unit list
+
+(*) You can even feed that one row into a pipeline.
+from
+  where true
+  yield 1 + 2;
+> val it = [3] : int list
+
 from deptno in [10, 20],
     emp in scott.emps on emp.deptno = deptno;
 > deptno emp

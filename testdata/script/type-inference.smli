@@ -581,6 +581,11 @@ from d in [{a=1,b=true}], i in [2] yield {d} yield a;
 :t from i in [1,2,3,4,5] yield substring("hello", 1, current);
 > val it : string list
 
+:t
+from i in [1,2,3,4,5] take current;
+> stdIn:1.28-1.35 Error: 'current' is only valid in a query
+>   raised at: stdIn:1.28-1.35
+
 (*) Records in queries
 :t
 from d in [{a=1,b=true}] yield d.x;

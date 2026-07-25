@@ -1125,6 +1125,18 @@ in
 end;
 > val it = [1,4] : int bag
 
+(*) Odd cycle
+let
+  val edge_facts = [("a", "b"), ("b", "c"), ("c", "a")]
+  fun edge (x, y) = (x, y) elem edge_facts
+  fun odd_path (x, y) = edge (x, y) orelse
+    (exists v0, v1 where odd_path (x, v0) andalso edge (v0, v1) andalso edge (v1, y))
+  fun exists_odd_cycle () = (exists v0 where odd_path (v0, v0))
+in
+  {exists_odd_cycle = from  where exists_odd_cycle ()}
+end;
+> val it = {exists_odd_cycle=[()]} : {exists_odd_cycle:unit list}
+
 (*) Siblings
 let
   val parents = [("Alice", "Bob"), ("Alice", "Carol")]

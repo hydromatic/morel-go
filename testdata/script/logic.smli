@@ -188,6 +188,22 @@ val g3 = fn f => exists i in [1, 2, 3] join j in [3, 4] on f (i, j) yield i + j;
 g3 (fn (i, j) => j - i = 2);
 > val it = true : bool
 
+(* Empty 'exists' iterates over zero variables, a collection
+   that contains one instance of the unit tuple, hence
+   returns true. *)
+exists;
+> val it = true : bool
+not exists;
+> val it = false : bool
+
+(* Empty 'exists' with 'where'. *)
+exists where true;
+> val it = true : bool
+exists where false;
+> val it = false : bool
+not exists where false;
+> val it = true : bool
+
 (*) 'exists' must not have 'into'
 exists e in scott.emps where e.deptno = 20 into sum;
 > stdIn:1.44-1.52 Error: 'into' step must not occur in 'exists'
@@ -215,6 +231,12 @@ forall i in [2, 3, 4, 12, 14] require i > 10 implies i mod 2 = 0;
 > val it = true : bool
 forall i in [2, 3, 4, 12, 14] where i > 10 require i mod 2 = 0;
 > val it = true : bool
+
+(*) Empty 'forall' iterates over one row.
+forall require true;
+> val it = true : bool
+forall require false;
+> val it = false : bool
 
 (*) 'forall' requires 'require'
 forall i in [2, 3, 4, 12, 14] where i > 10;

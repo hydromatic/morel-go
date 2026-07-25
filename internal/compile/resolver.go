@@ -414,13 +414,6 @@ func (r *resolver) toApply(env *coreEnv, apply *ast.Apply,
 func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 	t types.Type,
 ) (core.Exp, error) {
-	unsupported := &Error{
-		Span: from.Span(),
-		Msg:  "cannot convert to core: " + from.Op().String(),
-	}
-	if len(from.Steps) == 0 {
-		return nil, unsupported
-	}
 	// "current" rewrites to the row entering each step, and
 	// "ordinal" is valid; save the outer state for a nested query,
 	// restore it on the way out.
@@ -498,8 +491,23 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 		cur = newCur
 		rowVars = updateRowVars(rowVars, newSteps)
 	}
-	if _, ok := steps[0].(*core.Scan); !ok {
-		return nil, unsupported
+	if len(steps) == 0 || !isScanStep(steps[0]) {
+		// A query with no scans iterates one row of no variables:
+		// seed it with a scan over the unit singleton, whose
+		// variable stays out of the row.
+		sys := r.typeMap.sys
+		seed := &core.Scan{
+			Pat: &core.IDPat{T: sys.Unit, Name: "$empty"},
+			Exp: &core.List{
+				T: sys.List(sys.Unit),
+				Args: []core.Exp{&core.Literal{
+					T:     sys.Unit,
+					Kind:  ast.UnitLiteralOp,
+					Value: core.Unit{},
+				}},
+			},
+		}
+		steps = append([]core.FromStep{seed}, steps...)
 	}
 	if computeScalar {
 		return r.onlyWrap(t, steps, from), nil
@@ -523,6 +531,12 @@ func (r *resolver) toGroupAbsorb(cur *coreEnv,
 	groupSteps, groupRowVars, newCur, err := r.toGroupStep(
 		cur, rowVars, g, compute)
 	return groupSteps, groupRowVars, newCur, i, err
+}
+
+// isScanStep reports whether a step is a scan.
+func isScanStep(s core.FromStep) bool {
+	_, ok := s.(*core.Scan)
+	return ok
 }
 
 // onlyWrap wraps a standalone-compute query in "only": the inner

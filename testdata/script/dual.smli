@@ -37,6 +37,9 @@ Sys.set ("stringDepth", ~1);
 > val it = () : unit
 Sys.set ("output", "tabular");
 > val it = () : unit
+
+from;
+> val it = [()] : unit list
 from e in scott.emps;
 > comm deptno empno ename  hiredate   job       mgr  sal
 > ---- ------ ----- ------ ---------- --------- ---- ----
