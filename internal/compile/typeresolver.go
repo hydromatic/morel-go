@@ -379,6 +379,11 @@ func (r *typeResolver) meetOrderedness(o, o0, o1 *unify.Var) {
 	})
 }
 
+// ordSubstKey is the subst slot (below any real type-variable
+// ordinal) holding an instantiation's shared collection
+// orderedness.
+const ordSubstKey = -1
+
 // typeTerm converts a type to a term. Type variables become
 // unification variables via subst, fresh at their first
 // occurrence, so each conversion instantiates a polymorphic type.
@@ -389,9 +394,16 @@ func (r *typeResolver) typeTerm(t types.Type,
 	switch t := t.(type) {
 	case *types.Collection:
 		// A collection has free orderedness, so it unifies with a
-		// list or a bag; a fresh variable each instantiation.
-		return r.collectionTerm(r.typeTerm(t.Elem, subst),
-			r.u.Variable())
+		// list or a bag; fresh per instantiation, but shared by
+		// every collection in one type, so a member such as
+		// Relational.iterate is a list function on lists and a bag
+		// function on bags.
+		ord, ok := subst[ordSubstKey]
+		if !ok {
+			ord = r.u.Variable()
+			subst[ordSubstKey] = ord
+		}
+		return r.collectionTerm(r.typeTerm(t.Elem, subst), ord)
 	case *types.Fn:
 		return r.fnTerm(r.typeTerm(t.Param, subst),
 			r.typeTerm(t.Result, subst))

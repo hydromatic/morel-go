@@ -98,6 +98,38 @@ val matches = alt (sym #"e") (sym #"o") "hello";
 matchStrings matches "hello";
 > val it = ["e","o"] : string list
 
+(*) Transitive closure
+fun trans edges =
+    Relational.iterate edges
+        fn (oldEdges, newEdges) =>
+            from (i, j) in (newEdges : 'a list),
+                (j2, k) in (edges : 'a list)
+              where j = j2
+              yield (i, k);
+> val trans = fn : ('a * 'a) list -> ('a * 'a) list
+trans [(1, 2), (4, 6), (2, 5), (2, 3)];
+> val it = [(1,2),(4,6),(2,5),(2,3),(1,5),(1,3)] : (int * int) list
+
+(* The most interesting regular expression combinator is Kleene star. Thinking
+   relationally, if we consider the set of pairs "(i, j)" matching some regex
+   "r", then "r*" matches its reflexive, transitive closure. This can be
+   accomplished by combining "epsilon" and "trans". *)
+fun star r s =
+    from i in (epsilon s) union (trans (r s));
+> val star = fn : (string -> (int * int) list) -> string -> (int * int) list
+val matches = star (sym #"l") "hello";
+> val matches = [(0,0),(1,1),(2,2),(3,3),(4,4),(5,5),(2,3),(3,4),(2,4)]
+>   : (int * int) list
+matchStrings matches "hello";
+> val it = ["","","","","","","l","l","ll"] : string list
+
+(*) regex "(e | r) l*" applied to "hello world"
+val matches =
+    seq (alt (sym #"e") (sym #"r")) (star (sym #"l")) "hello world";
+> val matches = [(1,2),(1,3),(1,4),(8,9),(8,10)] : (int * int) list
+matchStrings matches "hello world";
+> val it = ["e","el","ell","r","rl"] : string list
+
 (* -------------------------------------------------------------------
  * The combinators in the previous section found all matches within a
  * given substring, but often we are not interested in all matches: we
@@ -175,5 +207,30 @@ val r = altPos (symPos #"e") (symPos #"o");
 > val r = fn : string * int -> int list
 matchStringsPos r "hello";
 > val it = [(1,"e"),(4,"o")] : (int * string) list
+
+(* Finally, Kleene star is implemented by recursively appending r to a set x of
+   matches found so far. It's worth noting that this definition is effectively
+   left-recursive – it takes the endpoints from the fixed point x, and then
+   continues matching using the argument r. This should make clear that this is
+   not just plain old functional programming – we are genuinely relying upon the
+   fixed point semantics. *)
+fun starPos r (s, i) =
+    Relational.iterate [i]
+        fn (oldList, newList) =>
+            from j in newList,
+                k in (r (s, j) : 'a list)
+              yield k;
+> val starPos = fn : ('a * 'b -> 'b list) -> 'a * 'b -> 'b list
+val r = starPos (symPos #"l");
+> val r = fn : string * int -> int list
+matchStringsPos r "hello";
+> val it = [(0,""),(1,""),(2,""),(2,"l"),(2,"ll"),(3,""),(3,"l"),(4,"")]
+>   : (int * string) list
+
+(*) regex "(e | r) l*" applied to "hello world"
+val r = seqPos (altPos (symPos #"e") (symPos #"r")) (starPos (symPos #"l"));
+> val r = fn : string * int -> int list
+matchStringsPos r "hello world";
+> val it = [(1,"e"),(1,"el"),(1,"ell"),(8,"r"),(8,"rl")] : (int * string) list
 
 (*) End regex-example.smli

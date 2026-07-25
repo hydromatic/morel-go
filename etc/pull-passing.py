@@ -280,7 +280,8 @@ def make_runner(binary):
         with open(path, "w") as f:
             f.write(text)
         r = subprocess.run(
-            [binary, path], capture_output=True, text=True,
+            [binary, "--directory=testdata", path],
+            capture_output=True, text=True,
             env=dict(os.environ, MOREL_GAPS="1"))
         for line in r.stderr.splitlines():
             if line.startswith("gap: "):

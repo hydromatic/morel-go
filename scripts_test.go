@@ -54,6 +54,10 @@ func TestScripts(t *testing.T) {
 				t.Fatal(err)
 			}
 			kernel := shell.NewKernel(rel)
+			// Scripts resolve data files (Datalog .input) against
+			// the "directory" property; testdata is the analog of
+			// java's src/test/resources.
+			kernel.Config().Directory = "testdata"
 			got, err := shell.RunScript(kernel, rel, string(data))
 			if err != nil {
 				t.Fatal(err)

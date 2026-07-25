@@ -112,6 +112,12 @@ type Kernel struct {
 	// planExDecl is the most recent statement's resolved (not yet
 	// optimized) declaration; Sys.planEx re-plans it.
 	planExDecl core.Decl
+	// bootBindings and bootValues snapshot the environment at the
+	// end of boot; the Datalog built-ins compile their translated
+	// programs against it, so user bindings are not visible to
+	// them.
+	bootBindings []compile.Binding
+	bootValues   map[string]eval.Val
 	// gaps counts the not-yet-implemented errors and panics that
 	// suppression hid, by message — the inventory of what running
 	// the input would need. Gaps reports it.
@@ -167,6 +173,9 @@ func NewKernel(name string) *Kernel {
 	// The Sys implementations read and write session state, so
 	// the kernel supplies them.
 	maps.Copy(values, k.sysBuiltins())
+	// The Datalog implementations compile and evaluate the
+	// translated programs, so the kernel supplies them too.
+	maps.Copy(values, k.datalogBuiltins())
 	// The internal extent builtin backs sourceless query scans.
 	values[compile.ExtentName] = eval.Fn(eval.ExtentValues)
 	// Build the structure records first, so that a structure defined
@@ -179,6 +188,8 @@ func NewKernel(name string) *Kernel {
 	}
 	buildStructureRecords(values, result.Bindings)
 	k.values = values
+	k.bootBindings = slices.Clone(k.bindings)
+	k.bootValues = maps.Clone(values)
 	k.loadScott()
 	return k
 }
@@ -540,7 +551,8 @@ func (k *Kernel) runStatement(n ast.Node) string {
 		k.planExDecl = coreDecl
 	}
 	coreDecl = compile.Inline(
-		coreDecl, k.inlineEnv(), k.inlinePassCount())
+		coreDecl, k.inlineEnv(), k.inlinePassCount(),
+	)
 	// Later statements inline the pre-grounding form: grounding
 	// specializes queries to this statement's bindings, but the
 	// logical form is what a later query's own grounding wants.

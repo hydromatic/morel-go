@@ -220,7 +220,36 @@ func CollectionAggType(sys *types.System, member string,
 	switch member {
 	case "count", "empty", "max", "min", "nonEmpty", "only", sumName:
 		return sys.Fn(sys.Collection(bag.Args[0]), fn.Result)
+	case "iterate":
+		// Every bag in the signature becomes a collection; their
+		// shared orderedness makes iterate a list function on
+		// lists and a bag function on bags.
+		return bagsToCollections(sys, fn)
 	default:
 		return nil
+	}
+}
+
+// bagsToCollections replaces each bag in a type with a collection
+// of the same element.
+func bagsToCollections(sys *types.System, t types.Type) types.Type {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch t := t.(type) {
+	case *types.Fn:
+		return sys.Fn(bagsToCollections(sys, t.Param),
+			bagsToCollections(sys, t.Result))
+	case *types.Named:
+		if t.Name == bagTyCon && len(t.Args) == 1 {
+			return sys.Collection(bagsToCollections(sys, t.Args[0]))
+		}
+		return t
+	case *types.Tuple:
+		args := make([]types.Type, len(t.Args))
+		for i, arg := range t.Args {
+			args[i] = bagsToCollections(sys, arg)
+		}
+		return sys.Tuple(args...)
+	default:
+		return t
 	}
 }
