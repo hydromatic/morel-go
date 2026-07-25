@@ -1186,8 +1186,8 @@ func (r *typeResolver) deduceRecordFields(env typeEnv,
 			label = implicitLabel(f.Exp)
 			if label == "" {
 				return nil, &Error{
-					Span: record.Span(),
-					Msg:  cannotDeriveLabel,
+					Span: f.Exp.Span(),
+					Msg:  cannotDeriveLabel + " " + ast.UnparseExpr(f.Exp),
 				}
 			}
 		}

@@ -17,7 +17,37 @@
 
 package ast
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
+
+// literalText renders a literal as source: an int canonicalized
+// (leading zeros dropped), a string or char quoted.
+func literalText(l *Literal) string {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch l.Kind {
+	case CharLiteralOp:
+		return `#"` + l.Value + `"`
+	case IntLiteralOp:
+		neg := strings.HasPrefix(l.Value, "~")
+		n, err := strconv.ParseUint(strings.TrimPrefix(l.Value, "~"),
+			10, 64)
+		if err != nil {
+			return l.Value
+		}
+		s := strconv.FormatUint(n, 10)
+		if neg {
+			return "~" + s
+		}
+		return s
+	case StringLiteralOp:
+		r := strings.ReplaceAll(l.Value, `\`, `\\`)
+		return `"` + strings.ReplaceAll(r, `"`, `\"`) + `"`
+	default:
+		return l.Value
+	}
+}
 
 // UnparsePat renders a pattern as source text: an implicit record
 // field renders expanded ("{a = a}"), and a nested cons or layered
@@ -438,7 +468,7 @@ func unparseExpr(b *strings.Builder, e Expr, prec int) {
 	case *ListExp:
 		unparseExprList(b, "[", n.Args, "]")
 	case *Literal:
-		b.WriteString(n.Value)
+		b.WriteString(literalText(n))
 	case *PrefixCall:
 		unparseParen(b, prec, applyPrec, func() {
 			b.WriteString("~ ")

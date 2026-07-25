@@ -95,6 +95,10 @@ from e in emps yield {deptno = #deptno e, one = 1};
 >   [{deptno=10,one=1},{deptno=20,one=1},{deptno=30,one=1},{deptno=30,one=1}]
 >   : {deptno:int, one:int} list
 
+from e in emps yield {e.deptno, 1 + 2};
+> stdIn:1.33-1.38 Error: cannot derive label for expression 1 + 2
+>   raised at: stdIn:1.33-1.38
+
 from e in emps yield {e.deptno, three = 1 + 2};
 > val it =
 >   [{deptno=10,three=3},{deptno=20,three=3},{deptno=30,three=3},
@@ -852,6 +856,10 @@ from e in emps
   order g.dept;
 > val it = [{dept=10,total=100},{dept=20,total=101},{dept=30,total=205}]
 >   : {dept:int, total:int} list
+from i in [1,2]
+  group i compute 1 + 2;
+> stdIn:2.19-2.24 Error: cannot derive label for compute expression
+>   raised at: stdIn:2.19-2.24
 
 (*) singleton record 'yield' followed by 'order'
 from e in emps
@@ -1059,6 +1067,11 @@ from (i, j) in [(1, 1), (2, 3), (3, 4)]
   compute {sum over j, count over ()};
 > val it = [{count=2,j=1,sum=5},{count=1,j=0,sum=3}]
 >   : {count:int, j:int, sum:int} list
+
+from i in [1, 2, 3]
+  group i compute length elements;
+> stdIn:2.19-2.34 Error: cannot derive label for compute expression
+>   raised at: stdIn:2.19-2.34
 
 (* Yield ---------------------------------------------------------- *)
 
