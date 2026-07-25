@@ -1,0 +1,156 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *)
+Sys.set ("lineWidth", 78);
+> val it = () : unit
+
+(* Field projection still works with structures (backward compatible) *)
+String.size "abc";
+> val it = 3 : int
+
+(* Field projection still works with record values *)
+val r = {name = "alice", age = 30};
+> val r = {age=30,name="alice"} : {age:int, name:string}
+
+r.name;
+> val it = "alice" : string
+
+r.age;
+> val it = 30 : int
+
+(* Atom-arg form works with bound variables (not just with literals).
+   These exercise the case where the receiver is a bare identifier that
+   refers to a non-record value, not a module/structure. *)
+val xs = [3, 1, 4, 1, 5];
+> val xs = [3,1,4,1,5] : int list
+xs.drop 2;
+> val it = [4,1,5] : int list
+
+xs.length ();
+> val it = 5 : int
+
+val s = "hello";
+> val s = "hello" : string
+s.sub 1;
+> val it = #"e" : char
+
+val n = 4;
+> val n = 4 : int
+n.compare 3;
+> val it = GREATER : order
+
+val r = {i = 1, n};
+> val r = {i=1,n=4} : {i:int, n:int}
+
+(* Int.abs vs Real.abs — bound-variable receivers *)
+let val n = ~3   in n.abs () end;
+> val it = 3 : int
+
+(* toString — four candidates: Bool, Char, Int, Real *)
+true.toString ();
+> val it = "true" : string
+
+let val n = 42     in n.toString () end;
+> val it = "42" : string
+
+(* The following would work if the limitation were lifted: a top-level
+   function definition followed by a postfix call in a separate statement.
+fun greet self = "Hello, " ^ self;
+> val greet = fn : string -> string
+"world".greet ();
+> val it = "Hello, world" : string
+*)
+
+(* The safe-navigation operator "?." projects a field through the receiver's
+ * functor (option, list, bag, or vector). *)
+
+(*) Projecting a field of an option.
+(SOME {a=1, b=2})?.b;
+> val it = SOME 2 : int option
+(NONE : {a:int, b:int} option)?.b;
+> val it = NONE : int option
+
+(*) Projecting a field of a list (equivalent to "from e in es yield e.a").
+[{a=1},{a=2},{a=3}]?.a;
+> val it = [1,2,3] : int list
+
+(*) Chaining "?." through nested records.
+let val z = SOME {b={c={d=42}}} in z?.b?.c?.d end;
+> val it = SOME 42 : int option
+[{b={c=1}},{b={c=2}}]?.b?.c;
+> val it = [1,2] : int list
+
+(* "?." preserves the field's own type. If the field is itself option-typed,
+ * the result keeps both layers: "int option option", not "int option". *)
+let val z = SOME {b = SOME {c=5}} in z?.b?.c end;
+> val it = SOME (SOME 5) : int option option
+let val z : {b:{c:int} option} option = NONE in z?.b?.c end;
+> val it = NONE : int option option
+
+(* "?." tunnels through multiple functor layers in the receiver to reach the
+ * record, then re-wraps the field in those layers. *)
+let val x = SOME (SOME {y=7}) in x?.y end;
+> val it = SOME (SOME 7) : int option option
+let val xs = [SOME {a=1}, NONE] in xs?.a end;
+> val it = [SOME 1,NONE] : int option list
+
+(* The layers may be any mix of functors; "?." reconstructs the exact stack
+ * (each layer with its own functor), replacing the record with the field. *)
+(SOME [SOME {y=1}, NONE, SOME {y=3}])?.y;
+> val it = SOME [SOME 1,NONE,SOME 3] : int option list option
+[[{y=1},{y=2}],[{y=3}]]?.y;
+> val it = [[1,2],[3]] : int list list
+(SOME [{y=1},{y=2}])?.y;
+> val it = SOME [1,2] : int list option
+
+(*) "?." works over bag and vector, and mixes them with option and list.
+(Bag.fromList [{y=1},{y=2},{y=3}])?.y;
+> val it = [1,2,3] : int bag
+(Vector.fromList [{y=1},{y=2}])?.y;
+> val it = #[1,2] : int vector
+(SOME (Bag.fromList [{y=1},{y=2}]))?.y;
+> val it = SOME ([1,2]) : int bag option
+(Bag.fromList [SOME {y=1}, NONE])?.y;
+> val it = [SOME 1,NONE] : int option bag
+
+(*) Receiver type comes from a query rather than an annotation.
+from x in [SOME {a=10}, NONE] yield x?.a;
+> val it = [SOME 10,NONE] : int option list
+
+(*) Receiver is not a functor.
+let val n = 5 in n?.x end;
+> stdIn:1.18 Error: '?.' applied to non-functor type int (expected option or list)
+>   raised at: stdIn:1.18
+
+(*) Functor whose innermost type is not a record.
+(SOME 1)?.a;
+> stdIn:1.2-1.8 Error: reference to field a of non-record type int
+>   raised at: stdIn:1.2-1.8
+
+(*) Record, but no such field.
+(SOME {a=1})?.b;
+> stdIn:1.15 Error: no field 'b' in type '{a:int}'
+>   raised at: stdIn:1.15
+
+(* Tunneling reaches a non-record type: "w?.b" is "int list option", and so
+ * "?.c" tunnels through both layers to "int", which has no fields. *)
+let val w : {b:int list} option = NONE in w?.b?.c end;
+> stdIn:1.43-1.47 Error: reference to field c of non-record type int
+>   raised at: stdIn:1.43-1.47
+
+(*) End postfix.smli

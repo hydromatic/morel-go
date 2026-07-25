@@ -790,3 +790,157 @@ func (c *fromCode) restore(f *Frame, row []Val) {
 		f.Slots[slot] = row[i]
 	}
 }
+
+// JoinStage is an outer join. For a left join, each input row
+// scans Source (which may be correlated): matches bind Pat with
+// its slots wrapped in SOME, and an input row with no match is
+// emitted with the pattern slots NONE. For a right or full join,
+// Source is materialized once (it is independent of the input);
+// matching pairs wrap the input's LeftSlots in SOME (and, for a
+// full join, the pattern slots too), a full join's unmatched
+// input row is emitted in place with pattern slots NONE, and
+// unmatched source rows are appended at the end, in source order,
+// with the input slots NONE.
+type JoinStage struct {
+	Source    Code
+	Pat       Pat
+	Cond      Code
+	LeftSlots []int
+	PatSlots  []int
+	Left      bool
+	Full      bool
+}
+
+func (s *JoinStage) transform(q *fromCode, f *Frame, rows [][]Val,
+) ([][]Val, error) {
+	if s.Left {
+		return s.leftJoin(q, f, rows)
+	}
+	return s.buildJoin(q, f, rows)
+}
+
+// cond evaluates the join condition over the bound row, true when
+// absent.
+func (s *JoinStage) cond(f *Frame) (bool, error) {
+	if s.Cond == nil {
+		return true, nil
+	}
+	v, err := s.Cond.Eval(f)
+	if err != nil {
+		return false, err
+	}
+	b, _ := v.(bool)
+	return b, nil
+}
+
+// wrapSome wraps each of the slots' values in SOME.
+func wrapSome(f *Frame, slots []int) {
+	for _, slot := range slots {
+		f.Slots[slot] = someVal(f.Slots[slot])
+	}
+}
+
+// setNone sets each of the slots to NONE.
+func setNone(f *Frame, slots []int) {
+	for _, slot := range slots {
+		f.Slots[slot] = noneVal
+	}
+}
+
+// leftJoin scans the (possibly correlated) source per input row.
+func (s *JoinStage) leftJoin(q *fromCode, f *Frame, rows [][]Val,
+) ([][]Val, error) {
+	var out [][]Val
+	for i, row := range rows {
+		q.restore(f, row)
+		q.setOrdinal(f, i)
+		coll, err := s.Source.Eval(f)
+		if err != nil {
+			return nil, err
+		}
+		matched := false
+		for _, elem := range asList(coll) {
+			q.restore(f, row)
+			if !s.Pat.Match(elem, f) {
+				continue
+			}
+			ok, err := s.cond(f)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue
+			}
+			matched = true
+			wrapSome(f, s.PatSlots)
+			out = append(out, q.snapshot(f))
+		}
+		if !matched {
+			q.restore(f, row)
+			setNone(f, s.PatSlots)
+			out = append(out, q.snapshot(f))
+		}
+	}
+	return out, nil
+}
+
+// buildJoin materializes the independent source once and probes
+// it with each input row.
+func (s *JoinStage) buildJoin(q *fromCode, f *Frame, rows [][]Val,
+) ([][]Val, error) {
+	coll, err := s.Source.Eval(f)
+	if err != nil {
+		return nil, err
+	}
+	source := asList(coll)
+	unmatched := make([]bool, len(source))
+	for i := range unmatched {
+		unmatched[i] = true
+	}
+	var out [][]Val
+	for i, row := range rows {
+		matchCount := 0
+		for j, elem := range source {
+			q.restore(f, row)
+			q.setOrdinal(f, i)
+			if !s.Pat.Match(elem, f) {
+				continue
+			}
+			ok, err := s.cond(f)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue
+			}
+			matchCount++
+			unmatched[j] = false
+			wrapSome(f, s.LeftSlots)
+			if s.Full {
+				wrapSome(f, s.PatSlots)
+			}
+			out = append(out, q.snapshot(f))
+		}
+		if s.Full && matchCount == 0 {
+			q.restore(f, row)
+			setNone(f, s.PatSlots)
+			wrapSome(f, s.LeftSlots)
+			out = append(out, q.snapshot(f))
+		}
+	}
+	for j, elem := range source {
+		if !unmatched[j] {
+			continue
+		}
+		for _, slot := range q.slots {
+			f.Slots[slot] = nil
+		}
+		s.Pat.Match(elem, f)
+		if s.Full {
+			wrapSome(f, s.PatSlots)
+		}
+		setNone(f, s.LeftSlots)
+		out = append(out, q.snapshot(f))
+	}
+	return out, nil
+}

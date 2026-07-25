@@ -95,12 +95,18 @@ func (p *Parser) fromStep() ([]ast.FromStep, error) {
 		}
 		return []ast.FromStep{ast.NewBareStep(span,
 			ast.DistinctOp)}, nil
+	case token.Full:
+		return p.outerJoin(ast.FullJoinOp)
 	case token.Join:
 		err := p.next()
 		if err != nil {
 			return nil, err
 		}
 		return p.scanList()
+	case token.Left:
+		return p.outerJoin(ast.LeftJoinOp)
+	case token.Right:
+		return p.outerJoin(ast.RightJoinOp)
 	case token.Through:
 		return p.throughStep()
 	case token.Unorder:
@@ -290,6 +296,32 @@ func (p *Parser) throughStep() ([]ast.FromStep, error) {
 }
 
 // scanList parses "scan [, scan ...]".
+// outerJoin parses "left|right|full join scan [, scan ...]"; only
+// the scan immediately after the keywords carries the join
+// flavor.
+func (p *Parser) outerJoin(join ast.Op) ([]ast.FromStep, error) {
+	err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	err = p.expect(token.Join)
+	if err != nil {
+		return nil, err
+	}
+	err = p.next()
+	if err != nil {
+		return nil, err
+	}
+	steps, err := p.scanList()
+	if err != nil {
+		return nil, err
+	}
+	if scan, ok := steps[0].(*ast.Scan); ok {
+		scan.Join = join
+	}
+	return steps, nil
+}
+
 func (p *Parser) scanList() ([]ast.FromStep, error) {
 	var steps []ast.FromStep
 	for {

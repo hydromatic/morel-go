@@ -389,6 +389,9 @@ func (r *resolver) toLiteral(literal *ast.Literal,
 func (r *resolver) toApply(env *coreEnv, apply *ast.Apply,
 	t types.Type,
 ) (core.Exp, error) {
+	if sel, ok := apply.Fn.(*ast.RecordSelector); ok && sel.Safe {
+		return r.toSafeNav(env, apply, sel, t)
+	}
 	fn, err := r.toExp(env, apply.Fn)
 	if err != nil {
 		return nil, err
@@ -483,7 +486,8 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 			computeScalar = true
 			continue
 		}
-		newSteps, newCur, _, err := r.toQueryStep(env, cur, step)
+		newSteps, newCur, _, err := r.toQueryStep(env, cur,
+			rowVars, step)
 		if err != nil {
 			return nil, err
 		}
@@ -580,7 +584,8 @@ func updateRowVars(rowVars []*core.IDPat,
 // sources, order keys, where and yield expressions see the query
 // variables; skip/take counts, set-op arguments, and an "into"
 // function see only the root scope.
-func (r *resolver) toQueryStep(env, cur *coreEnv, step ast.FromStep,
+func (r *resolver) toQueryStep(env, cur *coreEnv,
+	rowVars []*core.IDPat, step ast.FromStep,
 ) ([]core.FromStep, *coreEnv, bool, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch s := step.(type) {
@@ -601,7 +606,7 @@ func (r *resolver) toQueryStep(env, cur *coreEnv, step ast.FromStep,
 		exp, err := r.toExp(cur, s.Exp)
 		return []core.FromStep{&core.Yield{Exp: exp}}, cur, true, err
 	case *ast.Scan:
-		scanSteps, newCur, err := r.toScanStep(cur, s)
+		scanSteps, newCur, err := r.toScanStep(cur, rowVars, s)
 		return scanSteps, newCur, false, err
 	case *ast.SetOpStep:
 		setOp, err := r.toSetOpStep(env, s)
@@ -866,9 +871,9 @@ func (r *resolver) toThroughStep(cur *coreEnv, s *ast.ThroughStep,
 // produces (a scan, plus a where for a "join ... on" condition) and
 // the environment extended with the scan's variables. A scalar
 // ("=") scan is not yet supported.
-func (r *resolver) toScanStep(cur *coreEnv, s *ast.Scan) (
-	[]core.FromStep, *coreEnv, error,
-) {
+func (r *resolver) toScanStep(cur *coreEnv,
+	rowVars []*core.IDPat, s *ast.Scan,
+) ([]core.FromStep, *coreEnv, error) {
 	pat, err := r.toPat(s.Pat)
 	if err != nil {
 		return nil, nil, err
@@ -904,18 +909,41 @@ func (r *resolver) toScanStep(cur *coreEnv, s *ast.Scan) (
 			Msg:  "cannot convert to core: " + s.Op().String(),
 		}
 	}
-	steps := []core.FromStep{&core.Scan{Pat: pat, Exp: exp}}
+	scan := &core.Scan{Pat: pat, Exp: exp, Join: s.Join}
+	steps := []core.FromStep{scan}
 	for _, id := range core.PatIDs(pat) {
 		cur = cur.bind(id)
 	}
 	// A "join ... on" condition filters over the scan's variables,
-	// so it lowers to a where after the scan.
+	// so it lowers to a where after the scan — except for an outer
+	// join, which evaluates it over the unwrapped values inside
+	// the join itself.
 	if s.On != nil {
 		on, err := r.toExp(cur, s.On)
 		if err != nil {
 			return nil, nil, err
 		}
-		steps = append(steps, &core.Where{Exp: on})
+		if s.Join == ast.LeftJoinOp || s.Join == ast.RightJoinOp ||
+			s.Join == ast.FullJoinOp {
+			scan.On = on
+		} else {
+			steps = append(steps, &core.Where{Exp: on})
+		}
+	}
+	// An outer join's nullable variables are option-typed
+	// downstream: the runtime wraps their slot values, and here
+	// their patterns' types wrap to match (after the on
+	// condition, which sees the raw types).
+	sys := r.typeMap.sys
+	if optionalizesRight(s.Join) {
+		for _, id := range core.PatIDs(pat) {
+			id.T = sys.Named(typeOption, id.T)
+		}
+	}
+	if optionalizesLeft(s.Join) {
+		for _, id := range rowVars {
+			id.T = sys.Named(typeOption, id.T)
+		}
 	}
 	return steps, cur, nil
 }

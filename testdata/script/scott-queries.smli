@@ -34,6 +34,33 @@ val assignments =
 Sys.set ("output", "tabular");
 > val it = () : unit
 
+(* A 'left join' makes the employee optional; 'e?.ename' is the employee's name,
+ * or a blank cell for the orphaned task. *)
+from a in assignments
+  left join e in scott.emps on a.empno = e.empno
+  yield {a.task, who = e?.ename};
+> task          who
+> ------------- -----
+> Plan budget   KING
+> Review code   JONES
+> Orphaned task
+>
+> val it : {task:string, who:string option} bag
+
+(* A 'right join' keeps every department, even OPERATIONS (40), which has no
+ * manager and so shows a blank. *)
+from e in (from x in scott.emps where x.job = "MANAGER")
+  right join d in scott.depts on e.deptno = d.deptno
+  yield {d.dname, manager = e?.ename};
+> dname      manager
+> ---------- -------
+> RESEARCH   JONES
+> SALES      BLAKE
+> ACCOUNTING CLARK
+> OPERATIONS
+>
+> val it : {dname:string, manager:string option} bag
+
 Sys.set ("output", "classic");
 > val it = () : unit
 

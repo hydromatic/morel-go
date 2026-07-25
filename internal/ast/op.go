@@ -120,6 +120,9 @@ const (
 	ExistsOp
 	ForallOp
 	ScanOp
+	LeftJoinOp
+	RightJoinOp
+	FullJoinOp
 	WhereOp
 	YieldOp
 	YieldAllOp
@@ -225,6 +228,9 @@ var opNames = map[Op]string{
 	ExistsOp:     "exists",
 	ForallOp:     "forall",
 	ScanOp:       "scan",
+	LeftJoinOp:   "left_join",
+	RightJoinOp:  "right_join",
+	FullJoinOp:   "full_join",
 	WhereOp:      "where",
 	YieldOp:      "yield",
 	YieldAllOp:   "yieldAll",

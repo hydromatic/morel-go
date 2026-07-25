@@ -118,10 +118,24 @@ func (*Apply) Op() Op { return ApplyOp }
 
 // RecordSelector is a field-selection function, "#label"; the
 // expression "e.f" parses as the application of "#f" to "e".
+// Safe marks the "?." spelling, which projects the field through
+// the receiver's functor layers (option, list, bag, vector).
 type RecordSelector struct {
 	exprBase
 
 	Name string
+	Safe bool
+}
+
+// NewSafeRecordSelector returns a "?." selector.
+func NewSafeRecordSelector(span token.Span,
+	name string,
+) *RecordSelector {
+	return &RecordSelector{
+		exprBase: exprBase{base{span}},
+		Name:     name,
+		Safe:     true,
+	}
 }
 
 // NewRecordSelector returns a record selector.

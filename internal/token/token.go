@@ -121,6 +121,7 @@ const (
 	Semi
 	Bar
 	Dot
+	QDot
 	Comma
 	Underscore
 	RArrow
@@ -233,6 +234,7 @@ var kindNames = map[Kind]string{
 	Semi:             ";",
 	Bar:              "|",
 	Dot:              ".",
+	QDot:             "?.",
 	Comma:            ",",
 	Underscore:       "_",
 	RArrow:           "=>",

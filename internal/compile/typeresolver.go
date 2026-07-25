@@ -95,6 +95,25 @@ func Deduce(sys *types.System, bindings []Binding,
 			}
 		}
 		again := false
+		// A safe selector whose receiver resolved layer by layer
+		// may not have deduced its result during unification;
+		// retry against the full substitution.
+		for len(r.pendingSafe) > 0 {
+			ps := r.pendingSafe[0]
+			r.pendingSafe = r.pendingSafe[1:]
+			if _, isVar := subst.Resolve(ps.vResult).(*unify.Var); !isVar {
+				continue
+			}
+			t := subst.Resolve(ps.vArg)
+			if res := safeFieldTerm(t, ps.name, subst); res != nil {
+				r.equiv(ps.vResult, res)
+				again = true
+				break
+			}
+		}
+		if again {
+			continue
+		}
 		for len(r.preferred) > 0 {
 			pt := r.preferred[0]
 			r.preferred = r.preferred[1:]
@@ -132,6 +151,14 @@ type numericCall struct {
 	apply *ast.Apply
 }
 
+// pendingSafeCall is a safe selector avaiting a post-unification
+// retry.
+type pendingSafeCall struct {
+	name    string
+	vArg    *unify.Var
+	vResult *unify.Var
+}
+
 // selectorCall is a field reference "#field arg" (or its "arg
 // .field" sugar), to be checked against the resolved type of its
 // argument once unification is complete.
@@ -153,6 +180,13 @@ func (r *typeResolver) checkFieldRefs(m *TypeMap) error {
 		argType, err := m.TypeOf(call.apply.Arg)
 		if err != nil {
 			return err
+		}
+		if call.sel.Safe {
+			err := checkSafeFieldRef(call, argType)
+			if err != nil {
+				return err
+			}
+			continue
 		}
 		if _, isVar := argType.(*types.Var); isVar {
 			return &Error{
@@ -178,6 +212,64 @@ func (r *typeResolver) checkFieldRefs(m *TypeMap) error {
 		}
 	}
 	return nil
+}
+
+// checkSafeFieldRef checks a safe selector "arg?.field": the
+// receiver must have at least one functor layer (option, list,
+// bag, vector), the innermost type must be a record, and the
+// record must contain the field.
+func checkSafeFieldRef(call selectorCall, argType types.Type,
+) error {
+	inner, layers := peelSafeFunctors(argType)
+	if layers == 0 {
+		return &Error{
+			Span: call.apply.Arg.Span(),
+			Msg: "'?.' applied to non-functor type " +
+				argType.String() + " (expected option or list)",
+		}
+	}
+	names := fieldNames(inner)
+	if names == nil {
+		return &Error{
+			Span: call.apply.Arg.Span(),
+			Msg: "reference to field " + call.sel.Name +
+				" of non-record type " + inner.String(),
+		}
+	}
+	if !slices.Contains(names, call.sel.Name) {
+		return &Error{
+			Span: call.sel.Span(),
+			Msg: "no field '" + call.sel.Name + "' in type '" +
+				inner.String() + "'",
+		}
+	}
+	return nil
+}
+
+// peelSafeFunctors strips the functor layers a safe selector
+// tunnels through, returning the innermost type and how many
+// layers were stripped.
+func peelSafeFunctors(t types.Type) (types.Type, int) {
+	n := 0
+	for {
+		// lint: sort until '^\t\t}' where '^\t\tcase '
+		switch tt := t.(type) {
+		case *types.Collection:
+			t = tt.Elem
+		case *types.List:
+			t = tt.Elem
+		case *types.Named:
+			if len(tt.Args) == 1 && (tt.Name == typeOption ||
+				tt.Name == bagTyCon || tt.Name == typeVector) {
+				t = tt.Args[0]
+				break
+			}
+			return t, n
+		default:
+			return t, n
+		}
+		n++
+	}
 }
 
 // fieldNames returns the field labels of a record or tuple type
@@ -284,6 +376,11 @@ type typeResolver struct {
 	numericCalls  []numericCall
 	selectorCalls []selectorCall
 	tyVarScopes   []map[string]*unify.Var
+	// pendingSafe holds safe selectors whose result could not be
+	// deduced when their receiver's variable first resolved (an
+	// inner layer was still open); after unification they are
+	// retried against the full substitution.
+	pendingSafe []pendingSafeCall
 	// computeFrames tracks the enclosing compute clauses: "over"
 	// aggregates and "elements" are valid only inside one, and
 	// aggregate over the innermost frame's pre-group rows.
@@ -1351,8 +1448,14 @@ func (r *typeResolver) deduceApply(env typeEnv, apply *ast.Apply,
 	}
 	if sel, ok := apply.Fn.(*ast.RecordSelector); ok {
 		// "apply" is "#field arg": when vArg (the argument
-		// type) resolves to a record, we can deduce v.
-		r.selectorAction(sel, vArg, v)
+		// type) resolves to a record, we can deduce v. A safe
+		// selector ("arg?.field") instead tunnels through the
+		// receiver's functor layers.
+		if sel.Safe {
+			r.safeSelectorAction(sel, vArg, v)
+		} else {
+			r.selectorAction(sel, vArg, v)
+		}
 		r.reg2(sel, r.fnTerm(vArg, v))
 		r.selectorCalls = append(r.selectorCalls,
 			selectorCall{sel: sel, apply: apply})
@@ -1371,6 +1474,28 @@ func (r *typeResolver) deduceApply(env typeEnv, apply *ast.Apply,
 	}
 	r.reg(apply, v)
 	return nil
+}
+
+// safeSelectorAction registers an action for a safe selector
+// "arg?.field": when the receiver's type resolves, peel its
+// functor layers, project the field, and re-wrap.
+func (r *typeResolver) safeSelectorAction(sel *ast.RecordSelector,
+	vArg, vResult *unify.Var,
+) {
+	fieldName := sel.Name
+	r.pendingSafe = append(r.pendingSafe, pendingSafeCall{
+		name: fieldName, vArg: vArg, vResult: vResult,
+	})
+	r.actions = append(r.actions, unify.VarAction{
+		Var: vArg,
+		Action: func(_ *unify.Var, t unify.Term,
+			s *unify.Substitution, add func(l, r unify.Term),
+		) {
+			if res := safeFieldTerm(t, fieldName, s); res != nil {
+				add(s.Resolve(vResult), res)
+			}
+		},
+	})
 }
 
 // selectorAction registers an action for the record selector

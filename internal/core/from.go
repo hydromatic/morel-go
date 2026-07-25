@@ -64,10 +64,14 @@ type FromStep interface {
 }
 
 // Scan is "pat in exp": it iterates the collection exp, binding
-// pat to each element.
+// pat to each element. Join distinguishes an outer join (which
+// carries its On condition, evaluated over unwrapped values
+// inside the join) from an inner scan (ScanOp, On nil).
 type Scan struct {
-	Pat Pat
-	Exp Exp
+	Pat  Pat
+	Exp  Exp
+	Join ast.Op
+	On   Exp
 }
 
 // Op implements FromStep.

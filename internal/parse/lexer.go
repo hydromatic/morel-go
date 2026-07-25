@@ -392,6 +392,7 @@ var symbols = []struct {
 }{
 	{"...", token.Ellipsis},
 	{"..^", token.DotDotCaret},
+	{"?.", token.QDot},
 	{"..", token.DotDot},
 	{"^..^", token.CaretDotDotCaret},
 	{"^..", token.CaretDotDot},

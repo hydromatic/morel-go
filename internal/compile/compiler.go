@@ -668,6 +668,27 @@ func (c *compiler) compileStep(step core.FromStep,
 		if err != nil {
 			return nil, err
 		}
+		if s.Join == ast.LeftJoinOp || s.Join == ast.RightJoinOp ||
+			s.Join == ast.FullJoinOp {
+			var cond eval.Code
+			if s.On != nil {
+				cond, err = c.compileExp(s.On)
+				if err != nil {
+					return nil, err
+				}
+			}
+			leftSlots := c.patSlots(*scanPats)
+			*scanPats = append(*scanPats, s.Pat)
+			return &eval.JoinStage{
+				Source:    source,
+				Pat:       pat,
+				Cond:      cond,
+				LeftSlots: leftSlots,
+				PatSlots:  c.patSlots([]core.Pat{s.Pat}),
+				Left:      s.Join == ast.LeftJoinOp,
+				Full:      s.Join == ast.FullJoinOp,
+			}, nil
+		}
 		*scanPats = append(*scanPats, s.Pat)
 		return &eval.ScanStage{
 			Source: source, Pat: pat, Name: corePatDesc(s.Pat),

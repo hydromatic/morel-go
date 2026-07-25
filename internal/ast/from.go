@@ -51,6 +51,9 @@ type Scan struct {
 	Exp  Expr
 	On   Expr
 	Kind ScanKind
+	// Join is the join flavor: ScanOp for an inner join,
+	// LeftJoinOp, RightJoinOp, or FullJoinOp.
+	Join Op
 }
 
 // NewScan returns a scan step.

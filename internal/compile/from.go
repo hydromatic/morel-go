@@ -221,20 +221,7 @@ func (st *fromState) step(step ast.FromStep) error {
 	case *ast.RequireStep:
 		return st.boolStep(s.Exp)
 	case *ast.Scan:
-		newFields, sourceOrd, err := r.deduceScan(st.env, s)
-		if err != nil {
-			return err
-		}
-		st.ord = r.meetSourceOrd(st.ord, sourceOrd)
-		if s.Kind == ast.ScanUnbounded {
-			// Iterating all values of a type has no order, so an
-			// unbounded scan makes the whole query a bag.
-			st.ord = r.u.Atom(unorderedName)
-		}
-		st.fields = append(st.fields, newFields...)
-		st.curElem = nil
-		st.env = r.bindStep(st.rootEnv, st.fields, nil)
-		return nil
+		return st.scanStep(s)
 	case *ast.SetOpStep:
 		newOrd, err := r.deduceSetOp(st.rootEnv, st.elemTerm(),
 			r.orDefaultOrd(st.ord), s.Exps)
@@ -261,6 +248,52 @@ func (st *fromState) step(step ast.FromStep) error {
 	default:
 		return r.unsupportedStep(step)
 	}
+}
+
+// scanStep types a scan step. An outer join's source must be
+// independent for right and full joins (it is typed in the root
+// scope), its "on" condition sees the unwrapped types, and the
+// nullable side's variables become option-typed downstream: the
+// newly scanned ones for a left join, the earlier ones for a
+// right join, both for a full join.
+func (st *fromState) scanStep(s *ast.Scan) error {
+	r := st.r
+	env := st.env
+	if optionalizesLeft(s.Join) && s.Exp != nil {
+		inputNames := map[string]bool{}
+		for _, f := range st.fields {
+			inputNames[f.label] = true
+		}
+		err := checkJoinIndependent(s.Exp, inputNames)
+		if err != nil {
+			return err
+		}
+		env = st.rootEnv
+	}
+	newFields, sourceOrd, err := r.deduceScan(env, st.env, s)
+	if err != nil {
+		return err
+	}
+	st.ord = r.meetSourceOrd(st.ord, sourceOrd)
+	if s.Kind == ast.ScanUnbounded {
+		// Iterating all values of a type has no order, so an
+		// unbounded scan makes the whole query a bag.
+		st.ord = r.u.Atom(unorderedName)
+	}
+	if optionalizesLeft(s.Join) {
+		for i := range st.fields {
+			st.fields[i].term = optionTerm(st.fields[i].term)
+		}
+	}
+	if optionalizesRight(s.Join) {
+		for i := range newFields {
+			newFields[i].term = optionTerm(newFields[i].term)
+		}
+	}
+	st.fields = append(st.fields, newFields...)
+	st.curElem = nil
+	st.env = r.bindStep(st.rootEnv, st.fields, nil)
+	return nil
 }
 
 // groupStep types a "group" step and its optional "compute",
@@ -434,7 +467,8 @@ func (r *typeResolver) naryMeetOrderedness(ords []*unify.Var,
 // here; the query itself becomes unordered. A "join ... on"
 // condition is a boolean typed over the earlier fields and the
 // pattern this scan binds.
-func (r *typeResolver) deduceScan(env typeEnv, scan *ast.Scan,
+func (r *typeResolver) deduceScan(env, onEnv typeEnv,
+	scan *ast.Scan,
 ) ([]labelTerm, *unify.Var, error) {
 	vElem := r.u.Variable()
 	var sourceOrd *unify.Var
@@ -472,9 +506,10 @@ func (r *typeResolver) deduceScan(env typeEnv, scan *ast.Scan,
 	}
 	if scan.On != nil {
 		// The join condition sees the earlier fields and the ones
-		// this scan binds, and must be a boolean.
+		// this scan binds — unwrapped, for an outer join — and
+		// must be a boolean.
 		vBool := r.u.Variable()
-		err := r.deduceExp(bindFields(env, fields), scan.On, vBool)
+		err := r.deduceExp(bindFields(onEnv, fields), scan.On, vBool)
 		if err != nil {
 			return nil, nil, err
 		}
