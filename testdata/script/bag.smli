@@ -27,6 +27,10 @@ Sys.set ("printLength", 64);
 Sys.set ("stringDepth", ~1);
 > val it = () : unit
 
+useSilently "scott.smli";
+> [opening scott.smli]
+> val it = () : unit
+
 (*) constants
 bag [1,2,3];
 > val it = [1,2,3] : int bag

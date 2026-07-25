@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -36,6 +37,8 @@ func (a *Args) Run(in io.Reader, out io.Writer) error {
 	if a.Directory != "" {
 		kernel.Config().Directory = a.Directory
 	}
+	kernel.Config().ScriptDirectory = a.ScriptDirectory
+	kernel.Config().MaxUseDepth = a.MaxUseDepth
 	if a.HasEval {
 		kernel.Config().ShowUnsupported = true
 		return runEval(kernel, a.Eval, out)
@@ -83,6 +86,11 @@ func (a *Args) runFile(kernel *Kernel, file string,
 		}
 		defer f.Close()
 		reader = f
+		if a.ScriptDirectory == "" {
+			// "use" resolves against the script's own directory
+			// (the scriptDirectory property).
+			kernel.Config().ScriptDirectory = filepath.Dir(file)
+		}
 	} else {
 		name = "stdIn"
 	}

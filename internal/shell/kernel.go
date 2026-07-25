@@ -53,6 +53,7 @@ func DefaultConfig() Config {
 		PrintLength: defaultPrintLength,
 		PrintDepth:  defaultPrintDepth,
 		StringDepth: defaultStringDepth,
+		MaxUseDepth: -1,
 		props:       map[string]string{},
 	}
 }
@@ -68,8 +69,17 @@ type Config struct {
 	StringDepth int
 
 	// Directory is the working directory, as the "directory"
-	// and "scriptDirectory" properties report it.
+	// property reports it.
 	Directory string
+
+	// ScriptDirectory is where "use" resolves relative file names
+	// (the "scriptDirectory" property); empty falls back to
+	// Directory.
+	ScriptDirectory string
+
+	// MaxUseDepth caps nested "use" calls; negative means no
+	// limit.
+	MaxUseDepth int
 
 	// props holds the explicitly set values of the properties
 	// that do not (yet) change behavior.
@@ -122,6 +132,12 @@ type Kernel struct {
 	// suppression hid, by message — the inventory of what running
 	// the input would need. Gaps reports it.
 	gaps map[string]int
+	// pendingLines is extra output the current statement's
+	// built-ins have produced (use's "[opening f]"); runStatement
+	// drains it into the statement's output.
+	pendingLines []string
+	// useDepth is the current nesting depth of "use" calls.
+	useDepth int
 }
 
 // NewKernel returns a kernel; name (e.g. "stdIn" or a file name)
@@ -176,6 +192,8 @@ func NewKernel(name string) *Kernel {
 	// The Datalog implementations compile and evaluate the
 	// translated programs, so the kernel supplies them too.
 	maps.Copy(values, k.datalogBuiltins())
+	// The use implementations execute files in this session.
+	maps.Copy(values, k.useBuiltins())
 	// The internal extent builtin backs sourceless query scans.
 	values[compile.ExtentName] = eval.Fn(eval.ExtentValues)
 	// The internal raise builtin backs the "raise" expression.
@@ -517,6 +535,7 @@ func (k *Kernel) executeStatement(n ast.Node) string {
 }
 
 func (k *Kernel) runStatement(n ast.Node) string {
+	k.pendingLines = nil
 	var decl ast.Decl
 	switch node := n.(type) {
 	case ast.Decl:
@@ -596,6 +615,10 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	if compiled.Plan != nil {
 		k.lastCode = compiled.Plan
 	}
+	// Output that built-ins produced (use's "[opening f]") comes
+	// before the statement's own report.
+	lines = append(lines, k.pendingLines...)
+	k.pendingLines = nil
 	if err != nil {
 		// A nonexhaustive-match warning still precedes the exception
 		// its unmatched value raises.

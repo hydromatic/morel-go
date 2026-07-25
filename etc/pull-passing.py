@@ -280,7 +280,8 @@ def make_runner(binary):
         with open(path, "w") as f:
             f.write(text)
         r = subprocess.run(
-            [binary, "--directory=testdata", path],
+            [binary, "--directory=testdata",
+             "--scriptDirectory=testdata/script", path],
             capture_output=True, text=True,
             env=dict(os.environ, MOREL_GAPS="1"))
         for line in r.stderr.splitlines():

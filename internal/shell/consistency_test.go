@@ -74,8 +74,6 @@ func TestStructLibStructuresComplete(t *testing.T) {
 // here; an implemented member must be removed from the list.
 func TestUnimplementedMembers(t *testing.T) {
 	want := []string{
-		"Interact.use",
-		"Interact.useSilently",
 		"Sys.clearEnv",
 		"Sys.colorSchemes",
 		"Sys.deduceColorScheme",

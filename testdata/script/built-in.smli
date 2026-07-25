@@ -435,6 +435,10 @@ trunc;
 > val it = fn : real -> int
 Real.trunc;
 > val it = fn : real -> int
+
+(* "val use : string -> unit" maps to "implementation dependent" *)
+use;
+> val it = fn : string -> unit
 Interact.use;
 > val it = fn : string -> unit
 
@@ -571,6 +575,10 @@ String.tokens;
 unset;
 > val it = fn : string -> unit
 Sys.unset;
+> val it = fn : string -> unit
+
+(* "useSilently" is a Morel alias for "Interact.useSilently". *)
+useSilently;
 > val it = fn : string -> unit
 Interact.useSilently;
 > val it = fn : string -> unit

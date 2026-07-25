@@ -16,23 +16,25 @@
  * language governing permissions and limitations under the
  * License.
  *
- * Unit tests for the built-in `Interact` structure.
+ * Queries on the 'scott' data set (emps and depts), as tables.
  *)
-Sys.set ("lineWidth", 78);
-> val it = () : unit
-Sys.set ("printLength", 999);
-> val it = () : unit
-Sys.set ("stringDepth", ~1);
+useSilently "scott.smli";
+> [opening scott.smli]
 > val it = () : unit
 
-Interact;
-> val it = {use=fn,useSilently=fn}
->   : {use:string -> unit, useSilently:string -> unit}
+(* A local data set of assignments; the last references an employee (9999) who
+ * is not in 'scott.emps'. *)
+val assignments =
+  [{empno = 7839, task = "Plan budget"},
+   {empno = 7566, task = "Review code"},
+   {empno = 9999, task = "Orphaned task"}];
+> val assignments =
+>   [{empno=7839,task="Plan budget"},{empno=7566,task="Review code"},
+>    {empno=9999,task="Orphaned task"}] : {empno:int, task:string} list
+Sys.set ("output", "tabular");
+> val it = () : unit
 
-(*) use - load source from a file
-Interact.use;
-> val it = fn : string -> unit
-use;
-> val it = fn : string -> unit
+Sys.set ("output", "classic");
+> val it = () : unit
 
-(*) End interact.smli
+(*) End scott-queries.smli

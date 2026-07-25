@@ -701,6 +701,10 @@ join c in [6, 7] on b + c = 10,
 >
 > val it : {a:int, b:int, c:int, d:int} list
 
+useSilently "scott.smli";
+> [opening scott.smli]
+> val it = () : unit
+
 from dno, name, loc
 where {deptno = dno, dname = name, loc} elem scott.depts
   andalso dno > 20;
