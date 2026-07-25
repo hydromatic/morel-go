@@ -89,6 +89,75 @@ func unparsePat(b *strings.Builder, p Pat) {
 	}
 }
 
+// UnparseSignatureDecl renders a signature declaration as the
+// shell echoes it: one line per binding, "signature NAME = sig
+// spec ... end" with the specifications space-joined in source
+// order.
+func UnparseSignatureDecl(d *SignatureDecl) string {
+	lines := make([]string, 0, len(d.Binds))
+	for _, bind := range d.Binds {
+		var b strings.Builder
+		b.WriteString("signature " + bind.Name + " = sig")
+		for _, spec := range bind.Specs {
+			b.WriteString(" ")
+			unparseSigSpec(&b, spec)
+		}
+		b.WriteString(" end")
+		lines = append(lines, b.String())
+	}
+	return strings.Join(lines, "\n")
+}
+
+// unparseSigSpec renders one signature specification.
+func unparseSigSpec(b *strings.Builder, spec SigSpec) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch spec.Kind {
+	case DatatypeDeclOp:
+		b.WriteString("datatype ")
+		writeTyVars(b, spec.Bind.TyVars)
+		b.WriteString(spec.Bind.Name + " = ")
+		for j, c := range spec.Bind.Cons {
+			if j > 0 {
+				b.WriteString(" | ")
+			}
+			b.WriteString(c.Name)
+			if c.Of != nil {
+				b.WriteString(" of ")
+				unparseType(b, c.Of, ", ")
+			}
+		}
+	case TypeDeclOp:
+		b.WriteString("type ")
+		writeTyVars(b, spec.TyVars)
+		b.WriteString(spec.Name)
+		if spec.Type != nil {
+			b.WriteString(" = ")
+			unparseType(b, spec.Type, ", ")
+		}
+	case ValDeclOp:
+		b.WriteString("val " + spec.Name + " : ")
+		unparseType(b, spec.Type, ", ")
+	default: // exception
+		b.WriteString("exception " + spec.Name)
+		if spec.Type != nil {
+			b.WriteString(" of ")
+			unparseType(b, spec.Type, ", ")
+		}
+	}
+}
+
+// writeTyVars renders a type-parameter list and a trailing space:
+// nothing, "'a ", or "('k, 'v) ".
+func writeTyVars(b *strings.Builder, tyVars []string) {
+	switch len(tyVars) {
+	case 0:
+	case 1:
+		b.WriteString(tyVars[0] + " ")
+	default:
+		b.WriteString("(" + strings.Join(tyVars, ", ") + ") ")
+	}
+}
+
 // UnparseType renders a type expression as source text: a
 // function type parenthesizes a function-type parameter, and a
 // tuple type parenthesizes function- and tuple-type elements.

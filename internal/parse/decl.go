@@ -31,6 +31,8 @@ func isDeclStart(kind token.Kind) bool {
 		return true
 	case token.Over:
 		return true
+	case token.Signature:
+		return true
 	case token.Type:
 		return true
 	case token.Val:
@@ -49,6 +51,8 @@ func (p *Parser) decl() (ast.Decl, error) {
 		return p.funDecl()
 	case token.Over:
 		return p.overDecl()
+	case token.Signature:
+		return p.signatureDecl()
 	case token.Type:
 		return p.typeDecl()
 	case token.Val:
@@ -57,6 +61,194 @@ func (p *Parser) decl() (ast.Decl, error) {
 		return nil, p.errorf("expected declaration, found " +
 			p.tok.Kind.String())
 	}
+}
+
+// signatureDecl parses "signature NAME = sig spec ... end [and
+// NAME = sig ... end ...]".
+func (p *Parser) signatureDecl() (ast.Decl, error) {
+	start := p.tok.Span.Start
+	var binds []ast.SigBind
+	for {
+		err := p.next()
+		if err != nil {
+			return nil, err
+		}
+		bind, err := p.sigBind()
+		if err != nil {
+			return nil, err
+		}
+		binds = append(binds, bind)
+		if p.tok.Kind != token.And {
+			break
+		}
+	}
+	span := token.Span{Start: start, End: p.tok.Span.Start}
+	return ast.NewSignatureDecl(span, binds), nil
+}
+
+// sigBind parses "NAME = sig spec ... end".
+func (p *Parser) sigBind() (ast.SigBind, error) {
+	err := p.expect(token.Ident)
+	if err != nil {
+		return ast.SigBind{}, err
+	}
+	name := p.tok.Text
+	err = p.next()
+	if err != nil {
+		return ast.SigBind{}, err
+	}
+	err = p.expect(token.Eq)
+	if err != nil {
+		return ast.SigBind{}, err
+	}
+	err = p.next()
+	if err != nil {
+		return ast.SigBind{}, err
+	}
+	err = p.expect(token.Sig)
+	if err != nil {
+		return ast.SigBind{}, err
+	}
+	err = p.next()
+	if err != nil {
+		return ast.SigBind{}, err
+	}
+	var specs []ast.SigSpec
+	for p.tok.Kind != token.End {
+		spec, specErr := p.sigSpec()
+		if specErr != nil {
+			return ast.SigBind{}, specErr
+		}
+		specs = append(specs, spec)
+	}
+	err = p.next()
+	if err != nil {
+		return ast.SigBind{}, err
+	}
+	return ast.SigBind{Name: name, Specs: specs}, nil
+}
+
+// sigSpec parses one signature specification: "type [tyvars] name
+// [= ty]", "val name : ty", "exception Name [of ty]", or
+// "datatype bind".
+func (p *Parser) sigSpec() (ast.SigSpec, error) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch p.tok.Kind {
+	case token.Datatype:
+		err := p.next()
+		if err != nil {
+			return ast.SigSpec{}, err
+		}
+		bind, err := p.datatypeBind()
+		if err != nil {
+			return ast.SigSpec{}, err
+		}
+		return ast.SigSpec{
+			Kind: ast.DatatypeDeclOp, Bind: &bind,
+		}, nil
+	case token.Exception:
+		return p.exceptionSpec()
+	case token.Type:
+		return p.typeSpec()
+	case token.Val:
+		return p.valSpec()
+	default:
+		return ast.SigSpec{}, p.errorf(
+			"expected specification, found " +
+				p.tok.Kind.String())
+	}
+}
+
+// exceptionSpec parses "exception Name [of ty]".
+func (p *Parser) exceptionSpec() (ast.SigSpec, error) {
+	err := p.next()
+	if err != nil {
+		return ast.SigSpec{}, err
+	}
+	err = p.expect(token.Ident)
+	if err != nil {
+		return ast.SigSpec{}, err
+	}
+	spec := ast.SigSpec{Kind: ast.ExceptionSpecOp, Name: p.tok.Text}
+	err = p.next()
+	if err != nil {
+		return ast.SigSpec{}, err
+	}
+	if p.tok.Kind == token.Of {
+		err = p.next()
+		if err != nil {
+			return ast.SigSpec{}, err
+		}
+		spec.Type, err = p.typeExpr()
+		if err != nil {
+			return ast.SigSpec{}, err
+		}
+	}
+	return spec, nil
+}
+
+// typeSpec parses "type [tyvars] name [= ty]".
+func (p *Parser) typeSpec() (ast.SigSpec, error) {
+	err := p.next()
+	if err != nil {
+		return ast.SigSpec{}, err
+	}
+	tyVars, err := p.tyVarSeq()
+	if err != nil {
+		return ast.SigSpec{}, err
+	}
+	err = p.expect(token.Ident)
+	if err != nil {
+		return ast.SigSpec{}, err
+	}
+	spec := ast.SigSpec{
+		Kind: ast.TypeDeclOp, TyVars: tyVars, Name: p.tok.Text,
+	}
+	err = p.next()
+	if err != nil {
+		return ast.SigSpec{}, err
+	}
+	if p.tok.Kind == token.Eq {
+		err = p.next()
+		if err != nil {
+			return ast.SigSpec{}, err
+		}
+		spec.Type, err = p.typeExpr()
+		if err != nil {
+			return ast.SigSpec{}, err
+		}
+	}
+	return spec, nil
+}
+
+// valSpec parses "val name : ty".
+func (p *Parser) valSpec() (ast.SigSpec, error) {
+	err := p.next()
+	if err != nil {
+		return ast.SigSpec{}, err
+	}
+	err = p.expect(token.Ident)
+	if err != nil {
+		return ast.SigSpec{}, err
+	}
+	name := p.tok.Text
+	err = p.next()
+	if err != nil {
+		return ast.SigSpec{}, err
+	}
+	err = p.expect(token.Colon)
+	if err != nil {
+		return ast.SigSpec{}, err
+	}
+	err = p.next()
+	if err != nil {
+		return ast.SigSpec{}, err
+	}
+	t, err := p.typeExpr()
+	if err != nil {
+		return ast.SigSpec{}, err
+	}
+	return ast.SigSpec{Kind: ast.ValDeclOp, Name: name, Type: t}, nil
 }
 
 // datatypeDecl parses "datatype bind [and bind ...]" where each

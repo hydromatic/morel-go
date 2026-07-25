@@ -100,6 +100,8 @@ const (
 	DatatypeDeclOp
 	TypeDeclOp
 	OverDeclOp
+	SignatureDeclOp
+	ExceptionSpecOp
 
 	// Types and annotations.
 
@@ -206,6 +208,8 @@ var opNames = map[Op]string{
 	LetOp:      "let",
 
 	DatatypeDeclOp:   "datatype_decl",
+	SignatureDeclOp:  "signature_decl",
+	ExceptionSpecOp:  "exception_spec",
 	TypeDeclOp:       "type_decl",
 	OverDeclOp:       "over",
 	TyVarOp:          "ty_var",

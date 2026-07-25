@@ -117,6 +117,9 @@ func dump(b *strings.Builder, node Node) {
 		b.WriteString("(record_selector #" + n.Name + ")")
 	case *RecordType:
 		b.WriteString("(record_type " + UnparseType(n) + ")")
+	case *SignatureDecl:
+		b.WriteString("(signature_decl " +
+			UnparseSignatureDecl(n) + ")")
 	case *Tuple:
 		sexp(b, "tuple", n.Args)
 	case *TupleType:

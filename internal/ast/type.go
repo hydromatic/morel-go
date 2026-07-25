@@ -266,6 +266,43 @@ func NewTypeDecl(span token.Span, binds []TypeBind) *TypeDecl {
 // Op implements Node.
 func (*TypeDecl) Op() Op { return TypeDeclOp }
 
+// SigSpec is one specification in a signature body: a type
+// (optionally aliased), a value, an exception, or a datatype.
+type SigSpec struct {
+	Kind   Op
+	TyVars []string
+	Name   string
+	Type   Type          // val's type, type's alias, exception's of
+	Bind   *DatatypeBind // datatype spec
+}
+
+// SigBind is one "NAME = sig spec... end" of a signature
+// declaration.
+type SigBind struct {
+	Name  string
+	Specs []SigSpec
+}
+
+// SignatureDecl is "signature bind [and bind ...]".
+type SignatureDecl struct {
+	declBase
+
+	Binds []SigBind
+}
+
+// NewSignatureDecl returns a signature declaration.
+func NewSignatureDecl(span token.Span,
+	binds []SigBind,
+) *SignatureDecl {
+	return &SignatureDecl{
+		declBase: declBase{base{span}},
+		Binds:    binds,
+	}
+}
+
+// Op implements Node.
+func (*SignatureDecl) Op() Op { return SignatureDeclOp }
+
 // ExpressionType is "typeof exp".
 type ExpressionType struct {
 	typeBase
