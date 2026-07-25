@@ -45,12 +45,192 @@ Sys.set ("output", "tabular");
 > val it = {employed=false,id=1,name="julian"}
 >   : {employed:bool, id:int, name:string}
 
+(* List of records with a list field is tabular: the list expands
+ * vertically under its header. *)
+[{id=1, pets=["ruby"]}, {id=2, pets=["stealth", "luna"]}];
+> id pets
+> -- -------
+>  1 ruby
+>  2 stealth
+>    luna
+>
+> val it : {id:int, pets:string list} list
+
+(* A column of primitive option renders 'NONE' as a blank cell. *)
+[{id=1, salary=NONE}, {id=2, salary=SOME 100}];
+> id salary
+> -- ------
+>  1
+>  2    100
+>
+> val it : {id:int, salary:int option} list
+
+(* In a 'string option' column, 'NONE' must be distinguishable from every
+ * 'SOME' value, including the empty string. A string is quoted (as an SML
+ * literal) when it is empty or contains a double-quote, and shown verbatim
+ * otherwise. *)
+[{s=NONE}, {s=SOME "hello"}, {s=SOME ""}, {s=SOME "a\"b"}, {s=SOME "\"\""}];
+> s
+> ------
+>
+> hello
+> ""
+> "a\"b"
+> "\"\""
+>
+> val it : {s:string option} list
+
+(* List of records with a tuple field: the tuple is a nested sub-table. *)
+[{id=1, address=(94705,"CA")}, {id=2, address=(94618,"CA")}];
+> address  id
+> 1     2
+> ----- -- --
+> 94705 CA  1
+> 94618 CA  2
+>
+> val it : {address:int * string, id:int} list
+
+(* List of records with a record field: the record is a nested sub-table. *)
+[{id=1, address={zip=94705,state="CA"}}, {id=2, address={zip=94618, state="CA"}}];
+> address     id
+> state zip
+> ----- ----- --
+> CA    94705  1
+> CA    94618  2
+>
+> val it : {address:{state:string, zip:int}, id:int} list
+
+(* A record-'option' field is a nested sub-table; 'NONE' leaves its columns
+ * blank, distinguishable from a 'SOME' because at least one field is not an
+ * option. *)
+[{id=1, addr=SOME {zip=94705, state="CA"}}, {id=2, addr=NONE}];
+> addr        id
+> state zip
+> ----- ----- --
+> CA    94705  1
+>              2
+>
+> val it : {addr:{state:string, zip:int} option, id:int} list
+
 (* A doubly-'option' field (e.g. from a right join of a right join) is not
  * tabulated either: a blank cell cannot tell 'NONE' from 'SOME NONE'.
  * Normal (non-tabular) style keeps all three states distinct. *)
 [{id=1, p=SOME (SOME 7)}, {id=2, p=SOME NONE}, {id=3, p=NONE}];
 > val it = [{id=1,p=SOME (SOME 7)},{id=2,p=SOME NONE},{id=3,p=NONE}]
 >   : {id:int, p:int option option} list
+
+(* Records nested to three levels: the header grows one level per depth. *)
+[{id=1, a={b={c=10, d="p"}, e=2}}, {id=2, a={b={c=20, d="q"}, e=3}}];
+> a      id
+> b    e
+> c  d
+> -- - - --
+> 10 p 2  1
+> 20 q 3  2
+>
+> val it : {a:{b:{c:int, d:string}, e:int}, id:int} list
+
+(* Three levels with 'option' at the outer and an inner level; an outer 'NONE'
+ * blanks the whole nested block. *)
+[{id=1, a=SOME {b={c=10}, e=SOME {f="x"}}}, {id=2, a=NONE}];
+> a    id
+> b  e
+> c  f
+> -- - --
+> 10 x  1
+>       2
+>
+> val it : {a:{b:{c:int}, e:{f:string} option} option, id:int} list
+
+(* -------------------------------------------------------------------
+ * [MOREL-376] Tabular mode for nested collections
+ *)
+
+(* Issue example (a): one field is an `int list`. Rows expand
+ * vertically; an empty list contributes zero lines. *)
+[{id = 1, name = "alpha", scores = [10, 20]},
+ {id = 2, name = "beta",  scores = [30]},
+ {id = 3, name = "gamma", scores = []}];
+> id name  scores
+> -- ----- ------
+>  1 alpha     10
+>              20
+>  2 beta      30
+>  3 gamma
+>
+> val it : {id:int, name:string, scores:int list} list
+
+(* Issue example (b): one field is a record bag, another is an
+ * `int list`. Nested record-bag fields get a second header row of
+ * sub-column names. *)
+[{id = 1,
+  events = bag [{a = 100, b = true}, {a = 200, b = false}],
+  scores = [10, 20, 30]},
+ {id = 2,
+  events = bag [{a = 300, b = true}],
+  scores = [5]}];
+> events    id scores
+> a   b
+> --- ----- -- ------
+> 100 true   1     10
+> 200 false        20
+>                  30
+> 300 true   2      5
+>
+> val it : {events:{a:int, b:bool} bag, id:int, scores:int list} list
+
+(* Tuple fields are treated like records, with sub-columns named
+ * "1", "2", etc. *)
+[{id = 1, pair = [(10, true), (20, false)]},
+ {id = 2, pair = [(30, true)]}];
+> id pair
+>    1  2
+> -- -- -----
+>  1 10 true
+>    20 false
+>  2 30 true
+>
+> val it : {id:int, pair:(int * bool) list} list
+
+(* Top-level list of tuples renders as a table with columns named
+ * "1", "2", "3". *)
+[(1, "a"), (2, "b"), (3, "c")];
+> 1 2
+> - -
+> 1 a
+> 2 b
+> 3 c
+>
+> val it : (int * string) list
+
+(* Two levels of nested collections: a list of records whose
+ * record-list field contains records that themselves have a
+ * scalar-list field. *)
+[{id = 1,
+  items = [{name = "a", tags = ["x", "y"]},
+           {name = "b", tags = ["z"]}]},
+ {id = 2,
+  items = [{name = "c", tags = []}]}];
+> id items
+>    name tags
+> -- ---- ----
+>  1 a    x
+>         y
+>    b    z
+>  2 c
+>
+> val it : {id:int, items:{name:string, tags:string list} list} list
+
+(* Edge case: a row where every nested field is empty still occupies
+ * a single line of scalar values. *)
+[{id = 1, names = ([]: string list), scores = ([]: int list)},
+ {id = 2, names = ["x"],           scores = [10]}];
+> id names scores
+> -- ----- ------
+>  1
+>  2 x         10
+>
+> val it : {id:int, names:string list, scores:int list} list
 
 (* Edge case: empty outer collection still prints headers plus the
  * dashed separator. *)
@@ -86,6 +266,9 @@ Sys.unset "stringDepth";
 Sys.set ("printDepth", 0);
 > val it = # : unit
 
+[{id=1, name="alpha"}];
+> val it = # : {id:int, name:string} list
+
 (* printDepth=1 leaves elements visible, so tabular renders. *)
 Sys.set ("printDepth", 1);
 > val it = () : unit
@@ -106,6 +289,43 @@ Sys.unset "printDepth";
 
 Sys.set ("printLength", 3);
 > val it = () : unit
+
+(* Top-level table: rows beyond printLength are replaced with `...`. *)
+[{id=1, name="a"}, {id=2, name="b"}, {id=3, name="c"},
+ {id=4, name="d"}, {id=5, name="e"}];
+> id name
+> -- ----
+>  1 a
+>  2 b
+>  3 c
+> ...
+>
+> val it : {id:int, name:string} list
+
+(* Nested scalar-list: items beyond printLength are replaced with `...`
+ * inside the cell column. *)
+[{id=1, scores=[10, 20, 30, 40, 50]}];
+> id scores
+> -- ------
+>  1     10
+>        20
+>        30
+>       ...
+>
+> val it : {id:int, scores:int list} list
+
+(* Nested record-list: records beyond printLength are replaced with
+ * `...` inside the cell. *)
+[{id=1, items=[{name="a"}, {name="b"}, {name="c"}, {name="d"}]}];
+> id items
+>    name
+> -- -----
+>  1 a
+>    b
+>    c
+>    ...
+>
+> val it : {id:int, items:{name:string} list} list
 
 Sys.unset "printLength";
 > val it = () : unit

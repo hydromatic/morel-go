@@ -793,4 +793,19 @@ val clients =
 >
 > val clients : {city:string, cname:string, contact:int} list
 
+(* Define the shipments data set; each shipment has one or
+   more nested items. *)
+val shipments =
+  [{id=1, shipping=10.0, items=[{product="soda", quantity=12},
+                                {product="beer", quantity=3}]},
+   {id=2, shipping=7.5, items=[{product="cider",quantity=4}]}];
+> id items            shipping
+>    product quantity
+> -- ------- -------- --------
+>  1 soda          12       10
+>    beer           3
+>  2 cider          4      7.5
+>
+> val shipments : {id:int, items:{product:string, quantity:int} list, shipping:real} list
+
 (*) End blog.smli
