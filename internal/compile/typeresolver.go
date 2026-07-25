@@ -540,6 +540,19 @@ func (r *typeResolver) astTypeTerm(t ast.Type) (unify.Term,
 ) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch t := t.(type) {
+	case *ast.ExpressionType:
+		// "typeof exp": the annotation's type is the deduced type
+		// of exp, resolved against the top-level bindings.
+		var env typeEnv = emptyTypeEnv{}
+		if r.bindings != nil {
+			env = &bindingTypeEnv{parent: env, bindings: r.bindings}
+		}
+		v := r.u.Variable()
+		err := r.deduceExp(env, t.Exp, v)
+		if err != nil {
+			return nil, err
+		}
+		return v, nil
 	case *ast.FnType:
 		param, err := r.astTypeTerm(t.Param)
 		if err != nil {

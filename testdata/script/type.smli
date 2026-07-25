@@ -183,8 +183,32 @@ fun firstOrSecond (e1 :: e2 :: rest): int = e2
 >   raised at: stdIn:1.5-2.36
 > val firstOrSecond = fn : int list -> int
 
+(*) Annotations that use 'typeof'
+fn x: typeof 1 => true;
+> val it = fn : int -> bool
+
+let
+  val rec fact =
+    fn n : typeof n =>
+      if n = 0 then 1
+      else n * fact (n - 1)
+in
+  fact 5
+end;
+> stdIn:3.19 Error: unbound variable or constructor: n
+>   raised at: stdIn:3.19
+
 val m = 5;
 > val m = 5 : int
+let
+  val rec fact =
+    fn n : typeof m =>
+      if n = 0 then 1
+      else n * fact (n - 1)
+in
+  fact 5
+end;
+> val it = 120 : int
 
 (* type_string ---------------------------------------------------- *)
 (* The 'type_string' operator renders the inferred type of an expression as
