@@ -111,27 +111,35 @@ func (s *OrderStage) transform(q *fromCode, f *Frame, rows [][]Val,
 	return out, nil
 }
 
-// DistinctStage removes duplicate rows.
-type DistinctStage struct{}
+// DistinctStage removes duplicate rows, comparing only the
+// current row variables' slots — a full frame snapshot also
+// carries slots of variables an earlier yield rebound away, which
+// must not distinguish rows.
+type DistinctStage struct {
+	Slots []int
+}
 
 // The error result is always nil, but the signature satisfies the
 // FromStage interface, whose other stages can fail.
 //
 //nolint:unparam
-func (*DistinctStage) transform(_ *fromCode, _ *Frame, rows [][]Val,
+func (s *DistinctStage) transform(q *fromCode, f *Frame,
+	rows [][]Val,
 ) ([][]Val, error) {
+	seen := map[string]bool{}
 	var out [][]Val
 	for _, row := range rows {
-		dup := false
-		for _, kept := range out {
-			if compareVals(Val(row), Val(kept)) == 0 {
-				dup = true
-				break
-			}
+		q.restore(f, row)
+		key := make([]Val, len(s.Slots))
+		for i, slot := range s.Slots {
+			key[i] = f.Slots[slot]
 		}
-		if !dup {
-			out = append(out, row)
+		ks := PlanString(Val(key))
+		if seen[ks] {
+			continue
 		}
+		seen[ks] = true
+		out = append(out, row)
 	}
 	return out, nil
 }

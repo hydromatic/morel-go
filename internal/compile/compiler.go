@@ -352,7 +352,12 @@ func (c *compiler) compileStep(step core.FromStep,
 	// lint: sort until '^\t}' where '^\tcase '
 	switch s := step.(type) {
 	case *core.Distinct:
-		return &eval.DistinctStage{}, nil
+		ids := sortedVarIDs(*scanPats)
+		slots := make([]int, len(ids))
+		for i, id := range ids {
+			slots[i] = c.allocSlot(id)
+		}
+		return &eval.DistinctStage{Slots: slots}, nil
 	case *core.Order:
 		key, err := c.compileExp(s.Exp)
 		if err != nil {
