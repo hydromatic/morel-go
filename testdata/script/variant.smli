@@ -244,16 +244,40 @@ testRoundTrip (STRING "hello");
 testRoundTrip (STRING "hello\nworld");
 > val it = true : bool
 
+(*) Test collections round-trip
+testRoundTrip (LIST []);
+> val it = true : bool
+testRoundTrip (LIST [INT 1, INT 2, INT 3]);
+> val it = true : bool
+testRoundTrip (LIST [LIST [INT 1], LIST [INT 2]]);
+> val it = true : bool
+testRoundTrip (BAG [INT 1, INT 2]);
+> val it = true : bool
+testRoundTrip (VECTOR [STRING "a", STRING "b"]);
+> val it = true : bool
+
 (*) Test VARIANT_NONE and VARIANT_SOME round-trip
 testRoundTrip VARIANT_NONE;
 > val it = true : bool
 testRoundTrip (VARIANT_SOME (INT 42));
+> val it = true : bool
+testRoundTrip (RECORD [("x", INT 1), ("y", INT 2)]);
+> val it = true : bool
+testRoundTrip (RECORD [("name", STRING "Alice"), ("age", INT 30)]);
 > val it = true : bool
 
 (*) Test CONSTANT and CONSTRUCT round-trip
 testRoundTrip (CONSTANT "LESS");
 > val it = true : bool
 testRoundTrip (CONSTRUCT ("SOME", INT 42));
+> val it = true : bool
+
+(*) Test complex nested structure round-trip
+testRoundTrip
+  (LIST [
+    RECORD [("name", STRING "Alice"), ("age", INT 30)],
+    RECORD [("name", STRING "Bob"), ("age", INT 25)]
+  ]);
 > val it = true : bool
 
 (*) Test parsing negative integers and reals
@@ -299,10 +323,27 @@ val deeplyNested =
 >    [{active=true,name="Charlie",scores=[76,82,79,85]}]]
 >   : {active:bool, name:string, scores:int list} list list variant
 
+(*) Test round-trip on deeply nested structure
+testRoundTrip deeplyNested;
+> val it = true : bool
+
 (*) Test print on deeply nested structure (should preserve all nesting)
 Variant.print deeplyNested;
 > val it =
 >   "LIST [LIST [RECORD [(\"active\", BOOL true), (\"name\", STRING \"Alice\"), (\"scores\", LIST [INT 95, INT 87, INT 92])], RECORD [(\"active\", BOOL false), (\"name\", STRING \"Bob\"), (\"scores\", LIST [INT 88, INT 90])]], LIST [RECORD [(\"active\", BOOL true), (\"name\", STRING \"Charlie\"), (\"scores\", LIST [INT 76, INT 82, INT 79, INT 85])]]]"
 >   : string
+
+(*) Parse the printed representation and verify it matches
+Variant.parse (Variant.print deeplyNested) = deeplyNested;
+> val it = true : bool
+
+(*) Test accessing nested data after round-trip
+let
+  val printed = Variant.print deeplyNested
+  val parsed = Variant.parse printed
+in
+  parsed = deeplyNested
+end;
+> val it = true : bool
 
 (*) End variant.smli

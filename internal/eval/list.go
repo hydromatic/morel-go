@@ -22,6 +22,8 @@ import (
 	"math"
 	"slices"
 	"strings"
+
+	"github.com/hydromatic/morel-go/internal/core"
 )
 
 // The list and string built-ins, and the equality and comparison
@@ -182,6 +184,12 @@ func valsEqual(a, b Val) bool {
 			return a.Arg == nil && b2.Arg == nil
 		}
 		return valsEqual(a.Arg, b2.Arg)
+	case Variant:
+		// Variants are equal when their (interned) types are the
+		// same type and their payloads are equal.
+		b2, ok := b.(Variant)
+		return ok && a.Type == b2.Type &&
+			valsEqual(a.Value, b2.Value)
 	case []Val:
 		b2, ok := b.([]Val)
 		if !ok || len(a) != len(b2) {
@@ -240,14 +248,10 @@ func compareVals(a, b Val) int {
 		return 0
 	case bool:
 		bb, _ := b.(bool)
-		switch {
-		case a == bb:
-			return 0
-		case !a:
-			return -1
-		default:
-			return 1
-		}
+		return cmpBool(a, bb)
+	case core.Unit:
+		// All units are equal.
+		return 0
 	case float32:
 		f, ok := b.(float32)
 		if !ok {
@@ -256,6 +260,13 @@ func compareVals(a, b Val) int {
 		return cmpOrdered(a, f)
 	case int32:
 		return cmpOrdered(a, asInt(b))
+	case nil:
+		// A cleared slot outside the current row; any consistent
+		// order will do.
+		if b == nil {
+			return 0
+		}
+		return -1
 	case string:
 		return cmpOrdered(a, asString(b))
 	case uint64:

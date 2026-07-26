@@ -109,6 +109,10 @@ from i in intList order i;
 > val it = [1,1,2,3] : int list
 from i in intBag order i;
 > val it = [1,1,2,3] : int list
+from i in intList order ();
+> val it = [1,2,1,3] : int list
+from i in intBag order ();
+> val it = [1,2,1,3] : int list
 
 (*) join's output is list if all inputs are lists, otherwise bag
 from i in intList, j in intList where i = j;

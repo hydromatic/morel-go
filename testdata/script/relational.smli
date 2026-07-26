@@ -348,6 +348,11 @@ from i in [3, 1, 2, 1, 3]
   distinct;
 > val it = [3,1,2] : int list
 
+(*) 'distinct' applied to zero-field relation is non-empty
+from u in [(), (), ()]
+  distinct;
+> val it = [()] : unit list
+
 (*) 'distinct' applied to empty zero-field relation is empty
 from u in [(), (), ()]
   where false
