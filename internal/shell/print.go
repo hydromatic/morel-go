@@ -121,6 +121,11 @@ func (c *Config) valueDoc(t types.Type, v eval.Val,
 		if t.Name == dateType {
 			return pp.Text(eval.FormatDate(v))
 		}
+		if c.sys != nil && c.sys.NumConstructors(t.Name) == 0 {
+			// An abstract (opaque) type such as PP's "doc" has no
+			// constructors and no printable form; show it as "-".
+			return pp.Text("-")
+		}
 		return c.conDoc(t, v, depth)
 	case *types.Primitive:
 		return pp.Text(c.primitiveString(t, v))
