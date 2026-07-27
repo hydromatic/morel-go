@@ -36,6 +36,13 @@ type MethodInfo struct {
 	Type      types.Type
 	Structure string
 	Name      string
+	// Target, when set, is the qualified binding the call
+	// rewrites to instead of "Structure.Name" — used by an
+	// overload (a second method of the same name dispatching on
+	// a different receiver type, e.g. Range.contains on a
+	// continuous_set) whose implementation hides behind its own
+	// binding.
+	Target string
 }
 
 // methodCandidate is a registered method: the structure whose member
@@ -44,6 +51,7 @@ type MethodInfo struct {
 type methodCandidate struct {
 	structure    string
 	receiverHead string
+	target       string
 	paramIsTuple bool
 }
 
@@ -84,6 +92,7 @@ func NewMethodRegistry(
 		reg.byName[mi.Name] = append(reg.byName[mi.Name], methodCandidate{
 			structure:    mi.Structure,
 			receiverHead: typeHead(recv),
+			target:       mi.Target,
 			paramIsTuple: isTuple,
 		})
 	}
@@ -228,8 +237,13 @@ func (reg *MethodRegistry) desugar(apply *ast.Apply) (ast.Expr, bool) {
 		return nil, false
 	}
 	span := apply.Span()
-	member := ast.NewApply(span, ast.NewRecordSelector(span, sel.Name),
+	var member ast.Expr = ast.NewApply(span,
+		ast.NewRecordSelector(span, sel.Name),
 		ast.NewID(span, cand.structure))
+	if cand.target != "" {
+		// An overload rewrites to its own hidden binding.
+		member = ast.NewID(span, cand.target)
+	}
 	arg := apply.Arg
 	if lit, ok := arg.(*ast.Literal); ok && lit.Kind == ast.UnitLiteralOp {
 		// receiver.f () → Structure.f receiver

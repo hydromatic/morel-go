@@ -170,7 +170,13 @@ func NewKernel(name string) *Kernel {
 		inlineExps: map[string]core.Exp{},
 		recFns:     map[string]*core.Fn{},
 	}
-	k.methods = compile.NewMethodRegistry(result.Methods, bindings,
+	// Method overloads that the signature files cannot express (a
+	// record has one field per name): Range.contains dispatched on
+	// the set types, targeting hidden bindings.
+	methods, overloadBindings := compile.OverloadMethods(sys)
+	k.bindings = append(k.bindings, overloadBindings...)
+	k.methods = compile.NewMethodRegistry(
+		append(result.Methods, methods...), bindings,
 		k.globalType)
 	values := make(map[string]eval.Val, len(eval.Builtins))
 	maps.Copy(values, eval.Builtins)
@@ -199,6 +205,9 @@ func NewKernel(name string) *Kernel {
 	values[compile.ExtentName] = eval.Fn(eval.ExtentValues)
 	// The internal raise builtin backs the "raise" expression.
 	values[compile.RaiseName] = eval.Fn(eval.RaiseFn)
+	// The Range.contains overloads on sets (OverloadMethods).
+	values[compile.CsContainsName] = eval.RangeSetContainsFn
+	values[compile.DsContainsName] = eval.RangeSetContainsFn
 	// Build the structure records first, so that a structure defined
 	// in embedded Morel source can reference any other structure;
 	// then evaluate those sources and rebuild, wiring in the

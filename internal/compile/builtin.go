@@ -236,6 +236,45 @@ func CollectionAggType(sys *types.System, member string,
 	}
 }
 
+// OverloadMethods returns the method overloads that signature
+// files cannot express — a second member of an existing name
+// dispatching on a different receiver type — with the hidden
+// bindings their calls rewrite to. Range.contains works on a
+// range (the signature's member), a continuous_set, and a
+// discrete_set.
+func OverloadMethods(sys *types.System) ([]MethodInfo, []Binding) {
+	csT, err := sys.Parse("'a continuous_set -> 'a -> bool")
+	if err != nil {
+		panic(err)
+	}
+	dsT, err := sys.Parse("'a discrete_set -> 'a -> bool")
+	if err != nil {
+		panic(err)
+	}
+	methods := []MethodInfo{
+		{
+			Type: csT, Structure: "Range", Name: "contains",
+			Target: CsContainsName,
+		},
+		{
+			Type: dsT, Structure: "Range", Name: "contains",
+			Target: DsContainsName,
+		},
+	}
+	bindings := []Binding{
+		{Name: CsContainsName, Type: csT},
+		{Name: DsContainsName, Type: dsT},
+	}
+	return methods, bindings
+}
+
+// The hidden bindings behind Range.contains on a continuous and a
+// discrete set; the kernel registers their implementations.
+const (
+	CsContainsName = "Range.$csContains"
+	DsContainsName = "Range.$dsContains"
+)
+
 // bagsToCollections replaces each bag in a type with a collection
 // of the same element.
 func bagsToCollections(sys *types.System, t types.Type) types.Type {

@@ -515,6 +515,17 @@ func rangeComplementFn(arg Val) (Val, error) {
 	return continuousSetVal(out), nil
 }
 
+// RangeSetContainsFn is "contains s x" on a continuous or
+// discrete set: whether x lies in any of the set's ranges.
+var RangeSetContainsFn = Curry2(func(s, x Val) (Val, error) {
+	for _, r := range setRangeList(s) {
+		if intervalContains(rangeToInterval(r), x) {
+			return true, nil
+		}
+	}
+	return false, nil
+})
+
 // RangeItem is a compiled range-list item; Lo and Hi are the bound
 // codes, nil where the bound is absent.
 type RangeItem struct {

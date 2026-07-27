@@ -52,6 +52,13 @@ Range.continuousSetOf [CLOSED (5, 10), CLOSED (1, 3), CLOSED (3, 6)];
 Range.discreteSetOf [CLOSED (5, 10), CLOSED (1, 3), CLOSED (3, 6)];
 > val it = DISCRETE_SET [CLOSED (1,10)] : int discrete_set
 
+(*) continuous_set.contains and discrete_set.contains (postfix).
+(Range.continuousSetOf [CLOSED (1, 3), CLOSED (7, 9)]).contains 2;
+> val it = true : bool
+
+(Range.discreteSetOf [CLOSED (1, 3), CLOSED (7, 9)]).contains 2;
+> val it = true : bool
+
 (*) Range.ranges returns the list of ranges in a continuous_set.
 (Range.continuousSetOf [CLOSED (1, 3), CLOSED (7, 9)]).ranges ();
 > val it = [CLOSED (1,3),CLOSED (7,9)] : int range list
