@@ -167,10 +167,11 @@ func NewKernel(name string) *Kernel {
 		sys:        sys,
 		bindings:   bindings,
 		gaps:       map[string]int{},
-		methods:    compile.NewMethodRegistry(result.Methods, bindings),
 		inlineExps: map[string]core.Exp{},
 		recFns:     map[string]*core.Fn{},
 	}
+	k.methods = compile.NewMethodRegistry(result.Methods, bindings,
+		k.globalType)
 	values := make(map[string]eval.Val, len(eval.Builtins))
 	maps.Copy(values, eval.Builtins)
 	// The relational aggregates and functions are bound both at top
@@ -733,6 +734,17 @@ func (k *Kernel) recordInlineExp(decl core.Decl) {
 			}
 		}
 	}
+}
+
+// globalType is the declared type of a top-level binding, or nil;
+// the method registry dispatches identifier receivers by it.
+func (k *Kernel) globalType(name string) types.Type {
+	for i := range k.bindings {
+		if k.bindings[i].Name == name {
+			return k.bindings[i].Type
+		}
+	}
+	return nil
 }
 
 // bindDatatypeCons binds a datatype declaration's constructors as

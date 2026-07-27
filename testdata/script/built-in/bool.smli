@@ -47,9 +47,13 @@ Bool.toString true;
 > val it = "true" : string
 Bool.toString false;
 > val it = "false" : string
+false.toString ();
+> val it = "false" : string
 Bool.not;
 > val it = fn : bool -> bool
 Bool.not true;
+> val it = false : bool
+true.not ();
 > val it = false : bool
 Bool.not false;
 > val it = true : bool

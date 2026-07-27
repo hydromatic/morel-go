@@ -211,6 +211,10 @@ val csOpen = Range.continuousSetOf [OPEN (1, 5), OPEN (7, 9)];
 val ds = Range.discreteSetOf [CLOSED (1, 3), CLOSED (7, 9)];
 > val ds = DISCRETE_SET [CLOSED (1,3),CLOSED (7,9)] : int discrete_set
 
+(*) ranges returns the list of ranges in a continuous_set.
+cs.ranges ();
+> val it = [CLOSED (1,3),CLOSED (7,9)] : int range list
+
 (*) toList enumerates values of a discrete_set in ascending order.
 (Range.discreteSetOf [CLOSED (5, 10)]).toList ();
 > val it = [5,6,7,8,9,10] : int list
@@ -241,6 +245,9 @@ val ds = Range.discreteSetOf [CLOSED (1, 3), CLOSED (7, 9)];
 val cs = Range.continuousSetOf [OPEN (1.0, 3.0), AT_LEAST 7.0];
 > val cs = CONTINUOUS_SET [OPEN (1,3),AT_LEAST 7] : real continuous_set
 
+cs.complement ();
+> val it = CONTINUOUS_SET [AT_MOST 1,CLOSED_OPEN (3,7)] : real continuous_set
+
 (*) complement of ALL is empty; complement of empty is ALL.
 (Range.continuousSetOf [ALL : real range]).complement ();
 > val it = CONTINUOUS_SET [] : real continuous_set
@@ -253,6 +260,9 @@ val ds = Range.discreteSetOf [CLOSED (1, 3), CLOSED (7, 9)];
 val evens = Range.discreteSetOf [CLOSED (0, 2), CLOSED (4, 6), CLOSED (8, 10)];
 > val evens = DISCRETE_SET [CLOSED (0,2),CLOSED (4,6),CLOSED (8,10)]
 >   : int discrete_set
+
+evens.toList ();
+> val it = [0,1,2,4,5,6,8,9,10] : int list
 
 (*) Apply f to each value in the set.
 fun f (INL LESS) = 1 | f (INR true) = 1 | f _ = 0;
