@@ -29,6 +29,8 @@ func isDeclStart(kind token.Kind) bool {
 		return true
 	case token.Fun:
 		return true
+	case token.Over:
+		return true
 	case token.Type:
 		return true
 	case token.Val:
@@ -45,6 +47,8 @@ func (p *Parser) decl() (ast.Decl, error) {
 		return p.datatypeDecl()
 	case token.Fun:
 		return p.funDecl()
+	case token.Over:
+		return p.overDecl()
 	case token.Type:
 		return p.typeDecl()
 	case token.Val:
@@ -226,6 +230,14 @@ func (p *Parser) valDecl() (ast.Decl, error) {
 			return nil, err
 		}
 	}
+	inst := false
+	if p.tok.Kind == token.Inst {
+		inst = true
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
+	}
 	var binds []*ast.ValBind
 	for {
 		var bind *ast.ValBind
@@ -244,7 +256,27 @@ func (p *Parser) valDecl() (ast.Decl, error) {
 	}
 	last := binds[len(binds)-1]
 	span := token.Span{Start: start, End: last.Span().End}
-	return ast.NewValDecl(span, rec, binds), nil
+	return ast.NewValDecl(span, rec, inst, binds), nil
+}
+
+// overDecl parses "over <name>".
+func (p *Parser) overDecl() (ast.Decl, error) {
+	start := p.tok.Span.Start
+	err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	if p.tok.Kind != token.Ident {
+		return nil, p.errorf("expected identifier, found " +
+			p.tok.Kind.String())
+	}
+	pat := ast.NewIDPat(p.tok.Span, p.tok.Text)
+	span := token.Span{Start: start, End: p.tok.Span.End}
+	err = p.next()
+	if err != nil {
+		return nil, err
+	}
+	return ast.NewOverDecl(span, pat), nil
 }
 
 func (p *Parser) valBind() (*ast.ValBind, error) {

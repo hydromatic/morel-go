@@ -48,5 +48,5 @@ func ItValDecl(exp ast.Expr) *ast.ValDecl {
 	span := exp.Span()
 	pat := ast.NewIDPat(span, "it")
 	bind := ast.NewValBind(span, pat, exp)
-	return ast.NewValDecl(span, false, []*ast.ValBind{bind})
+	return ast.NewValDecl(span, false, false, []*ast.ValBind{bind})
 }

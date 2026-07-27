@@ -96,6 +96,7 @@ const (
 	LetOp
 	DatatypeDeclOp
 	TypeDeclOp
+	OverDeclOp
 
 	// Types and annotations.
 
@@ -198,6 +199,7 @@ var opNames = map[Op]string{
 
 	DatatypeDeclOp:   "datatype_decl",
 	TypeDeclOp:       "type_decl",
+	OverDeclOp:       "over",
 	TyVarOp:          "ty_var",
 	NamedTypeOp:      "named",
 	TupleTypeOp:      "tuple_type",

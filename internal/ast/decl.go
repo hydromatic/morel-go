@@ -39,24 +39,43 @@ func NewValBind(span token.Span, pat Pat, exp Expr) *ValBind {
 // Op implements Node.
 func (*ValBind) Op() Op { return ValBindOp }
 
-// ValDecl is "val [rec] bind and bind ...".
+// ValDecl is "val [rec] [inst] bind and bind ...". Inst marks an
+// instance of an overloaded name ("val inst").
 type ValDecl struct {
 	declBase
 
 	Binds []*ValBind
 	Rec   bool
+	Inst  bool
 }
 
 // NewValDecl returns a val declaration.
-func NewValDecl(span token.Span, rec bool,
+func NewValDecl(span token.Span, rec, inst bool,
 	binds []*ValBind,
 ) *ValDecl {
 	return &ValDecl{
 		declBase: declBase{base{span}},
 		Binds:    binds,
 		Rec:      rec,
+		Inst:     inst,
 	}
 }
+
+// OverDecl is "over <name>": it declares an overloaded name, to
+// which later "val inst" declarations add instances.
+type OverDecl struct {
+	declBase
+
+	Pat *IDPat
+}
+
+// NewOverDecl returns an over declaration.
+func NewOverDecl(span token.Span, pat *IDPat) *OverDecl {
+	return &OverDecl{declBase: declBase{base{span}}, Pat: pat}
+}
+
+// Op implements Node.
+func (*OverDecl) Op() Op { return OverDeclOp }
 
 // Op implements Node.
 func (*ValDecl) Op() Op { return ValDeclOp }

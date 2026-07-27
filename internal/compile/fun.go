@@ -40,7 +40,7 @@ func funToVal(funDecl *ast.FunDecl) *ast.ValDecl {
 	for i, funBind := range funDecl.Binds {
 		binds[i] = funBindToValBind(funBind)
 	}
-	return ast.NewValDecl(funDecl.Span(), true, binds)
+	return ast.NewValDecl(funDecl.Span(), true, false, binds)
 }
 
 func funBindToValBind(funBind *ast.FunBind) *ast.ValBind {
