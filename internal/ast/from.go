@@ -143,11 +143,10 @@ type GroupStep struct {
 // Op implements Node.
 func (*GroupStep) Op() Op { return GroupOp }
 
-// ComputeStep is "compute [binder =] exp".
+// ComputeStep is "compute exp". Unlike group and yield, compute
+// takes no binder.
 type ComputeStep struct {
 	exprStep
-
-	Binder string
 }
 
 // Op implements Node.

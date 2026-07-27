@@ -125,7 +125,8 @@ func (p *Parser) fromStep() ([]ast.FromStep, error) {
 }
 
 // exprStep parses "keyword [binder =] exp"; only group and
-// compute may have a binder.
+// group and yield may have a binder; compute may not, so
+// "compute c = e" parses c as part of the expression "c = e".
 func (p *Parser) exprStep(kind ast.Op) ([]ast.FromStep, error) {
 	kwStart := p.tok.Span.Start
 	err := p.next()
@@ -133,8 +134,7 @@ func (p *Parser) exprStep(kind ast.Op) ([]ast.FromStep, error) {
 		return nil, err
 	}
 	binder := ""
-	if kind == ast.GroupOp || kind == ast.ComputeOp ||
-		kind == ast.YieldOp {
+	if kind == ast.GroupOp || kind == ast.YieldOp {
 		binder, err = p.stepBinder()
 		if err != nil {
 			return nil, err
@@ -151,8 +151,6 @@ func (p *Parser) exprStep(kind ast.Op) ([]ast.FromStep, error) {
 	step := ast.NewStep(span, kind, exp)
 	// lint: sort until '^\t}' where '^\tcase '
 	switch st := step.(type) {
-	case *ast.ComputeStep:
-		st.Binder = binder
 	case *ast.GroupStep:
 		st.Binder = binder
 	case *ast.YieldStep:

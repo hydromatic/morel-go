@@ -23,6 +23,15 @@
  * .smli file; each names the reason.
  *)
 
+(* "compute" takes an expression, not a binder: "compute c = e"
+ * parses "c = e" as an equality whose left side is unbound, unlike
+ * "group" and "yield", which do allow a binder. morel-go once
+ * accepted the binder form. morel-java's corpus has no equivalent
+ * rejection test, so this stays here. *)
+from i in [1,2,3] group {} compute c = count over ();
+> stdIn:1.36 Error: unbound variable or constructor: c
+>   raised at: stdIn:1.36
+
 (* A tuple extent is a cartesian product. In "tabular" output morel-go
  * prints a unit value as "()" where morel-java prints "{}", so this
  * stays here rather than in such-that.smli. *)

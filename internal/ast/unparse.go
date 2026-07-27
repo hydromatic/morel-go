@@ -622,7 +622,6 @@ func unparseFrom(b *strings.Builder, f *From) {
 		switch n := step.(type) {
 		case *ComputeStep:
 			b.WriteString(" compute ")
-			unparseBinder(b, n.Binder)
 			unparseExpr(b, n.Exp, 0)
 		case *DistinctStep:
 			b.WriteString(" distinct")
