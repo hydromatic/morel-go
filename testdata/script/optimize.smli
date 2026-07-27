@@ -254,4 +254,7 @@ val edges = [
  {x = 2, y = 3}];
 > val edges = [{x=1,y=2},{x=2,y=3}] : {x:int, y:int} list
 
+fun edge (x, y) = {x, y} elem edges;
+> val edge = fn : int * int -> bool
+
 (*) End optimize.smli

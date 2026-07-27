@@ -1118,6 +1118,17 @@ from e in emps, d in depts
 > val it = [{count=4,deptno=10},{count=4,deptno=20},{count=8,deptno=30}]
 >   : {count:int, deptno:int} list
 
+(* join with intervening 'where'
+ * we can't write ', d in depts' after 'where' *)
+from e in emps
+  where e.name elem ["Shaggy", "Fred"]
+  join d in depts
+  where e.deptno = d.deptno;
+> val it =
+>   [{d={deptno=10,name="Sales"},e={deptno=10,id=100,name="Fred"}},
+>    {d={deptno=30,name="Engineering"},e={deptno=30,id=102,name="Shaggy"}}]
+>   : {d:{deptno:int, name:string}, e:{deptno:int, id:int, name:string}} list
+
 (*) 'where' then 'join on'
 from x in [0,3,6,9,12]
 where x > 1
@@ -1174,6 +1185,38 @@ in
   yield e.name
 end;
 > val it = ["Shaggy","Scooby"] : string list
+
+(*) elem (equivalent to SQL's IN)
+from e in emps
+  where e.deptno elem (from d in depts
+    where d.name = "Engineering"
+    yield d.deptno)
+yield e.name;
+> val it = ["Shaggy","Scooby"] : string list
+
+(*) notelem (equivalent to SQL's NOT IN, also to 'not ... elem')
+from e in emps
+  where e.deptno notelem (from d in depts
+    where d.name = "Engineering"
+    yield d.deptno)
+yield e.name;
+> val it = ["Fred","Velma"] : string list
+
+(*) equivalent to previous
+from e in emps
+  where not (e.deptno elem (from d in depts
+    where d.name = "Engineering"
+    yield d.deptno))
+yield e.name;
+> val it = ["Fred","Velma"] : string list
+
+(*) equivalent to previous
+from e in emps
+  where e.deptno elem (from d in depts
+    where d.name = "Engineering"
+    yield d.deptno) = false
+yield e.name;
+> val it = ["Fred","Velma"] : string list
 
 (* Set operations (union, intersect, except) ---------------------- *)
 
@@ -1708,6 +1751,32 @@ from e in emps,
   order (DESC e.deptno, e.name)
   yield e.name;
 > val it = ["Scooby","Shaggy","Velma","Fred"] : string list
+
+(*) Only (scalar sub-query)
+from e in emps
+  yield only (from d in depts
+              where d.deptno = e.deptno
+              yield d.name);
+> val it = ["Sales","HR","Engineering","Engineering"] : string list
+
+from e in emps
+  yield {ename = e.name,
+         dname = only (from d in depts
+                       where d.deptno = e.deptno
+                       yield d.name)};
+> val it =
+>   [{dname="Sales",ename="Fred"},{dname="HR",ename="Velma"},
+>    {dname="Engineering",ename="Shaggy"},{dname="Engineering",ename="Scooby"}]
+>   : {dname:string, ename:string} list
+
+from e in emps
+  yield {ename = e.name,
+         dname = (only (from d in depts
+                        where d.deptno = e.deptno)).name};
+> val it =
+>   [{dname="Sales",ename="Fred"},{dname="HR",ename="Velma"},
+>    {dname="Engineering",ename="Shaggy"},{dname="Engineering",ename="Scooby"}]
+>   : {dname:string, ename:string} list
 
 (* Reference to 'deptno' is not valid after it has been renamed to 'x'. *)
 from e in emps

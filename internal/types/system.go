@@ -192,6 +192,16 @@ func (s *System) List(elem Type) Type {
 	})
 }
 
+// Collection returns the type of a list-or-bag of elem, with
+// orderedness free. It prints as a bag (the default when
+// orderedness is unforced).
+func (s *System) Collection(elem Type) Type {
+	key := descArg(elem) + " $collection"
+	return s.intern(key, func() Type {
+		return &Collection{typeBase{key}, elem}
+	})
+}
+
 // Fn returns the type "param -> result".
 func (s *System) Fn(param, result Type) Type {
 	key := descParam(param) + " -> " + result.String()

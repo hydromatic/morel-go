@@ -60,6 +60,16 @@ type List struct {
 	Elem Type
 }
 
+// Collection is a list or a bag of elem, with orderedness left
+// free. It is the parameter type of a built-in that works on both,
+// such as "elem" or "Relational.only"; at a use site it unifies
+// with whichever the argument is.
+type Collection struct {
+	typeBase
+
+	Elem Type
+}
+
 // Fn is "param -> result".
 type Fn struct {
 	typeBase

@@ -703,9 +703,9 @@ func TestExecuteItOnlyOnSuccess(t *testing.T) {
 	runSession(t, [][2]string{
 		{"val y = 7;", "val y = 7 : int"},
 		{"y;", "val it = 7 : int"},
-		// The next statement does not evaluate yet ('elem'
-		// generators arrive later), so 'it' keeps its value.
-		{"from i in [1] where i elem [1];", ""},
+		// The next statement does not evaluate yet (exception
+		// handling arrives later), so 'it' keeps its value.
+		{"1 handle _ => 2;", ""},
 		{"it;", "val it = 7 : int"},
 	})
 }

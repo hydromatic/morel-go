@@ -581,11 +581,106 @@ val western_states = ["AZ","CA","CO","ID","NM","NV","OR","UT","WA"];
 > val western_states =
 >   ["AZ","CA","CO","ID","NM","NV","OR","UT","WA"] : string list
 
+(*) Adjacency pairs restricted to western states
+val western_pairs =
+  from (x, y) in pairs
+    where x elem western_states
+      andalso y elem western_states
+    yield (x, y);
+> val western_pairs =
+>   [("AZ","CA"),("AZ","NV"),("AZ","UT"),("AZ","CO"),("AZ","NM"),("CA","OR"),
+>    ("CA","NV"),("CA","AZ"),("CO","NM"),("CO","AZ"),("CO","UT"),("ID","UT"),
+>    ("ID","NV"),("ID","OR"),("ID","WA"),("NM","AZ"),("NM","UT"),("NM","CO"),
+>    ("NV","ID"),("NV","UT"),("NV","AZ"),("NV","CA"),("NV","OR"),("OR","CA"),
+>    ("OR","NV"),("OR","ID"),("OR","WA"),("UT","ID"),("UT","CO"),("UT","NM"),
+>    ("UT","AZ"),("UT","NV"),("WA","ID"),("WA","OR")] : (string * string) list
+
 (* A 3-node graph has no 4-clique. Grounding must not delete a
  * conjunct whose generator was cached but never scanned; when it did,
  * this returned rows in which x = y. *)
 val ps = [(1,2),(2,1),(1,3),(3,1),(2,3),(3,2)];
 > val ps = [(1,2),(2,1),(1,3),(3,1),(2,3),(3,2)] : (int * int) list
+
+(* 5. Barbell --------------------------------------------------------
+ * In Datalog:
+ *    Barbell(x, y, z, x', y', z') :-
+ *            R(x, y), S(y, z), T(x, z),
+ *            U(x, x'),
+ *            R'(x', y'), S'(y', z'), T'(x', z').
+ *)
+
+(* TODO enable when there is an efficient implementation
+from x, y, z, x', y', z'
+  where (x, y) elem western_pairs
+    andalso (y, z) elem western_pairs
+    andalso (x, z) elem western_pairs
+    andalso (x, x') elem western_pairs
+    andalso (x', y') elem western_pairs
+    andalso (y', z') elem western_pairs
+    andalso (x', z') elem western_pairs;
+*)
+
+(* The following query is more efficient because it covers just the
+ * nine western states, because it drives from the pair-lists rather
+ * than unqualified variables, and because we add conditions like
+ * "x < x'" to orient the bridge and the two triangles.
+ *
+ * The western states graph is densely connected — 9 states, 10
+ * distinct triangles — so there are many vertex-disjoint triangle
+ * pairs linked by a bridge edge. NV is the most active bridge vertex,
+ * appearing in 19 of the 35 rows, because it sits at the junction of
+ * the AZ/CA/UT/CO cluster and the ID/OR cluster. *)
+from (x, x') in western_pairs,
+    (y, z) in western_pairs,
+    (y', z') in western_pairs
+  where x < x'
+    andalso y < z
+    andalso y' < z'
+    andalso (x, y) elem western_pairs
+    andalso (x, z) elem western_pairs
+    andalso (x', y') elem western_pairs
+    andalso (x', z') elem western_pairs
+    andalso x <> y' andalso x <> z'
+    andalso y <> x' andalso y <> y' andalso y <> z'
+    andalso z <> x' andalso z <> y' andalso z <> z'
+  order (x, x', y, y', z, z');
+> val it =
+>   [{x="AZ",x'="CA",y="CO",y'="NV",z="NM",z'="OR"},
+>    {x="AZ",x'="CA",y="CO",y'="NV",z="UT",z'="OR"},
+>    {x="AZ",x'="CA",y="NM",y'="NV",z="UT",z'="OR"},
+>    {x="AZ",x'="CO",y="CA",y'="NM",z="NV",z'="UT"},
+>    {x="AZ",x'="NM",y="CA",y'="CO",z="NV",z'="UT"},
+>    {x="AZ",x'="NV",y="CO",y'="CA",z="NM",z'="OR"},
+>    {x="AZ",x'="NV",y="CO",y'="CA",z="UT",z'="OR"},
+>    {x="AZ",x'="NV",y="CO",y'="ID",z="NM",z'="OR"},
+>    {x="AZ",x'="NV",y="CO",y'="ID",z="NM",z'="UT"},
+>    {x="AZ",x'="NV",y="CO",y'="ID",z="UT",z'="OR"},
+>    {x="AZ",x'="NV",y="NM",y'="CA",z="UT",z'="OR"},
+>    {x="AZ",x'="NV",y="NM",y'="ID",z="UT",z'="OR"},
+>    {x="AZ",x'="UT",y="CA",y'="CO",z="NV",z'="NM"},
+>    {x="AZ",x'="UT",y="CO",y'="ID",z="NM",z'="NV"},
+>    {x="CA",x'="OR",y="AZ",y'="ID",z="NV",z'="WA"},
+>    {x="CO",x'="UT",y="AZ",y'="ID",z="NM",z'="NV"},
+>    {x="ID",x'="NV",y="OR",y'="AZ",z="WA",z'="CA"},
+>    {x="ID",x'="NV",y="OR",y'="AZ",z="WA",z'="UT"},
+>    {x="ID",x'="UT",y="NV",y'="AZ",z="OR",z'="CO"},
+>    {x="ID",x'="UT",y="NV",y'="AZ",z="OR",z'="NM"},
+>    {x="ID",x'="UT",y="NV",y'="CO",z="OR",z'="NM"},
+>    {x="ID",x'="UT",y="OR",y'="AZ",z="WA",z'="CO"},
+>    {x="ID",x'="UT",y="OR",y'="AZ",z="WA",z'="NM"},
+>    {x="ID",x'="UT",y="OR",y'="AZ",z="WA",z'="NV"},
+>    {x="ID",x'="UT",y="OR",y'="CO",z="WA",z'="NM"},
+>    {x="NM",x'="UT",y="AZ",y'="ID",z="CO",z'="NV"},
+>    {x="NV",x'="OR",y="AZ",y'="ID",z="CA",z'="WA"},
+>    {x="NV",x'="OR",y="AZ",y'="ID",z="UT",z'="WA"},
+>    {x="NV",x'="UT",y="AZ",y'="CO",z="CA",z'="NM"},
+>    {x="NV",x'="UT",y="CA",y'="AZ",z="OR",z'="CO"},
+>    {x="NV",x'="UT",y="CA",y'="AZ",z="OR",z'="NM"},
+>    {x="NV",x'="UT",y="CA",y'="CO",z="OR",z'="NM"},
+>    {x="NV",x'="UT",y="ID",y'="AZ",z="OR",z'="CO"},
+>    {x="NV",x'="UT",y="ID",y'="AZ",z="OR",z'="NM"},
+>    {x="NV",x'="UT",y="ID",y'="CO",z="OR",z'="NM"}]
+>   : {x:string, x':string, y:string, y':string, z:string, z':string} list
 
 (* 7. Single-Source Shortest Paths (SSSP) ----------------------------
  * In Datalog:

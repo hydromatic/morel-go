@@ -376,6 +376,11 @@ func (r *typeResolver) typeTerm(t types.Type,
 ) unify.Term {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch t := t.(type) {
+	case *types.Collection:
+		// A collection has free orderedness, so it unifies with a
+		// list or a bag; a fresh variable each instantiation.
+		return r.collectionTerm(r.typeTerm(t.Elem, subst),
+			r.u.Variable())
 	case *types.Fn:
 		return r.fnTerm(r.typeTerm(t.Param, subst),
 			r.typeTerm(t.Result, subst))

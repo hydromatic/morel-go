@@ -42,6 +42,7 @@ func RelationalAggregates() map[string]Fn {
 func RelationalFunctions() map[string]Fn {
 	return map[string]Fn{
 		"compare": relCompareFn,
+		"only":    onlyFn,
 	}
 }
 

@@ -124,6 +124,8 @@ var infixOpNames = map[ast.Op]string{
 	ast.CaretOp:   "op ^",
 	ast.ComposeOp: "op o",
 	ast.ConsOp:    "op ::",
+	ast.ElemOp:    "op elem",
+	ast.NotElemOp: "op notelem",
 	ast.DivOp:     opDiv,
 	ast.DivideOp:  "op /",
 	ast.EqOp:      "op =",
@@ -156,5 +158,24 @@ func TopBindings(sys *types.System) []Binding {
 		bindings = append(bindings,
 			Binding{Name: name, Type: t})
 	}
-	return bindings
+	return append(bindings, collectionBindings(sys)...)
+}
+
+// collectionBindings returns the built-ins whose type involves a
+// collection (list or bag) with free orderedness — "elem" and
+// "notelem" over a collection, and "only". Their types cannot be
+// written as a plain string, so they are built here.
+func collectionBindings(sys *types.System) []Binding {
+	a := sys.Var(0)
+	coll := sys.Collection(a)
+	// "x elem c" and "x notelem c": 'a * 'a collection -> bool.
+	elemType := sys.Fn(sys.Tuple(a, coll), sys.Bool)
+	// "only c": 'a collection -> 'a.
+	onlyType := sys.Fn(coll, a)
+	return []Binding{
+		{Name: "op elem", Type: elemType},
+		{Name: "op notelem", Type: elemType},
+		{Name: "only", Type: onlyType},
+		{Name: "Relational.only", Type: onlyType},
+	}
 }

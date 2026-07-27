@@ -531,7 +531,9 @@ var Builtins = map[string]Val{
 	"op @":              atFn,
 	"op ^":              caretFn,
 	"op div":            arithW(divInt, nil, divWord),
+	"op elem":           elemFn(false),
 	"op mod":            arithW(modInt, nil, modWord),
+	"op notelem":        elemFn(true),
 	"op o":              composeFn,
 	"op ~":              negFn,
 	"ord":               ordFn,
@@ -660,6 +662,20 @@ func absFn(arg Val) (Val, error) {
 		return float32(math.Abs(float64(v))), nil
 	default:
 		panic(fmt.Sprintf("expected int or real, got %T", arg))
+	}
+}
+
+// elemFn is "x elem c" (or its negation, "x notelem c"): whether
+// x is an element of the collection c, a list or a bag.
+func elemFn(negate bool) Fn {
+	return func(arg Val) (Val, error) {
+		x, c := asPair(arg)
+		for _, e := range asList(c) {
+			if valsEqual(x, e) {
+				return !negate, nil
+			}
+		}
+		return negate, nil
 	}
 }
 
