@@ -19,6 +19,7 @@ package compile
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/hydromatic/morel-go/internal/ast"
@@ -249,6 +250,10 @@ func (c *compiler) builtinFnInfo(fnExp core.Exp,
 		}
 		return planFnName(fn.Pat.Name, fn.Pat.T),
 			builtinArity(fn.Pat.T), curriedArity(fn.Pat.T)
+	case *core.Selector:
+		// A field/tuple selector applied to a record renders as
+		// "nth:N", where N is the field's canonical position.
+		return "nth:" + strconv.Itoa(fn.Index), 1, 1
 	default:
 		return "", 0, 0
 	}
