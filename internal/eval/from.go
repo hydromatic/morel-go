@@ -18,7 +18,9 @@
 package eval
 
 import (
+	"slices"
 	"sort"
+	"strings"
 
 	"github.com/hydromatic/morel-go/internal/core"
 )
@@ -43,6 +45,9 @@ type FromStage interface {
 type ScanStage struct {
 	Source Code
 	Pat    Pat
+	// Name is the scan variable's name, shown in the plan as
+	// "sink join(pat Name, ...)".
+	Name string
 }
 
 func (s *ScanStage) transform(q *fromCode, f *Frame, rows [][]Val,
@@ -711,7 +716,42 @@ func (c *fromCode) Eval(f *Frame) (Val, error) {
 }
 
 func (c *fromCode) Describe() string {
-	return "from(" + c.collect.Describe() + ")"
+	// The query is a nested pipeline of sinks, inside-out: the
+	// first stage is outermost and each wraps the next, ending in
+	// "sink collect" of the projection.
+	inner := "sink collect(" + c.collect.Describe() + ")"
+	for _, s := range slices.Backward(c.stages) {
+		inner = describeSink(s, inner)
+	}
+	return "from(" + inner + ")"
+}
+
+// describeSink renders one query stage as a sink wrapping inner.
+func describeSink(s FromStage, inner string) string {
+	// lint: sort until '^	}' where '^	case '
+	switch s := s.(type) {
+	case *ScanStage:
+		return "sink join(pat " + s.Name + ", exp " +
+			s.Source.Describe() + ", " + inner + ")"
+	case *WhereStage:
+		return "sink where(condition " + s.Cond.Describe() +
+			", " + inner + ")"
+	case *YieldStage:
+		var b strings.Builder
+		b.WriteString("sink yield(codes [")
+		for i, f := range s.Fields {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(f.Code.Describe())
+		}
+		b.WriteString("], ")
+		b.WriteString(inner)
+		b.WriteString(")")
+		return b.String()
+	default:
+		return inner
+	}
 }
 
 func (c *fromCode) snapshot(f *Frame) []Val {

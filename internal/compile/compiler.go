@@ -606,7 +606,11 @@ func (c *compiler) compileStep(step core.FromStep,
 			return nil, err
 		}
 		*scanPats = append(*scanPats, s.Pat)
-		return &eval.ScanStage{Source: source, Pat: pat}, nil
+		name := ""
+		if id, ok := s.Pat.(*core.IDPat); ok {
+			name = id.Name
+		}
+		return &eval.ScanStage{Source: source, Pat: pat, Name: name}, nil
 	case *core.SetOp:
 		return c.compileSetOp(s, *scanPats)
 	case *core.Skip:
