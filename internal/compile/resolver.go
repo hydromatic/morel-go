@@ -238,8 +238,22 @@ func (r *resolver) toIDPat(pat ast.Pat) (*core.IDPat, error) {
 	switch p := pat.(type) {
 	case *ast.AnnotatedPat:
 		// The annotation constrained the type during inference; the
-		// core pattern is just the pattern it wraps.
-		return r.toIDPat(p.Pat)
+		// core pattern is the pattern it wraps. Keep an aliased
+		// annotation ("myInt" rather than "int") unexpanded as the
+		// surface type, for display: the surface and expanded forms
+		// are the same interned type unless an alias makes them
+		// differ.
+		idPat, err := r.toIDPat(p.Pat)
+		if err != nil {
+			return nil, err
+		}
+		surface, e1 := r.typeMap.sys.SurfaceFromAST(p.Type,
+			map[string]int{})
+		expanded, e2 := r.typeMap.sys.FromAST(p.Type, map[string]int{})
+		if e1 == nil && e2 == nil && surface != expanded {
+			idPat.SurfaceT = surface
+		}
+		return idPat, nil
 	case *ast.IDPat:
 		return &core.IDPat{T: t, Name: p.Name}, nil
 	case *ast.WildcardPat:
@@ -1473,8 +1487,23 @@ func (r *resolver) toPat(pat ast.Pat) (core.Pat, error) {
 	switch p := pat.(type) {
 	case *ast.AnnotatedPat:
 		// The annotation constrained the type during inference; the
-		// core pattern is just the pattern it wraps.
-		return r.toPat(p.Pat)
+		// core pattern is the pattern it wraps. Keep an aliased
+		// annotation ("myInt" not "int") as the binding's surface
+		// type, for display.
+		inner, err := r.toPat(p.Pat)
+		if err != nil {
+			return nil, err
+		}
+		if idPat, ok := inner.(*core.IDPat); ok {
+			surface, e1 := r.typeMap.sys.SurfaceFromAST(p.Type,
+				map[string]int{})
+			expanded, e2 := r.typeMap.sys.FromAST(p.Type,
+				map[string]int{})
+			if e1 == nil && e2 == nil && surface != expanded {
+				idPat.SurfaceT = surface
+			}
+		}
+		return inner, nil
 	case *ast.AsPat:
 		inner, err := r.toPat(p.Pat)
 		if err != nil {

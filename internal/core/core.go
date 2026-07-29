@@ -248,8 +248,12 @@ func (*Let) exp() {}
 
 // IDPat is a pattern that binds a name.
 type IDPat struct {
-	T    types.Type
-	Name string
+	T types.Type
+	// SurfaceT is the type the binding was annotated with, keeping
+	// any type alias unexpanded (e.g. "myInt" rather than "int"), for
+	// display only; nil when the binding has no aliased annotation.
+	SurfaceT types.Type
+	Name     string
 }
 
 // Op implements Pat.

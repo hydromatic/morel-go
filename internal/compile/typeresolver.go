@@ -710,12 +710,6 @@ func (r *typeResolver) astNamedTerm(t *ast.NamedType) (unify.Term,
 ) {
 	if alias, ok := r.sys.LookupAlias(t.Name); ok &&
 		len(alias.TyVars) == len(t.Args) {
-		if r.aliasRecursive(t.Name) {
-			return nil, &Error{
-				Span: t.Span(),
-				Msg:  "recursive type alias: " + t.Name,
-			}
-		}
 		subst := make(map[string]ast.Type, len(alias.TyVars))
 		for i, tv := range alias.TyVars {
 			subst[tv] = t.Args[i]
@@ -736,9 +730,9 @@ func (r *typeResolver) astNamedTerm(t *ast.NamedType) (unify.Term,
 	if t.Name == bagTyCon && len(terms) == 1 {
 		return r.bagTerm(terms[0]), nil
 	}
-	if arity, ok := r.sys.DatatypeArity(t.Name); ok &&
+	if internal, arity, ok := r.sys.DatatypeInternal(t.Name); ok &&
 		arity == len(terms) {
-		return unify.Apply(t.Name, terms...), nil
+		return unify.Apply(internal, terms...), nil
 	}
 	if len(terms) == 0 && r.sys.Lookup(t.Name) != nil {
 		return r.u.Atom(t.Name), nil
@@ -787,59 +781,6 @@ func plural(n int) string {
 		return ""
 	}
 	return "s"
-}
-
-// aliasRecursive reports whether a type alias refers to itself,
-// directly or transitively through other aliases, so its expansion
-// would not terminate. It examines the alias bodies, not the
-// use-site arguments (so a nested use such as "int t t" of a
-// non-recursive alias is fine).
-func (r *typeResolver) aliasRecursive(name string) bool {
-	alias, ok := r.sys.LookupAlias(name)
-	if !ok {
-		return false
-	}
-	return r.aliasBodyRefers(alias.Body, name, map[string]bool{})
-}
-
-// aliasBodyRefers reports whether a type body references the target
-// alias, following the bodies of other aliases it names.
-func (r *typeResolver) aliasBodyRefers(t ast.Type, target string,
-	visited map[string]bool,
-) bool {
-	// lint: sort until '^\t}' where '^\tcase '
-	switch n := t.(type) {
-	case *ast.FnType:
-		return r.aliasBodyRefers(n.Param, target, visited) ||
-			r.aliasBodyRefers(n.Result, target, visited)
-	case *ast.NamedType:
-		if n.Name == target {
-			return true
-		}
-		for _, a := range n.Args {
-			if r.aliasBodyRefers(a, target, visited) {
-				return true
-			}
-		}
-		alias, ok := r.sys.LookupAlias(n.Name)
-		if ok && !visited[n.Name] {
-			visited[n.Name] = true
-			return r.aliasBodyRefers(alias.Body, target, visited)
-		}
-	case *ast.RecordType:
-		for _, f := range n.Fields {
-			if r.aliasBodyRefers(f.Type, target, visited) {
-				return true
-			}
-		}
-	case *ast.TupleType:
-		for _, a := range n.Args {
-			if r.aliasBodyRefers(a, target, visited) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func (r *typeResolver) deduceDecl(env typeEnv, decl ast.Decl,
@@ -974,17 +915,18 @@ func (r *typeResolver) deduceConPat(pat *ast.ConPat,
 func (r *typeResolver) deduceDatatypeDecl(decl *ast.DatatypeDecl,
 	termMap *[]patTerm,
 ) (ast.Decl, error) {
-	for _, b := range decl.Binds {
-		r.sys.DeclareDatatype(b.Name, len(b.TyVars))
+	internals := make([]string, len(decl.Binds))
+	for i, b := range decl.Binds {
+		internals[i] = r.sys.DeclareDatatype(b.Name, len(b.TyVars))
 	}
-	for _, b := range decl.Binds {
+	for bi, b := range decl.Binds {
 		args := make([]types.Type, len(b.TyVars))
 		tyVars := map[string]int{}
 		for i, tv := range b.TyVars {
 			args[i] = r.sys.Var(i)
 			tyVars[tv] = i
 		}
-		result := r.sys.Named(b.Name, args...)
+		result := r.sys.Named(internals[bi], args...)
 		for _, c := range b.Cons {
 			var argType types.Type
 			if c.Of != nil {
@@ -1023,13 +965,135 @@ func (r *typeResolver) deduceDatatypeDecl(decl *ast.DatatypeDecl,
 
 // deduceTypeDecl registers each type alias so later types can use
 // it. An alias is transparent: it is expanded wherever it appears.
+//
+// A "type" declaration is not recursive, and the bindings of a
+// "type ... and ..." group are simultaneous, so every body is
+// resolved against the environment in effect before the
+// declaration; only then are the new aliases registered. A name in
+// a body therefore means an existing definition -- a prior alias is
+// expanded, and a name that is not already a type (including the one
+// being declared) is an "unbound type constructor" error, as in
+// Standard ML. The resolved body replaces the written one, so the
+// shell echoes the expanded form.
 func (r *typeResolver) deduceTypeDecl(decl *ast.TypeDecl,
 ) (ast.Decl, error) {
-	for _, b := range decl.Binds {
-		r.sys.DeclareAlias(b.Name, b.TyVars, b.Type)
+	resolved := make([]ast.Type, len(decl.Binds))
+	for i, b := range decl.Binds {
+		body, err := r.resolveTypeBody(b.Type)
+		if err != nil {
+			return nil, err
+		}
+		resolved[i] = body
+	}
+	for i := range decl.Binds {
+		decl.Binds[i].Type = resolved[i]
+		r.sys.DeclareAlias(decl.Binds[i].Name, decl.Binds[i].TyVars,
+			resolved[i])
 	}
 	r.nodeTerm[decl] = r.primTerm("unit")
 	return decl, nil
+}
+
+// resolveTypeBody resolves a type-alias body against the current
+// environment (the definitions before the declaration), expanding
+// prior aliases and rejecting any name that is not already a type.
+// The alias's own type variables pass through unchanged.
+func (r *typeResolver) resolveTypeBody(t ast.Type) (ast.Type, error) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch n := t.(type) {
+	case *ast.FnType:
+		param, err := r.resolveTypeBody(n.Param)
+		if err != nil {
+			return nil, err
+		}
+		result, err := r.resolveTypeBody(n.Result)
+		if err != nil {
+			return nil, err
+		}
+		return ast.NewFnType(n.Span(), param, result), nil
+	case *ast.NamedType:
+		return r.resolveNamedType(n)
+	case *ast.RecordType:
+		fields := make([]ast.TypeField, len(n.Fields))
+		for i, f := range n.Fields {
+			ft, err := r.resolveTypeBody(f.Type)
+			if err != nil {
+				return nil, err
+			}
+			fields[i] = ast.TypeField{Label: f.Label, Type: ft}
+		}
+		return ast.NewRecordType(n.Span(), fields), nil
+	case *ast.TupleType:
+		args, err := r.resolveTypeArgs(n.Args)
+		if err != nil {
+			return nil, err
+		}
+		return ast.NewTupleType(n.Span(), args), nil
+	default:
+		return t, nil
+	}
+}
+
+// resolveNamedType resolves a named type in an alias body: it
+// expands a prior alias, keeps a datatype, list, bag, or nullary
+// type (with resolved arguments), and rejects an unknown or
+// wrong-arity constructor.
+func (r *typeResolver) resolveNamedType(n *ast.NamedType) (ast.Type,
+	error,
+) {
+	args, err := r.resolveTypeArgs(n.Args)
+	if err != nil {
+		return nil, err
+	}
+	if alias, ok := r.sys.LookupAlias(n.Name); ok &&
+		len(alias.TyVars) == len(args) {
+		subst := make(map[string]ast.Type, len(alias.TyVars))
+		for i, tv := range alias.TyVars {
+			subst[tv] = args[i]
+		}
+		return ast.SubstituteType(alias.Body, subst), nil
+	}
+	known := false
+	if arity, ok := r.sys.DatatypeArity(n.Name); ok && arity == len(args) {
+		known = true
+	} else if (n.Name == listTyCon || n.Name == bagTyCon) &&
+		len(args) == 1 {
+		known = true
+	} else if len(args) == 0 && r.sys.Lookup(n.Name) != nil {
+		known = true
+	}
+	if known {
+		return ast.NewNamedType(n.Span(), n.Name, args), nil
+	}
+	if expected, ok := r.typeConstructorArity(n.Name); ok {
+		return nil, &Error{
+			Span: n.Span(),
+			Msg: "type constructor " + n.Name + " given " +
+				strconv.Itoa(len(args)) + " argument" +
+				plural(len(args)) + ", wants " +
+				strconv.Itoa(expected),
+		}
+	}
+	return nil, &Error{
+		Span: n.Span(),
+		Msg:  "unbound type constructor: " + n.Name,
+	}
+}
+
+// resolveTypeArgs resolves each type argument of a named or
+// composite type against the environment before the declaration.
+func (r *typeResolver) resolveTypeArgs(args []ast.Type) ([]ast.Type,
+	error,
+) {
+	out := make([]ast.Type, len(args))
+	for i, a := range args {
+		ra, err := r.resolveTypeBody(a)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = ra
+	}
+	return out, nil
 }
 
 // unboundTyVar returns the first type variable in t that is not in

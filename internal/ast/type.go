@@ -92,6 +92,41 @@ func SubstituteType(t Type, subst map[string]Type) Type {
 	}
 }
 
+// MapNamedTypeNames returns a copy of t with every named type's name
+// replaced by f(name); f is applied to each NamedType (including
+// "list") and should return the name unchanged when it does not want
+// to remap. Structure and type variables are preserved.
+func MapNamedTypeNames(t Type, f func(string) string) Type {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch n := t.(type) {
+	case *FnType:
+		return NewFnType(n.Span(), MapNamedTypeNames(n.Param, f),
+			MapNamedTypeNames(n.Result, f))
+	case *NamedType:
+		args := make([]Type, len(n.Args))
+		for i, a := range n.Args {
+			args[i] = MapNamedTypeNames(a, f)
+		}
+		return NewNamedType(n.Span(), f(n.Name), args)
+	case *RecordType:
+		fields := make([]TypeField, len(n.Fields))
+		for i, fld := range n.Fields {
+			fields[i] = TypeField{
+				Label: fld.Label, Type: MapNamedTypeNames(fld.Type, f),
+			}
+		}
+		return NewRecordType(n.Span(), fields)
+	case *TupleType:
+		args := make([]Type, len(n.Args))
+		for i, a := range n.Args {
+			args[i] = MapNamedTypeNames(a, f)
+		}
+		return NewTupleType(n.Span(), args)
+	default:
+		return t
+	}
+}
+
 // NamedType is a type constructor applied to zero or more
 // arguments: "int", "int list", "('a, 'b) pair".
 type NamedType struct {

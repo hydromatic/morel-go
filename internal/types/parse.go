@@ -45,9 +45,21 @@ func (s *System) FromAST(t ast.Type, tyVars map[string]int) (
 	return c.convert(t)
 }
 
+// SurfaceFromAST converts a type annotation like FromAST, but keeps
+// each type alias unexpanded (as a named type carrying the alias
+// name), so the result renders the annotation as it was written --
+// used for the display-only "surface" type of a binding.
+func (s *System) SurfaceFromAST(t ast.Type, tyVars map[string]int) (
+	Type, error,
+) {
+	c := &converter{sys: s, vars: tyVars, keepAliases: true}
+	return c.convert(t)
+}
+
 type converter struct {
-	sys  *System
-	vars map[string]int
+	sys         *System
+	vars        map[string]int
+	keepAliases bool
 }
 
 func (c *converter) convert(t ast.Type) (Type, error) {
@@ -115,9 +127,16 @@ func (c *converter) convertNamed(n *ast.NamedType) (Type, error) {
 	}
 	if alias, ok := c.sys.LookupAlias(n.Name); ok &&
 		len(alias.TyVars) == len(n.Args) {
+		if c.keepAliases {
+			args, err := c.convertList(n.Args)
+			if err != nil {
+				return nil, err
+			}
+			return c.sys.Named(n.Name, args...), nil
+		}
 		return c.convert(expandAlias(alias, n.Args))
 	}
-	if arity, ok := c.sys.DatatypeArity(n.Name); ok &&
+	if internal, arity, ok := c.sys.DatatypeInternal(n.Name); ok &&
 		arity == len(n.Args) {
 		args := make([]Type, len(n.Args))
 		for i, arg := range n.Args {
@@ -127,7 +146,7 @@ func (c *converter) convertNamed(n *ast.NamedType) (Type, error) {
 			}
 			args[i] = t
 		}
-		return c.sys.Named(n.Name, args...), nil
+		return c.sys.Named(internal, args...), nil
 	}
 	if len(n.Args) == 0 {
 		if t := c.sys.Lookup(n.Name); t != nil {

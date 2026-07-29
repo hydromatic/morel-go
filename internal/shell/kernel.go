@@ -600,8 +600,17 @@ func (k *Kernel) runStatement(n ast.Node) string {
 		return ast.UnparseDatatypeDecl(datatypeDecl)
 	}
 	if typeDecl, isType := resolved.Decl.(*ast.TypeDecl); isType {
-		// The declaration registered its type aliases; echo it.
-		return ast.UnparseTypeDecl(typeDecl)
+		// The declaration registered its type aliases; echo it,
+		// mapping any datatype whose name has since been displaced to
+		// "?.d". Copy the binds so the stored alias body is untouched.
+		binds := make([]ast.TypeBind, len(typeDecl.Binds))
+		for i, b := range typeDecl.Binds {
+			binds[i] = b
+			binds[i].Type = ast.MapNamedTypeNames(b.Type,
+				k.sys.DatatypeDisplay)
+		}
+		return ast.UnparseTypeDecl(ast.NewTypeDecl(typeDecl.Span(),
+			binds))
 	}
 	coreDecl, err := compile.Resolve(resolved)
 	if err != nil {
@@ -677,7 +686,8 @@ func (k *Kernel) runStatement(n ast.Node) string {
 		k.bind(b.Pat.Name, b.Pat.T)
 		k.values[b.Pat.Name] = v
 		lines = append(lines,
-			k.config.prettyBinding(b.Pat.Name, v, b.Pat.T))
+			k.config.prettyBinding(b.Pat.Name, v, b.Pat.T,
+				b.Pat.SurfaceT))
 	}
 	k.recordInlineExp(inlined)
 	return strings.Join(lines, "\n")

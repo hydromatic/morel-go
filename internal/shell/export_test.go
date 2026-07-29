@@ -27,7 +27,7 @@ import (
 func PrettyBindingForTest(c Config, name string, v eval.Val,
 	t types.Type,
 ) string {
-	return c.prettyBinding(name, v, t)
+	return c.prettyBinding(name, v, t, nil)
 }
 
 func FormatRealForTest(f float32) string {

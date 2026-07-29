@@ -20,6 +20,7 @@ package types
 import (
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/hydromatic/morel-go/internal/ast"
@@ -33,6 +34,17 @@ type System struct {
 	tycons    map[string]TyCon
 	conCount  map[string]int
 	aliases   map[string]Alias
+
+	// A datatype has an internal name that is unique to its
+	// declaration, so a later declaration that reuses the name does
+	// not conflate the two: the first "d" is "d", a redefinition is
+	// "d~2", and so on. datatypeKey maps a source name to the
+	// internal name it currently refers to; datatypeGen counts how
+	// many times a source name has been declared. A datatype whose
+	// source name now maps to a different internal name is displaced
+	// and renders as "?.d".
+	datatypeKey map[string]string
+	datatypeGen map[string]int
 
 	Bool   Type
 	Char   Type
@@ -57,11 +69,13 @@ type TyCon struct {
 // registered.
 func NewSystem() *System {
 	s := &System{
-		byKey:     map[string]Type{},
-		datatypes: map[string]int{},
-		tycons:    map[string]TyCon{},
-		conCount:  map[string]int{},
-		aliases:   map[string]Alias{},
+		byKey:       map[string]Type{},
+		datatypes:   map[string]int{},
+		tycons:      map[string]TyCon{},
+		conCount:    map[string]int{},
+		aliases:     map[string]Alias{},
+		datatypeKey: map[string]string{},
+		datatypeGen: map[string]int{},
 	}
 	prim := func(name string) Type {
 		t := &Primitive{typeBase{name}}
@@ -79,20 +93,71 @@ func NewSystem() *System {
 }
 
 // DatatypeArity returns the number of type parameters of a
-// registered datatype.
+// registered datatype. name may be a source name (resolved to the
+// datatype it currently refers to) or an internal name.
 func (s *System) DatatypeArity(name string) (int, bool) {
+	if internal, ok := s.datatypeKey[name]; ok {
+		return s.datatypes[internal], true
+	}
 	arity, ok := s.datatypes[name]
 	return arity, ok
 }
 
-// DeclareDatatype registers a datatype and its arity. A
-// zero-arity datatype is interned immediately so that Lookup
-// finds it.
-func (s *System) DeclareDatatype(name string, arity int) {
-	s.datatypes[name] = arity
-	if arity == 0 {
-		s.Named(name)
+// DatatypeInternal returns the internal name a source name
+// currently refers to (e.g. "d" or "d~2"), with its arity. A name
+// that is already an internal name resolves to itself.
+func (s *System) DatatypeInternal(name string) (string, int, bool) {
+	if internal, ok := s.datatypeKey[name]; ok {
+		return internal, s.datatypes[internal], true
 	}
+	if arity, ok := s.datatypes[name]; ok {
+		return name, arity, true
+	}
+	return "", 0, false
+}
+
+// DeclareDatatype registers a datatype and its arity, returning its
+// internal name: the source name for a first declaration, or a
+// suffixed name ("d~2", ...) for one that reuses a name. A
+// zero-arity datatype is interned immediately so that Lookup finds
+// it.
+func (s *System) DeclareDatatype(name string, arity int) string {
+	gen := s.datatypeGen[name] + 1
+	s.datatypeGen[name] = gen
+	internal := name
+	if gen > 1 {
+		internal = name + "~" + strconv.Itoa(gen)
+	}
+	s.datatypeKey[name] = internal
+	s.datatypes[internal] = arity
+	// A datatype takes over the name from any alias that held it.
+	delete(s.aliases, name)
+	if arity == 0 {
+		s.Named(internal)
+	}
+	return internal
+}
+
+// DatatypeDisplay returns how a datatype's internal name is shown to
+// the user: its source name, or "?.d" if the name now refers to a
+// different datatype. A name that is not a datatype is returned
+// unchanged.
+func (s *System) DatatypeDisplay(internal string) string {
+	if _, ok := s.datatypes[internal]; !ok {
+		return internal
+	}
+	// The source name strips the redefinition suffix ("d~2" -> "d").
+	src, _, _ := strings.Cut(internal, "~")
+	// The name is displaced if it now resolves to something else: an
+	// alias takes precedence over a datatype, and a later datatype
+	// takes over the name outright.
+	if _, isAlias := s.aliases[src]; isAlias {
+		return "?." + src
+	}
+	if current, ok := s.datatypeKey[src]; ok && current != internal {
+		return "?." + src
+	}
+	return src
 }
 
 // Alias is a type alias's definition: its type parameters and the

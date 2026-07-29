@@ -48,15 +48,20 @@ const (
 // if it fits flat there. This matches how SML/NJ lays out a
 // binding.
 func (c *Config) prettyBinding(name string, v eval.Val,
-	t types.Type,
+	t, displayT types.Type,
 ) string {
+	// displayT is the type to print (the surface type, keeping an
+	// alias name); the value is still laid out by its real type t.
+	if displayT == nil {
+		displayT = t
+	}
 	if c.props["output"] == outputTabular {
 		if s, ok := c.tabularBinding(name, v, t); ok {
 			return s
 		}
 	}
 	valueDoc := c.valueDoc(t, v, 1)
-	typeDoc := c.typeDoc(t)
+	typeDoc := c.typeDoc(displayT)
 	if vr, ok := v.(eval.Variant); ok {
 		vt, _ := vr.Type.(types.Type)
 		typeDoc = pp.Beside(c.typeDoc(vt), pp.Text(" variant"))
@@ -296,7 +301,29 @@ func (c *Config) typeDoc(t types.Type) pp.Doc {
 		if t.Name == bagType && len(t.Args) == 1 {
 			return c.collectionTypeDoc(t.Args[0], bagType)
 		}
-		return pp.Text(t.String())
+		// Map a datatype's internal name to its display name, which
+		// becomes "?.d" when the name has been taken over. Arguments
+		// render through typeDoc, so a nested datatype maps too.
+		name := t.Name
+		if c.sys != nil {
+			name = c.sys.DatatypeDisplay(t.Name)
+		}
+		switch len(t.Args) {
+		case 0:
+			return pp.Text(name)
+		case 1:
+			return c.collectionTypeDoc(t.Args[0], name)
+		default:
+			items := make([]pp.Doc, len(t.Args))
+			for i, arg := range t.Args {
+				items[i] = c.typeDoc(arg)
+				if i < len(t.Args)-1 {
+					items[i] = pp.Beside(items[i], pp.Text(","))
+				}
+			}
+			return pp.Beside(pp.Concat(pp.Text("("),
+				pp.Concat(items...), pp.Text(") ")), pp.Text(name))
+		}
 	case *types.Record:
 		return c.recordTypeDoc(t)
 	case *types.Tuple:
