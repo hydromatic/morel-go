@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/hydromatic/morel-go/internal/ast"
 	"github.com/hydromatic/morel-go/internal/token"
@@ -1486,6 +1487,10 @@ func (r *typeResolver) deduceLiteral(node ast.Node, kind ast.Op,
 	case ast.BoolLiteralOp:
 		name = boolName
 	case ast.CharLiteralOp, ast.CharLiteralPatOp:
+		err := checkCharLiteral(node, value)
+		if err != nil {
+			return err
+		}
 		name = "char"
 	case ast.IntLiteralOp, ast.IntLiteralPatOp:
 		err := checkIntRange(node, value)
@@ -1509,6 +1514,24 @@ func (r *typeResolver) deduceLiteral(node ast.Node, kind ast.Op,
 		}
 	}
 	r.regEquiv(node, v, r.primTerm(name))
+	return nil
+}
+
+// checkCharLiteral rejects a character constant that does not
+// contain exactly one character. The parser stores the constant's
+// unquoted content (empty for #"", "ab" for #"ab"); a valid
+// constant is exactly one character. The message is Standard ML's
+// wording. The check runs here, at type resolution, so an invalid
+// constant is reported as a positioned error before core building
+// would try to read its first rune, whether the constant is used
+// as an expression or a pattern.
+func checkCharLiteral(node ast.Node, value string) error {
+	if utf8.RuneCountInString(value) != 1 {
+		return &Error{
+			Span: node.Span(),
+			Msg:  "character constant not length one",
+		}
+	}
 	return nil
 }
 

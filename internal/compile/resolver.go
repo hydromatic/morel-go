@@ -1694,7 +1694,16 @@ func literalValue(kind ast.Op, text string) (any, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch kind {
 	case ast.CharLiteralOp, ast.CharLiteralPatOp:
-		return []rune(text)[0], nil
+		// A constant that is not exactly one character is rejected
+		// earlier, at type resolution (see checkCharLiteral); guard
+		// here too so a stray bad literal cannot index out of range.
+		runes := []rune(text)
+		if len(runes) != 1 {
+			return nil, &Error{
+				Msg: "character constant not length one",
+			}
+		}
+		return runes[0], nil
 	case ast.IntLiteralOp, ast.IntLiteralPatOp:
 		i, err := strconv.ParseInt(
 			strings.ReplaceAll(text, "~", "-"), 10, 32,
