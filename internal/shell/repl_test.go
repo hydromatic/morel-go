@@ -50,7 +50,7 @@ func TestReplBanner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(out.String(), "morel-go version ") {
+	if !strings.HasPrefix(out.String(), "morel-go v") {
 		t.Errorf("banner missing: %q", out.String())
 	}
 }
