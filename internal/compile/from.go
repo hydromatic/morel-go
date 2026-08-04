@@ -65,9 +65,18 @@ func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 	if err != nil {
 		return err
 	}
+	// An "ordinal" is legal only in an ordered step; each step is
+	// typed with r.stepOrd set to its orderedness. Save and restore
+	// it so a nested query does not disturb an enclosing one.
+	savedStepOrd := r.stepOrd
+	defer func() { r.stepOrd = savedStepOrd }()
 	st := &fromState{r: r, rootEnv: rootEnv, env: rootEnv}
 	steps := from.Steps
 	for i := 0; i < len(steps); i++ {
+		// A step's "ordinal" refers to the position within the input
+		// so far, so its orderedness is the query's before this step
+		// runs ("order" makes the step itself ordered only afterwards).
+		r.stepOrd = r.orDefaultOrd(st.ord)
 		// A "group" absorbs the "compute" that follows it, so the
 		// aggregates are typed over the pre-group rows.
 		if g, ok := steps[i].(*ast.GroupStep); ok {

@@ -558,6 +558,11 @@ from e in emps
 >    {name="Scooby",`ordinal`=6},{name="Scooby",`ordinal`=7}]
 >   : {name:string, `ordinal`:int} list
 
+(*) 'ordinal' cannot be used in an unordered query
+from e in emps, i in bag [1]
+  yield {ordinal, e.name};
+> stdIn:2.10-2.17 Error: cannot use 'ordinal' in unordered query
+>   raised at: stdIn:2.10-2.17
 from e in emps, i in bag [1]
   order e.deptno
   yield {ordinal, e.name};
@@ -597,6 +602,11 @@ from i in [3,1,4,5,3,5,8,9,7]
   where i > 5
   where ordinal > 1;
 > val it = [{i=7,`ordinal`=8}] : {i:int, `ordinal`:int} list
+
+from e in scott.emps
+  yield {e.ename, e.sal, rank = ordinal + 1};
+> stdIn:2.33-2.40 Error: cannot use 'ordinal' in unordered query
+>   raised at: stdIn:2.33-2.40
 
 (* In the following query, the query becomes unordered after
    the join with the unordered `scott.depts` table, but we can

@@ -603,6 +603,11 @@ from d in [{a=1,b=true}], i in [2] yield {d} yield a;
 > val it : string list
 
 :t
+from i in bag [1,2,3,4,5] yield i + ordinal;
+> stdIn:1.37-1.44 Error: cannot use 'ordinal' in unordered query
+>   raised at: stdIn:1.37-1.44
+
+:t
 from i in [1,2,3,4,5] take current;
 > stdIn:1.28-1.35 Error: 'current' is only valid in a query
 >   raised at: stdIn:1.28-1.35

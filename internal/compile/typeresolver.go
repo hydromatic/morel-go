@@ -139,6 +139,10 @@ func Deduce(sys *types.System, bindings []Binding,
 		if err != nil {
 			return nil, err
 		}
+		err = r.checkOrdinalOrder(subst)
+		if err != nil {
+			return nil, err
+		}
 		return &Resolved{Decl: decl2, TypeMap: typeMap}, nil
 	}
 }
@@ -343,6 +347,25 @@ func (r *typeResolver) checkNumericOperators(m *TypeMap) error {
 	return nil
 }
 
+// checkOrdinalOrder checks every use of "ordinal" now that
+// unification has resolved the orderedness of its enclosing step.
+// "ordinal" numbers rows by their position, so it is meaningful
+// only in an ordered step (a list); using it where the step is
+// unordered (a bag) is an error.
+func (r *typeResolver) checkOrdinalOrder(
+	subst *unify.Substitution,
+) error {
+	for _, use := range r.ordinalUses {
+		if !isOrderedAtom(subst.Resolve(use.ord)) {
+			return &Error{
+				Span: use.span,
+				Msg:  "cannot use 'ordinal' in unordered query",
+			}
+		}
+	}
+	return nil
+}
+
 // patTerm records that a declaration binds a name to a term; the
 // caller adds the name to the environment.
 type patTerm struct {
@@ -385,6 +408,22 @@ type typeResolver struct {
 	// aggregates and "elements" are valid only inside one, and
 	// aggregate over the innermost frame's pre-group rows.
 	computeFrames []*computeFrame
+	// stepOrd is the orderedness of the query step currently being
+	// typed, captured when an "ordinal" is used so its legality can
+	// be checked once unification has resolved that orderedness.
+	stepOrd unify.Term
+	// ordinalUses records each "ordinal" reference and the
+	// orderedness of the step it appears in; "ordinal" is positional,
+	// so it is only valid where that orderedness is a list.
+	ordinalUses []ordinalUse
+}
+
+// ordinalUse is one reference to "ordinal": the orderedness of the
+// enclosing query step and the position of the keyword, checked
+// after unification.
+type ordinalUse struct {
+	ord  unify.Term
+	span token.Span
 }
 
 // computeFrame is one enclosing compute clause: the pre-group
@@ -1368,6 +1407,13 @@ func (r *typeResolver) deduceID(env typeEnv, id *ast.ID,
 	v *unify.Var,
 ) error {
 	term, ok := env.get(r, id.Name)
+	if ok && id.Name == ordinalName && r.stepOrd != nil {
+		// "ordinal" is positional, so it is only valid in an ordered
+		// step. The step's orderedness is not yet resolved, so defer
+		// the check until unification has run.
+		r.ordinalUses = append(r.ordinalUses,
+			ordinalUse{ord: r.stepOrd, span: id.Span()})
+	}
 	if !ok {
 		tc, isCon := r.sys.LookupTyCon(id.Name)
 		if !isCon {
