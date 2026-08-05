@@ -28,6 +28,8 @@ Sys.set ("stringDepth", ~1);
 (*) Enable functions in the 'Test' structure.
 Sys.set ("excludeStructures", "");
 > val it = () : unit
+Sys.clearEnv ();
+> val it = () : unit
 
 (* -------------------------------------------------------------------
  * Example based on "A Second Look at Overloading" by Martin Odersky,
@@ -51,6 +53,13 @@ val inst second = fn (x, y, z) => y;
 > val second = fn : 'a * 'b * 'c -> 'b
 val inst third = fn (x, y, z) => z;
 > val third = fn : 'a * 'b * 'c -> 'c
+
+(* The same, but defining and using 'demo' within a single 'let' (the exact
+ * example from "A Second Look at Overloading"); this combines
+ * let-polymorphism with qualified types. We clear the environment first so
+ * that 'first' and 'second' are not also overloaded at top level. *)
+Sys.clearEnv ();
+> val it = () : unit
 
 (* -------------------------------------------------------------------
  * A qualified value can be aliased, and can be used inside another
@@ -105,6 +114,12 @@ o1a true;
 > val it = false : bool
 o1a 1;
 > val it = 18 : int
+
+(* As previous, but with an empty environment. The number of variables in the
+ * environment can cause subtle differences in behavior, so we test it both
+ * ways. *)
+Sys.clearEnv ();
+> val it = () : unit
 over o0;
 > over o0
 val inst o0 = fn NONE => [] | SOME x => [x];

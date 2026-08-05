@@ -128,6 +128,11 @@ type Kernel struct {
 	// them.
 	bootBindings []compile.Binding
 	bootValues   map[string]eval.Val
+	// initBindings and initValues snapshot the freshly initialized
+	// environment — the built-ins plus the global datasets, but no
+	// user bindings; Sys.clearEnv restores the session to them.
+	initBindings []compile.Binding
+	initValues   map[string]eval.Val
 	// gaps counts the not-yet-implemented errors and panics that
 	// suppression hid, by message — the inventory of what running
 	// the input would need. Gaps reports it; gapSample keeps the
@@ -231,6 +236,11 @@ func NewKernel(name string) *Kernel {
 	k.bootBindings = slices.Clone(k.bindings)
 	k.bootValues = maps.Clone(values)
 	k.loadScott()
+	// Snapshot the initialized environment — built-ins plus the
+	// global datasets, no user bindings or overloads — so
+	// Sys.clearEnv can restore exactly it.
+	k.initBindings = slices.Clone(k.bindings)
+	k.initValues = maps.Clone(k.values)
 	return k
 }
 
@@ -325,6 +335,19 @@ func (k *Kernel) Execute(stmt string) string {
 		}
 	}
 	return k.executeStatement(n)
+}
+
+// clearEnv resets the session to its freshly initialized state:
+// it drops every user binding, value, and overload, restoring
+// the built-ins and global datasets snapshotted at construction.
+func (k *Kernel) clearEnv() {
+	k.bindings = slices.Clone(k.initBindings)
+	k.values = maps.Clone(k.initValues)
+	k.overloads = compile.NewOverloadEnv()
+	k.inlineExps = map[string]core.Exp{}
+	k.recFns = map[string]*core.Fn{}
+	k.lastCode = nil
+	k.planExDecl = nil
 }
 
 // recordGap counts a suppressed message and keeps the statement

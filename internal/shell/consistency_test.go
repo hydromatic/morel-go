@@ -74,7 +74,6 @@ func TestStructLibStructuresComplete(t *testing.T) {
 // here; an implemented member must be removed from the list.
 func TestUnimplementedMembers(t *testing.T) {
 	want := []string{
-		"Sys.clearEnv",
 		"Sys.file",
 	}
 	got := shell.UnimplementedMembersForTest()
