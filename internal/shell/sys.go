@@ -153,6 +153,7 @@ func intPropDefault(name string) int {
 // top-level aliases, for NewKernel to inject.
 func (k *Kernel) sysBuiltins() map[string]eval.Val {
 	m := map[string]eval.Val{
+		"Sys.clearEnv":          eval.Fn(k.sysClearEnv),
 		"Sys.colorSchemes":      eval.Fn(k.sysColorSchemes),
 		"Sys.deduceColorScheme": eval.Fn(k.sysDeduceColorScheme),
 		"Sys.env":               eval.Fn(k.sysEnv),
@@ -181,6 +182,7 @@ func (k *Kernel) sysBuiltins() map[string]eval.Val {
 			return eval.DateLocalOffset(k.timeZone(), k.nowTime()), nil
 		}),
 	}
+	m["clearEnv"] = m["Sys.clearEnv"]
 	m["env"] = m["Sys.env"]
 	m["plan"] = m["Sys.plan"]
 	m["planEx"] = m["Sys.planEx"]
@@ -205,6 +207,14 @@ func (k *Kernel) sysPlanEx(arg eval.Val) (eval.Val, error) {
 	d := compile.Replan(k.planExDecl, k.inlineEnv(), k.sys,
 		k.recFns, k.inlinePassCount(), phase)
 	return compile.UnparseDecl(k.sys, d), nil
+}
+
+// sysClearEnv is "Sys.clearEnv ()": it resets the session
+// environment to its freshly initialized state — dropping every
+// user binding, value, and overload — and returns unit.
+func (k *Kernel) sysClearEnv(eval.Val) (eval.Val, error) {
+	k.clearEnv()
+	return core.Unit{}, nil
 }
 
 // sysPlan is "Sys.plan ()": the compiled plan of the most

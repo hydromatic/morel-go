@@ -47,6 +47,12 @@ val (w,z) = ("four","five");
 List.last (Sys.env());
 > val it = ("z","string") : string * string
 
+(*) Clear the environment.
+Sys.clearEnv();
+> val it = () : unit
+List.last (Sys.env());
+> val it = ("vector","forall 'a. 'a list -> 'a vector") : string * string
+
 (* -------------------------------------------------------------------
  * Setting properties whose values are enums
  *)
@@ -167,6 +173,15 @@ it 5;
 > val it = [1,2,3,4] : int list
 (op @) ([1,2],[3,4]);
 > val it = [1,2,3,4] : int list
+
+(* Error messages ----------------------------------------------------
+ * Unbound-variable errors include the source position.
+ * Single-character identifiers produce a single-column position;
+ * longer identifiers produce * a column range.
+ *)
+val x = z;
+> stdIn:1.9 Error: unbound variable or constructor: z
+>   raised at: stdIn:1.9
 val x = abc;
 > stdIn:1.9-1.12 Error: unbound variable or constructor: abc
 >   raised at: stdIn:1.9-1.12
@@ -187,9 +202,13 @@ Test.foo 1;
 (*) After setting excludeStructures to "", Test is visible.
 Sys.set ("excludeStructures", "");
 > val it = () : unit
+Sys.clearEnv ();
+> val it = () : unit
 
 (*) After unsetting excludeStructures, Test is excluded again.
 Sys.unset "excludeStructures";
+> val it = () : unit
+Sys.clearEnv ();
 > val it = () : unit
 Test.foo 1;
 > stdIn:1.1-1.5 Error: unbound variable or constructor: Test
