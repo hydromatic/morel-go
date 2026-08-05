@@ -60,9 +60,10 @@ type Resolved struct {
 }
 
 // Deduce infers a type for every node of a declaration, in an
-// environment given by bindings.
+// environment given by bindings and by the overloaded names
+// declared so far (overloads may be nil).
 func Deduce(sys *types.System, bindings []Binding,
-	decl ast.Decl,
+	overloads *OverloadEnv, decl ast.Decl,
 ) (*Resolved, error) {
 	r := &typeResolver{
 		sys:      sys,
@@ -78,6 +79,7 @@ func Deduce(sys *types.System, bindings []Binding,
 		env = &bindingTypeEnv{parent: env, bindings: byName}
 		r.bindings = byName
 	}
+	env = r.overloadEnv(env, overloads)
 	var termMap []patTerm
 	decl2, err := r.deduceDecl(env, decl, &termMap)
 	if err != nil {
@@ -146,6 +148,27 @@ func Deduce(sys *types.System, bindings []Binding,
 		}
 		return &Resolved{Decl: decl2, TypeMap: typeMap}, nil
 	}
+}
+
+// overloadEnv wraps env with a layer per overloaded name and one
+// per registered instance, so a use resolves against the instances
+// declared in earlier statements. Each instance gets a fresh
+// variable equated to its (polymorphic) type. overloads may be nil.
+func (r *typeResolver) overloadEnv(env typeEnv,
+	overloads *OverloadEnv,
+) typeEnv {
+	if overloads == nil {
+		return env
+	}
+	for name, insts := range overloads.instances {
+		env = &overTypeEnv{parent: env, name: name}
+		for _, inst := range insts {
+			v := r.u.Variable()
+			r.equiv(v, r.typeTerm(inst.Type, map[int]*unify.Var{}))
+			env = &instTypeEnv{parent: env, name: name, v: v}
+		}
+	}
+	return env
 }
 
 // numericCall is an application of an overloaded numeric
@@ -861,7 +884,7 @@ func (r *typeResolver) deduceValDecl(env typeEnv,
 			if !ok {
 				return nil, &Error{
 					Span: b.Span(),
-					Msg:  "cannot convert to core: val inst",
+					Msg:  cannotConvertValInst,
 				}
 			}
 			vPat := r.u.Variable()

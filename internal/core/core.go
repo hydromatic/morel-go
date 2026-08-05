@@ -429,6 +429,11 @@ type NonRecValDecl struct {
 	Pat  Pat
 	Exp  Exp
 	Span token.Span
+	// Overload, when non-empty, is the overloaded name this
+	// declaration is an instance of ("val inst name = e"). Pat then
+	// binds a generated hidden name, but the declaration echoes as
+	// "val <Overload> = ...".
+	Overload string
 }
 
 // Op implements Decl.
@@ -446,3 +451,16 @@ type RecValDecl struct {
 func (*RecValDecl) Op() ast.Op { return ast.ValDeclOp }
 
 func (*RecValDecl) decl() {}
+
+// OverDecl is an overloaded-name declaration, "over name". In
+// Milestone 1 it binds nothing at runtime; it only echoes
+// "over name". Instances ("val inst") and use-site resolution
+// follow in later milestones.
+type OverDecl struct {
+	Name string
+}
+
+// Op implements Decl.
+func (*OverDecl) Op() ast.Op { return ast.OverDeclOp }
+
+func (*OverDecl) decl() {}

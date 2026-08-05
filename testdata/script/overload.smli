@@ -1,0 +1,282 @@
+(*
+ * Licensed to Julian Hyde under one or more contributor license
+ * agreements.  See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Julian Hyde licenses this file to you under the Apache
+ * License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License.  You may obtain a
+ * copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.  See the License for the specific
+ * language governing permissions and limitations under the
+ * License.
+ *
+ * Tests for operator overloading.
+ *)
+Sys.set ("lineWidth", 78);
+> val it = () : unit
+Sys.set ("printLength", 64);
+> val it = () : unit
+Sys.set ("stringDepth", ~1);
+> val it = () : unit
+
+(*) Enable functions in the 'Test' structure.
+Sys.set ("excludeStructures", "");
+> val it = () : unit
+
+(* -------------------------------------------------------------------
+ * Example based on "A Second Look at Overloading" by Martin Odersky,
+ * Philip Wadler, Martin Wehr (1995).
+ *)
+over first;
+> over first
+over second;
+> over second
+over third;
+> over third
+
+val inst first = fn (x, y) => x;
+> val first = fn : 'a * 'b -> 'a
+val inst second = fn (x, y) => y;
+> val second = fn : 'a * 'b -> 'b
+
+val inst first = fn (x, y, z) => x;
+> val first = fn : 'a * 'b * 'c -> 'a
+val inst second = fn (x, y, z) => y;
+> val second = fn : 'a * 'b * 'c -> 'b
+val inst third = fn (x, y, z) => z;
+> val third = fn : 'a * 'b * 'c -> 'c
+
+(* -------------------------------------------------------------------
+ * A qualified value can be aliased, and can be used inside another
+ * qualified value; the dictionaries are forwarded. *)
+over inc;
+> over inc
+val inst inc = fn i: int => i + 1;
+> val inc = fn : int -> int
+val inst inc = fn b: bool => not b;
+> val inc = fn : bool -> bool
+
+(* -------------------------------------------------------------------
+ * Two overloads, bool -> bool and int -> int. We call with bool argument,
+ * expect bool result. *)
+let
+  over o1
+  val inst o1 = fn i: int => i
+  val inst o1 = fn b: bool => b
+in
+  o1 false
+end;
+> val it = false : bool
+
+(* Same overloads as previous, call with int argument, get int result. *)
+let
+  over o1
+  val inst o1 = fn i: int => i
+  val inst o1 = fn b: bool => b
+in
+  o1 1
+end;
+> val it = 1 : int
+
+(* All of the above. *)
+let
+  over o1
+  val inst o1 = fn i: int => i
+  val inst o1 = fn b: bool => b
+in
+  (o1 true, o1 2, o1 false)
+end;
+> val it = (true,2,false) : bool * int * bool
+
+(* As previous, but at top level. *)
+over o1a;
+> over o1a
+val inst o1a = fn i: int => i + 17;
+> val o1a = fn : int -> int
+val inst o1a = fn b: bool => not b;
+> val o1a = fn : bool -> bool
+o1a true;
+> val it = false : bool
+o1a 1;
+> val it = 18 : int
+over o0;
+> over o0
+val inst o0 = fn NONE => [] | SOME x => [x];
+> val o0 = fn : 'a option -> 'a list
+val inst o0 = fn list => List.null list;
+> val o0 = fn : 'a list -> bool
+
+(* -------------------------------------------------------------------
+ * Two overloads, bool -> int and string -> bool list. We require that a_list
+ * is a list, so working backwards, arg must be an string. *)
+(* TODO
+fn arg =>
+  let
+    over o3
+    val inst o3 = fn b: bool => if b then 1 else 0
+    val inst o3 = fn s: string => [true]
+    val a_list = o3 arg
+  in
+    List.length a_list
+  end;
+> val it = fn : 'a -> int
+*)
+(* TODO Previous should be
+> val it = fn : string -> int
+*)
+
+(* -------------------------------------------------------------------
+ * Very simple case. 'o4', when applied to an option, yields a list of the
+ * same type; and, when applied to a list, returns whether the list is
+ * empty. *)
+let
+  over o4
+  val inst o4 = fn NONE => [] | SOME x => [x]
+  val inst o4 = fn a_list => List.null a_list
+in
+  o4 (SOME 1)
+end;
+> val it = [1] : int list
+
+let
+  over o4
+  val inst o4 = fn NONE => [] | SOME x => [x]
+  val inst o4 = fn a_list => List.null a_list
+in
+  o4 [["abc", "def"], []]
+end;
+> val it = false : bool
+
+let
+  over o4
+  val inst o4 = fn NONE => [] | SOME x => [x]
+  val inst o4 = fn a_list => List.null a_list
+in
+  o4 (SOME (1, "abc"))
+end;
+> val it = [(1,"abc")] : (int * string) list
+
+let
+  over o4
+  val inst o4 = fn NONE => [] | SOME x => [x];
+  val inst o4 = fn a_list => List.null a_list;
+in
+  o4 (SOME (1, false))
+end;
+> val it = [(1,false)] : (int * bool) list
+
+(* As previous, but at top level. *)
+over o4a;
+> over o4a
+val inst o4a = fn NONE => [] | SOME x => [x];
+> val o4a = fn : 'a option -> 'a list
+val inst o4a = fn list => List.null list;
+> val o4a = fn : 'a list -> bool
+(* TODO
+o4a;
+> val it = fn : 'a list -> bool
+*)
+o4a (SOME 1);
+> val it = [1] : int list
+
+(* -------------------------------------------------------------------
+ * The 'unorder' operator will help us mix lists and bags in queries. *)
+
+(* A type similar to the built-in 'bag', and a function to convert any list to
+   a multiset. *)
+datatype 'a multiset =
+    MULTI_NIL
+  | MULTI_CONS of ('a * 'a multiset);
+> datatype 'a multiset = MULTI_NIL | MULTI_CONS of 'a * 'a multiset
+fun listToMultiset [] = MULTI_NIL
+  | listToMultiset (h :: t) = MULTI_CONS (h, listToMultiset t);
+> val listToMultiset = fn : 'a list -> 'a multiset
+
+(* Declare that 'unsort' is overloaded. *)
+over unsort;
+> over unsort
+
+val inst unsort = fn SOME x => [x] | NONE => [];
+> val unsort = fn : 'a option -> 'a list
+unsort (SOME 1);
+> val it = [1] : int list
+
+(* Declare an instance of 'unsort' that converts a list to a multiset. *)
+val inst unsort = fn aList => listToMultiset aList;
+> val unsort = fn : 'a list -> 'a multiset
+unsort [1, 2];
+> val it = MULTI_CONS (1,MULTI_CONS (2,MULTI_NIL)) : int multiset
+
+(* Declare an instance of 'unsort' that leaves a multiset as a multiset. *)
+val inst unsort = fn aBag: 'a multiset => aBag;
+> val unsort = fn : 'a multiset -> 'a multiset
+unsort (MULTI_CONS (1, MULTI_CONS (2, MULTI_NIL)));
+> val it = MULTI_CONS (1,MULTI_CONS (2,MULTI_NIL)) : int multiset
+
+(*) The list variant still works.
+unsort [4];
+> val it = MULTI_CONS (4,MULTI_NIL) : int multiset
+
+(* -------------------------------------------------------------------
+ * The 'scan' operator allows us to read lists and bags. *)
+over scan;
+> over scan
+val inst scan = fn aBag: 'a bag => aBag;
+> val scan = fn : 'a bag -> 'a bag
+val inst scan = fn aList: 'a list => aList;
+> val scan = fn : 'a list -> 'a list
+scan (bag [1]);
+> val it = [1] : int bag
+
+(* -------------------------------------------------------------------
+ * An overloaded aggregate function is resolved based on whether the input is
+ * ordered. *)
+over overAgg;
+> over overAgg
+val inst overAgg = fn bag => if Bag.length bag < 0 then "" else "bag";
+> val overAgg = fn : 'a bag -> string
+val inst overAgg = fn list => if List.length list < 0 then "" else "list";
+> val overAgg = fn : 'a list -> string
+
+(* A non-overloaded aggregate function can adapt.
+ * 1. List agg applied to list *)
+from i in [1, 2, 3]
+  compute List.hd over i;
+> val it = 1 : int
+(*) 4. Bag agg applied to bag
+from i in bag [1, 2, 3]
+  compute Bag.hd over i;
+> val it = 1 : int
+
+(*) A user-defined aggregate works regardless of its collection kind.
+let
+  fun count_list list = List.length list
+  fun count_bag bag = Bag.length bag
+  val emps = [
+      {id = 100, name = "Fred", deptno = 10},
+      {id = 101, name = "Velma", deptno = 20},
+      {id = 102, name = "Shaggy", deptno = 30},
+      {id = 103, name = "Scooby", deptno = 30}]
+in
+  from e in emps
+    group e.deptno
+      compute {c1 = count_list over (), c2 = count_bag over ()}
+    order deptno
+end;
+> val it = [{c1=1,c2=1,deptno=10},{c1=1,c2=1,deptno=20},{c1=2,c2=2,deptno=30}]
+>   : {c1:int, c2:int, deptno:int} list
+
+(*) Non-overloaded aggregates adapt via into
+from i in [1, 2, 3] into List.hd;
+> val it = 1 : int
+
+from i in bag [1, 2, 3] into Bag.hd;
+> val it = 1 : int
+
+(*) End overload.smli

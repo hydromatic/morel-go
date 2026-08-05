@@ -1099,6 +1099,7 @@ func (c *compiler) compileRangeMember(e *core.Apply) (eval.Code,
 func (c *compiler) compileLet(let *core.Let, tail bool) (eval.Code,
 	error,
 ) {
+	// lint: sort until '^\t}' where '^\tcase '
 	switch d := let.Decl.(type) {
 	case *core.NonRecValDecl:
 		init, err := c.compileExp(d.Exp)
@@ -1114,6 +1115,12 @@ func (c *compiler) compileLet(let *core.Let, tail bool) (eval.Code,
 			return nil, err
 		}
 		return eval.Let(pat, init, body, d.Span), nil
+	case *core.OverDecl:
+		// An "over name" declaration inside a let introduces an
+		// overloaded name but binds nothing at runtime; it is a no-op,
+		// so compile the body directly. Its instances ("val inst") are
+		// separate NonRecValDecl bindings the body already sees.
+		return c.compileBody(let.Exp, tail)
 	case *core.RecValDecl:
 		for _, bind := range d.Binds {
 			if idPat, ok := bind.Pat.(*core.IDPat); ok {

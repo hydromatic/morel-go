@@ -142,6 +142,10 @@ type Kernel struct {
 	pendingLines []string
 	// useDepth is the current nesting depth of "use" calls.
 	useDepth int
+	// overloads is the registry of overloaded names ("over") and
+	// their instances ("val inst"), carried across statements so a
+	// use resolves against every instance declared so far.
+	overloads *compile.OverloadEnv
 }
 
 // NewKernel returns a kernel; name (e.g. "stdIn" or a file name)
@@ -174,6 +178,7 @@ func NewKernel(name string) *Kernel {
 		inlineExps: map[string]core.Exp{},
 		recFns:     map[string]*core.Fn{},
 		gapSample:  map[string]string{},
+		overloads:  compile.NewOverloadEnv(),
 	}
 	// Method overloads that the signature files cannot express (a
 	// record has one field per name): Range.contains dispatched on
@@ -396,11 +401,11 @@ type scopeBind struct {
 func (k *Kernel) evalDecl(bindings []compile.Binding,
 	values map[string]eval.Val, decl ast.Decl,
 ) []scopeBind {
-	resolved, err := compile.Deduce(k.sys, bindings, decl)
+	resolved, err := compile.Deduce(k.sys, bindings, nil, decl)
 	if err != nil {
 		panic(err)
 	}
-	coreDecl, err := compile.Resolve(resolved)
+	coreDecl, err := compile.Resolve(resolved, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -595,7 +600,7 @@ func (k *Kernel) runStatement(n ast.Node) string {
 		return ast.UnparseSignatureDecl(sigDecl)
 	}
 	k.methods.RewriteDecl(decl)
-	resolved, err := compile.Deduce(k.sys, k.bindings, decl)
+	resolved, err := compile.Deduce(k.sys, k.bindings, k.overloads, decl)
 	if err != nil {
 		return k.formatCompileError(err)
 	}
@@ -622,13 +627,27 @@ func (k *Kernel) runStatement(n ast.Node) string {
 		return ast.UnparseTypeDecl(ast.NewTypeDecl(typeDecl.Span(),
 			binds))
 	}
-	coreDecl, err := compile.Resolve(resolved)
+	coreDecl, err := compile.Resolve(resolved, k.overloads)
 	if err != nil {
 		return k.formatCompileError(err)
+	}
+	if overDecl, isOver := coreDecl.(*core.OverDecl); isOver {
+		// An "over name" declaration introduces an overloaded name.
+		// It binds nothing at runtime and echoes "over name"; later
+		// "val inst" declarations add instances to it.
+		k.overloads.Declare(overDecl.Name)
+		return "over " + overDecl.Name
 	}
 	warnings, covErr := compile.CheckCoverage(k.sys, coreDecl)
 	if covErr != nil {
 		return k.formatCompileError(covErr)
+	}
+	// A "val inst" instance binds a generated hidden name but echoes
+	// under the overloaded name; capture it before optimization,
+	// which does not carry the marker.
+	instName := ""
+	if nv, ok := coreDecl.(*core.NonRecValDecl); ok {
+		instName = nv.Overload
 	}
 	if !isPlanCall(coreDecl) {
 		// A Sys.plan or Sys.planEx call must not replace the
@@ -693,6 +712,16 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	}
 	for _, b := range compiled.Binds {
 		v := frame.Slots[b.Slot]
+		if instName != "" {
+			// The hidden binding is needed at runtime (a use compiles
+			// to a reference to it), but it is not a user-visible name;
+			// echo the overloaded name instead.
+			k.values[b.Pat.Name] = v
+			lines = append(lines,
+				k.config.prettyBinding(instName, v, b.Pat.T,
+					b.Pat.SurfaceT))
+			continue
+		}
 		k.bind(b.Pat.Name, b.Pat.T)
 		k.values[b.Pat.Name] = v
 		lines = append(lines,
@@ -898,7 +927,7 @@ func (k *Kernel) executeTypeOnly(src string) string {
 		return ast.UnparseSignatureDecl(sigDecl)
 	}
 	k.methods.RewriteDecl(decl)
-	resolved, err := compile.Deduce(k.sys, k.bindings, decl)
+	resolved, err := compile.Deduce(k.sys, k.bindings, k.overloads, decl)
 	if err != nil {
 		return k.formatCompileError(err)
 	}
@@ -910,7 +939,7 @@ func (k *Kernel) executeTypeOnly(src string) string {
 	// its type; it is not evaluated, so a redundant match is still
 	// an error.
 	var lines []string
-	coreDecl, cerr := compile.Resolve(resolved)
+	coreDecl, cerr := compile.Resolve(resolved, k.overloads)
 	if cerr == nil {
 		warnings, covErr := compile.CheckCoverage(k.sys, coreDecl)
 		if covErr != nil {

@@ -29,11 +29,17 @@ import (
 	"github.com/hydromatic/morel-go/internal/types"
 )
 
-// Resolve converts a type-resolved declaration to Core.
-func Resolve(resolved *Resolved) (core.Decl, error) {
+// Resolve converts a type-resolved declaration to Core. The
+// overload registry (which may be nil) is read to select the
+// winning instance at an overloaded use, and updated when a
+// "val inst" declaration registers a new instance.
+func Resolve(resolved *Resolved, overloads *OverloadEnv) (core.Decl,
+	error,
+) {
 	r := &resolver{
-		typeMap:  resolved.TypeMap,
-		aggSubst: map[ast.Node]*core.IDPat{},
+		typeMap:   resolved.TypeMap,
+		aggSubst:  map[ast.Node]*core.IDPat{},
+		overloads: overloads,
 	}
 	decl, _, err := r.toDecl(nil, resolved.Decl)
 	return decl, err
@@ -54,6 +60,11 @@ type resolver struct {
 	// hoisted out of a compute field into a hidden group
 	// aggregate, to the variable holding its per-group result.
 	aggSubst map[ast.Node]*core.IDPat
+	// overloads is the registry of overloaded names and their
+	// instances. A "val inst" declaration adds to it; an overloaded
+	// use reads it to select the instance whose parameter type
+	// accepts the argument. It may be nil.
+	overloads *OverloadEnv
 }
 
 // buildRow is the value of a query row: the sole variable, or a
@@ -104,6 +115,19 @@ func (e *coreEnv) bind(pat *core.IDPat) *coreEnv {
 func (r *resolver) toDecl(env *coreEnv, decl ast.Decl) (core.Decl,
 	*coreEnv, error,
 ) {
+	if od, ok := decl.(*ast.OverDecl); ok {
+		// An "over name" declaration introduces an overloaded name. It
+		// lowers to core and echoes but binds nothing usable yet, so
+		// the environment is unchanged. Register the name in the
+		// overload scope (which, inside a "let", is a local child), so
+		// that a "val inst" that follows and a use in the body resolve
+		// against it. At top level the kernel also declares it, but
+		// Declare is idempotent.
+		if r.overloads != nil {
+			r.overloads.Declare(od.Pat.Name)
+		}
+		return &core.OverDecl{Name: od.Pat.Name}, env, nil
+	}
 	d, ok := decl.(*ast.ValDecl)
 	if !ok {
 		return nil, nil, &Error{
@@ -113,12 +137,7 @@ func (r *resolver) toDecl(env *coreEnv, decl ast.Decl) (core.Decl,
 		}
 	}
 	if d.Inst {
-		// A "val inst" instance is typed (so ":t" works within a
-		// let) but not yet compiled or evaluated.
-		return nil, nil, &Error{
-			Span: decl.Span(),
-			Msg:  "cannot convert to core: val inst",
-		}
+		return r.toInstDecl(env, d)
 	}
 	if d.Rec {
 		return r.toRecDecl(env, d)
@@ -145,6 +164,44 @@ func (r *resolver) toDecl(env *coreEnv, decl ast.Decl) (core.Decl,
 		Span: bind.Span(),
 	}
 	return valDecl, env2, nil
+}
+
+// toInstDecl lowers a "val inst name = e" instance declaration. It
+// lowers e to core, binds it to a generated hidden name unique to
+// the (name, instance) pair (e.g. "first$0"), registers the
+// instance's type against name in the overload registry, and marks
+// the declaration with the overloaded name so the shell echoes it
+// as "val name = ...". A later use of name selects this instance
+// (via toOverloadApply) when its argument type matches e's
+// parameter type.
+func (r *resolver) toInstDecl(env *coreEnv, d *ast.ValDecl) (
+	core.Decl, *coreEnv, error,
+) {
+	if r.overloads == nil || len(d.Binds) != 1 {
+		return nil, nil, &Error{
+			Span: d.Span(),
+			Msg:  cannotConvertValInst,
+		}
+	}
+	bind := d.Binds[0]
+	idPat, ok := bind.Pat.(*ast.IDPat)
+	if !ok {
+		return nil, nil, &Error{
+			Span: bind.Span(),
+			Msg:  cannotConvertValInst,
+		}
+	}
+	exp, err := r.toExp(env, bind.Exp)
+	if err != nil {
+		return nil, nil, err
+	}
+	pat := r.overloads.Add(idPat.Name, exp.Type())
+	return &core.NonRecValDecl{
+		Pat:      pat,
+		Exp:      exp,
+		Span:     bind.Span(),
+		Overload: idPat.Name,
+	}, env.bind(pat), nil
 }
 
 // toParallelDecl converts a non-recursive "and" group ("val x =
@@ -314,7 +371,7 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 		}
 		return r.toInfix(env, e, t)
 	case *ast.Let:
-		return r.flattenLet(env, e.Decls, e.Exp)
+		return r.toLetExp(env, e.Decls, e.Exp)
 	case *ast.ListExp:
 		args := make([]core.Exp, len(e.Args))
 		for i, arg := range e.Args {
@@ -406,6 +463,10 @@ func (r *resolver) toApply(env *coreEnv, apply *ast.Apply,
 	if sel, ok := apply.Fn.(*ast.RecordSelector); ok && sel.Safe {
 		return r.toSafeNav(env, apply, sel, t)
 	}
+	if id, ok := apply.Fn.(*ast.ID); ok &&
+		r.overloads.IsOverloaded(id.Name) && env.get(id.Name) == nil {
+		return r.toOverloadApply(env, apply, id, t)
+	}
 	fn, err := r.toExp(env, apply.Fn)
 	if err != nil {
 		return nil, err
@@ -421,6 +482,48 @@ func (r *resolver) toApply(env *coreEnv, apply *ast.Apply,
 		Span: apply.Span(),
 	}
 	return apply2, nil
+}
+
+// toOverloadApply lowers a call of an overloaded name. It selects
+// the instance whose parameter type accepts the argument's resolved
+// type and emits a call of that instance's hidden binding. Type
+// resolution has already narrowed to one instance when it succeeds;
+// here we recover which one by matching the argument type against
+// each instance's parameter type. For Milestone 2a only a single
+// unambiguous match is supported; zero or several matches are a
+// positioned error (deferred ambiguity handling).
+func (r *resolver) toOverloadApply(env *coreEnv, apply *ast.Apply,
+	id *ast.ID, t types.Type,
+) (core.Exp, error) {
+	argType, err := r.typeMap.TypeOf(apply.Arg)
+	if err != nil {
+		return nil, err
+	}
+	var matches []OverloadInstance
+	for _, inst := range r.overloads.Instances(id.Name) {
+		fn, ok := inst.Type.(*types.Fn)
+		if ok && specializes(argType, fn.Param) {
+			matches = append(matches, inst)
+		}
+	}
+	if len(matches) != 1 {
+		return nil, &Error{
+			Span: apply.Span(),
+			Msg: "no unique instance of overloaded '" + id.Name +
+				"' for argument type " + argType.String(),
+		}
+	}
+	inst := matches[0]
+	arg, err := r.toExp(env, apply.Arg)
+	if err != nil {
+		return nil, err
+	}
+	return &core.Apply{
+		T:    t,
+		Fn:   &core.ID{Pat: inst.HiddenPat},
+		Arg:  arg,
+		Span: apply.Span(),
+	}, nil
 }
 
 // toFrom converts a query to Core. Only the subset that evaluates
@@ -1665,6 +1768,22 @@ func (r *resolver) toListPat(p *ast.ListPat,
 		args[i] = arg
 	}
 	return &core.ListPat{T: t, Args: args}, nil
+}
+
+// toLetExp lowers a "let ... in e end" expression. The let gets its
+// own overload scope, so "over"/"val inst" declared inside it
+// register locally — visible to the body but discarded afterwards —
+// and never leak to the enclosing (session) scope.
+func (r *resolver) toLetExp(env *coreEnv, decls []ast.Decl,
+	exp ast.Expr,
+) (core.Exp, error) {
+	saved := r.overloads
+	if saved != nil {
+		r.overloads = NewChildOverloadEnv(saved)
+	}
+	body, err := r.flattenLet(env, decls, exp)
+	r.overloads = saved
+	return body, err
 }
 
 // flattenLet converts "let d1 d2 ... in e end" to nested Lets,
