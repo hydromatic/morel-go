@@ -201,11 +201,11 @@ func (k *Kernel) compileIsolated(
 		return nil, &datalog.Error{Msg: "not an expression"}
 	}
 	decl := compile.ItValDecl(e)
-	resolved, err := compile.Deduce(k.sys, k.bootBindings, decl)
+	resolved, err := compile.Deduce(k.sys, k.bootBindings, nil, decl)
 	if err != nil {
 		return nil, err
 	}
-	coreDecl, err := compile.Resolve(resolved)
+	coreDecl, err := compile.Resolve(resolved, nil)
 	if err != nil {
 		return nil, err
 	}

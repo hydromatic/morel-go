@@ -71,7 +71,7 @@ func deduce(t *testing.T, src string) (*compile.Resolved, error) {
 		compile.Binding{Name: "id", Type: idType},
 		compile.Binding{Name: "NONE", Type: option},
 		compile.Binding{Name: "SOME", Type: sys.Fn(a, option)})
-	return compile.Deduce(sys, bindings, decl)
+	return compile.Deduce(sys, bindings, nil, decl)
 }
 
 // firstPat returns the pattern of the first binding of a val
@@ -351,7 +351,7 @@ func resolve(t *testing.T, src string) core.Decl {
 	if err != nil {
 		t.Fatalf("deduce %q: %v", src, err)
 	}
-	decl, err := compile.Resolve(resolved)
+	decl, err := compile.Resolve(resolved, nil)
 	if err != nil {
 		t.Fatalf("resolve %q: %v", src, err)
 	}
