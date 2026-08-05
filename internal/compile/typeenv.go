@@ -107,6 +107,60 @@ func bind(env typeEnv, name string, term unify.Term) typeEnv {
 	return &bindTypeEnv{parent: env, name: name, term: term}
 }
 
+// schemeTypeEnv binds a generalized value from a local "let". Each
+// lookup copies the binding's (resolved) type term, substituting a
+// fresh unification variable for each generalizable variable, so
+// that the value can be used at several types in the "let" body
+// (Hindley-Milner let-polymorphism). Variables not in genVars are
+// shared with the enclosing environment and are copied unchanged.
+type schemeTypeEnv struct {
+	parent   typeEnv
+	name     string
+	resolved unify.Term
+	genVars  []*unify.Var
+}
+
+func (e *schemeTypeEnv) get(r *typeResolver, name string) (
+	unify.Term, bool,
+) {
+	if name == e.name {
+		fresh := make(map[*unify.Var]unify.Term, len(e.genVars))
+		for _, g := range e.genVars {
+			fresh[g] = r.u.Variable()
+		}
+		return freshTerm(e.resolved, fresh), true
+	}
+	return e.parent.get(r, name)
+}
+
+func (e *schemeTypeEnv) overloads(name string) []*unify.Var {
+	return e.parent.overloads(name)
+}
+
+// freshTerm copies a term, replacing each variable that appears in
+// m with its mapped term. It returns a structurally new term so
+// that each use of a generalized binding gets its own variables.
+func freshTerm(t unify.Term, m map[*unify.Var]unify.Term) unify.Term {
+	switch t := t.(type) {
+	case *unify.Var:
+		if nt, ok := m[t]; ok {
+			return nt
+		}
+		return t
+	case *unify.Sequence:
+		if len(t.Terms) == 0 {
+			return t
+		}
+		terms := make([]unify.Term, len(t.Terms))
+		for i, ct := range t.Terms {
+			terms[i] = freshTerm(ct, m)
+		}
+		return unify.Apply(t.Op, terms...)
+	default:
+		return t
+	}
+}
+
 // bindingTypeEnv resolves names from initial Bindings. Each
 // lookup instantiates the binding's type with fresh unification
 // variables, so a polymorphic value can be used at different
