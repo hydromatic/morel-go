@@ -271,13 +271,6 @@ func TestDeduceError(t *testing.T) {
 			"fields there are besides #a)"},
 		{"{a=1, b=true, a=3}", "duplicate field 'a' in record"},
 		{
-			// 'let' does not generalize: a let-bound
-			// value has one type, so 'id' cannot be used at both
-			// int and string.
-			"let val id = fn x => x in (id 1, id \"a\") end",
-			"Cannot deduce type: conflict",
-		},
-		{
 			// Constructors declared in a 'let' are also
 			// monomorphic within it.
 			"let datatype 'a opt = NIL | JUST of 'a" +

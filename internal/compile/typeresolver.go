@@ -1308,6 +1308,238 @@ func bindAll(env typeEnv, termMap []patTerm) typeEnv {
 	return env
 }
 
+// bindDeclGeneralized binds the names of a "let" declaration into
+// the environment, generalizing value bindings so that they can be
+// used polymorphically in the body (Hindley-Milner
+// let-polymorphism), as at top level.
+//
+// Generalization works at the term level: it solves the constraints
+// so far, finds which of a binding's type variables are local (not
+// reachable from any variable that existed before the declaration),
+// and binds a scheme that, on each use, copies the binding's
+// (resolved) type term with fresh variables for those local
+// variables. Non-value bindings (the value restriction) and
+// overload instances stay monomorphic, exactly as before.
+func (r *typeResolver) bindDeclGeneralized(env typeEnv,
+	termMap []patTerm, priorVars []*unify.Var, decl ast.Decl,
+) typeEnv {
+	valueNames := generalizableNames(decl)
+	if len(valueNames) == 0 {
+		return bindAll(env, termMap)
+	}
+
+	// Solve the constraints accumulated so far. Actions affect only
+	// this local solve (they append to a throwaway work list), so it
+	// is side-effect free. If the partial program is not yet solvable,
+	// fall back to binding monomorphically.
+	subst, err := r.u.Unify(r.pairs, r.actions, r.constraints)
+	if err != nil {
+		return bindAll(env, termMap)
+	}
+
+	// The type variables free in the enclosing environment: everything
+	// reachable by resolving a variable that existed before this
+	// declaration. A binding variable is generalizable only if it is
+	// not one of these.
+	envVars := map[*unify.Var]bool{}
+	for _, pv := range priorVars {
+		for _, v := range termVars(subst.Resolve(pv)) {
+			envVars[v] = true
+		}
+	}
+
+	env2 := env
+	for _, pt := range termMap {
+		switch pt.kind {
+		case ptOver:
+			env2 = &overTypeEnv{parent: env2, name: pt.name}
+			continue
+		case ptInst:
+			//nolint:forcetypeassert // an instance term is a variable
+			env2 = &instTypeEnv{
+				parent: env2, name: pt.name, v: pt.term.(*unify.Var),
+			}
+			continue
+		default:
+			// ptVal: an ordinary binding; fall through to the
+			// generalization logic below.
+		}
+		if !valueNames[pt.name] {
+			env2 = bind(env2, pt.name, pt.term)
+			continue
+		}
+		resolved := subst.Resolve(pt.term)
+		bindingVars := termVars(resolved)
+		if r.overlapsAction(bindingVars, subst) {
+			// The binding's type is determined in part by a
+			// field-resolution action (a flex record whose fields come
+			// from how it is used). Generalizing creates fresh variables
+			// that would not carry the action, so bind it monomorphically.
+			env2 = bind(env2, pt.name, pt.term)
+			continue
+		}
+		var genVars []*unify.Var
+		for _, bv := range bindingVars {
+			if !envVars[bv] {
+				genVars = append(genVars, bv)
+			}
+		}
+		if len(genVars) == 0 {
+			env2 = bind(env2, pt.name, pt.term)
+			continue
+		}
+		env2 = &schemeTypeEnv{
+			parent: env2, name: pt.name,
+			resolved: resolved, genVars: genVars,
+		}
+	}
+	return env2
+}
+
+// overlapsAction reports whether any of bindingVars is the target of
+// a pending field-resolution action (a flex record whose fields are
+// supplied later). A binding whose type depends on such an action
+// cannot be generalized by copying its term, because the copy's
+// fresh variables would not carry the action.
+func (r *typeResolver) overlapsAction(bindingVars []*unify.Var,
+	subst *unify.Substitution,
+) bool {
+	if len(r.actions) == 0 {
+		return false
+	}
+	bindSet := map[*unify.Var]bool{}
+	for _, v := range bindingVars {
+		bindSet[v] = true
+	}
+	for _, a := range r.actions {
+		for _, av := range termVars(subst.Resolve(a.Var)) {
+			if bindSet[av] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// generalizableNames returns the names bound by decl that may be
+// generalized: names bound (by an IdPat) to a syntactic value, in a
+// non-instance value declaration. The value restriction (only
+// generalizing syntactic values) keeps generalization sound.
+// Recursive ("fun") bindings may be generalized: within the
+// definition the name is monomorphic (recursion is not
+// polymorphic), but it is generalized for use in the body. A
+// binding whose value contains a query is left monomorphic.
+func generalizableNames(decl ast.Decl) map[string]bool {
+	names := map[string]bool{}
+	vd, ok := decl.(*ast.ValDecl)
+	if !ok || vd.Inst {
+		return names
+	}
+	for _, b := range vd.Binds {
+		idPat, ok := b.Pat.(*ast.IDPat)
+		if ok && isValueExp(b.Exp) && !containsQuery(b.Exp) {
+			names[idPat.Name] = true
+		}
+	}
+	return names
+}
+
+// isValueExp reports whether an expression is a syntactic value: a
+// function, a variable, or a constant.
+func isValueExp(exp ast.Expr) bool {
+	switch exp.(type) {
+	case *ast.Fn, *ast.ID, *ast.Literal:
+		return true
+	default:
+		return false
+	}
+}
+
+// containsQuery reports whether an expression contains a relational
+// query ("from", "exists", "forall"). Such an expression is left
+// un-generalized.
+func containsQuery(exp ast.Expr) bool {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch e := exp.(type) {
+	case *ast.AnnotatedExp:
+		return containsQuery(e.Exp)
+	case *ast.Apply:
+		return containsQuery(e.Fn) || containsQuery(e.Arg)
+	case *ast.Case:
+		return containsQuery(e.Exp) || anyMatchQuery(e.Matches)
+	case *ast.Fn:
+		return anyMatchQuery(e.Matches)
+	case *ast.From:
+		return true
+	case *ast.If:
+		return containsQuery(e.Cond) || containsQuery(e.IfTrue) ||
+			containsQuery(e.IfFalse)
+	case *ast.InfixCall:
+		return containsQuery(e.A0) || containsQuery(e.A1)
+	case *ast.Let:
+		return letContainsQuery(e)
+	case *ast.ListExp:
+		return anyExpQuery(e.Args)
+	case *ast.PrefixCall:
+		return containsQuery(e.A)
+	case *ast.Raise:
+		return containsQuery(e.E)
+	case *ast.RangeList:
+		return rangeListContainsQuery(e)
+	case *ast.Record:
+		return recordContainsQuery(e)
+	case *ast.Tuple:
+		return anyExpQuery(e.Args)
+	case *ast.TypeStringExp:
+		return containsQuery(e.Exp)
+	}
+	return false
+}
+
+func letContainsQuery(e *ast.Let) bool {
+	if containsQuery(e.Exp) {
+		return true
+	}
+	for _, d := range e.Decls {
+		vd, ok := d.(*ast.ValDecl)
+		if !ok {
+			continue
+		}
+		if slices.ContainsFunc(vd.Binds, func(b *ast.ValBind) bool {
+			return containsQuery(b.Exp)
+		}) {
+			return true
+		}
+	}
+	return false
+}
+
+func rangeListContainsQuery(e *ast.RangeList) bool {
+	return slices.ContainsFunc(e.Items, func(it ast.RangeItem) bool {
+		return it.Lo != nil && containsQuery(it.Lo) ||
+			it.Hi != nil && containsQuery(it.Hi)
+	})
+}
+
+func recordContainsQuery(e *ast.Record) bool {
+	if e.With != nil && containsQuery(e.With) {
+		return true
+	}
+	return slices.ContainsFunc(e.Fields, func(f ast.Field) bool {
+		return containsQuery(f.Exp)
+	})
+}
+
+func anyExpQuery(exps []ast.Expr) bool {
+	return slices.ContainsFunc(exps, containsQuery)
+}
+
+func anyMatchQuery(matches []*ast.Match) bool {
+	return slices.ContainsFunc(matches, func(m *ast.Match) bool {
+		return containsQuery(m.Exp)
+	})
+}
+
 func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 	v *unify.Var,
 ) error {
@@ -1353,12 +1585,17 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 		env2 := env
 		for i, d := range e.Decls {
 			var termMap []patTerm
+			// Snapshot the variables that exist before this
+			// declaration; a variable the declaration introduces that
+			// is not reachable from one of these is local to the
+			// binding, and can be generalized (let-polymorphism).
+			priorVars := r.u.Variables()
 			d2, err := r.deduceDecl(env2, d, &termMap)
 			if err != nil {
 				return err
 			}
 			e.Decls[i] = d2
-			env2 = bindAll(env2, termMap)
+			env2 = r.bindDeclGeneralized(env2, termMap, priorVars, d2)
 		}
 		err := r.deduceExp(env2, e.Exp, v)
 		if err != nil {

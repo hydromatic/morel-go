@@ -162,6 +162,18 @@ func (u *Unifier) Unify(pairs []TermPair, actions []VarAction,
 	}
 }
 
+// Variables returns a snapshot of all variables created so far. It
+// lets a caller record which variables predate a declaration, so
+// that generalization can tell a binding's own (local) variables
+// from those shared with the enclosing environment.
+func (u *Unifier) Variables() []*Var {
+	vars := make([]*Var, 0, len(u.varByName))
+	for _, v := range u.varByName {
+		vars = append(vars, v)
+	}
+	return vars
+}
+
 // Variable creates a variable named "Tn", for an ordinal n that
 // makes the name unique among atoms and variables.
 func (u *Unifier) Variable() *Var {
