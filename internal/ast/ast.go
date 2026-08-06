@@ -52,8 +52,27 @@ type base struct {
 	span token.Span
 }
 
-func (b base) Span() token.Span { return b.span }
-func (base) node()              {}
+func (b *base) Span() token.Span        { return b.span }
+func (b *base) setSpan(span token.Span) { b.span = span }
+func (*base) node()                     {}
+
+// spanSetter is a node whose span can be widened; every node is
+// one, through base.
+type spanSetter interface {
+	setSpan(span token.Span)
+}
+
+// SetSpan widens a node's span to that of the parentheses that
+// group it. Grouping parentheses are transparent -- "(e)" parses
+// to the node of e -- so without this the node's span would stop
+// short of them, and an error in, say, an application whose
+// argument is parenthesized would be reported a column short. Only
+// the parser, which owns a node until it returns it, calls this.
+func SetSpan(n Node, span token.Span) {
+	if s, ok := n.(spanSetter); ok {
+		s.setSpan(span)
+	}
+}
 
 type exprBase struct{ base }
 

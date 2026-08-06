@@ -165,7 +165,8 @@ from i in intList unorder order DESC i;
 > val it = [3,2,1,1] : int list
 from i in intList unorder order DESC i unorder;
 > val it = [3,2,1,1] : int bag
-(*) 'ordinal' is valid only for ordered collections
+
+(*) ordinal is valid only for ordered collections
 from i in intBag yield i + ordinal;
 > stdIn:1.28-1.35 Error: cannot use 'ordinal' in unordered query
 >   raised at: stdIn:1.28-1.35

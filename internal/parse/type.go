@@ -179,11 +179,13 @@ func (p *Parser) parenType() (ast.Type, error) {
 	if err != nil {
 		return nil, err
 	}
+	end := p.tok.Span.End
 	err = p.next()
 	if err != nil {
 		return nil, err
 	}
 	if len(args) == 1 && p.tok.Kind != token.Ident {
+		ast.SetSpan(args[0], token.Span{Start: start, End: end})
 		return args[0], nil
 	}
 	err = p.expect(token.Ident)

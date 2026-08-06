@@ -138,7 +138,7 @@ func (c *Config) valueDoc(t types.Type, v eval.Val,
 		vals := asVals(v)
 		docs := make([]pp.Doc, len(t.Fields))
 		for i, field := range t.Fields {
-			docs[i] = pp.Beside(pp.Text(parse.QuoteLabel(field.Label)+"="),
+			docs[i] = pp.Beside(pp.Text(parse.QuoteIdent(field.Label)+"="),
 				c.valueDoc(field.Type, vals[i], depth+1))
 		}
 		return c.seqDoc("{", "}", docs)
@@ -349,7 +349,7 @@ func (c *Config) recordTypeDoc(t *types.Record) pp.Doc {
 	n := len(t.Fields)
 	items := make([]pp.Doc, n)
 	for i, f := range t.Fields {
-		field := pp.Beside(pp.Text(parse.QuoteLabel(f.Label)+":"),
+		field := pp.Beside(pp.Text(parse.QuoteIdent(f.Label)+":"),
 			c.typeDoc(f.Type))
 		if i < n-1 {
 			items[i] = pp.Beside(field, pp.Text(","))

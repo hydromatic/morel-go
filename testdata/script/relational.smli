@@ -343,6 +343,12 @@ fun singleUnitItems (items: {product: string, units: int} list) =
 > val singleUnitItems = fn
 >   : {product:string, units:int} list -> {product:string, units:int} list
 
+from r in orders
+  yieldAll singleUnitItems r.items;
+> val it =
+>   [{product="beer",units=1},{product="soda",units=1},
+>    {product="beer",units=1}] : {product:string, units:int} list
+
 (* Order ---------------------------------------------------------- *)
 
 from e in emps
@@ -481,56 +487,72 @@ from e in emps,
   order (current mod 2, current);
 > val it = [110,132,121,133] : int list
 
-(*) "current" is not available in "skip", "take", "union", "intersect", "except"
+(* Current before the first row ----------------------------------- *)
+
+(*) "current" is not available outside a query
 1 + current;
 > stdIn:1.5-1.12 Error: 'current' is only valid in a query
 >   raised at: stdIn:1.5-1.12
 
-(*) "current" can't be used in the first step of a query
-from i in [current + 1, current + 2, current + 3];
+(* The expressions that a query evaluates before its first row - the
+ * collection that its first step scans, a 'take' or 'skip' count, the
+ * operands of 'union', 'except' and 'intersect', and the function of a
+ * 'through' or an 'into' - have no row to read. *)
+from i in [current];
 > stdIn:1.12-1.19 Error: 'current' is only valid in a query
 >   raised at: stdIn:1.12-1.19
+from i in [1,2] take current;
+> stdIn:1.22-1.29 Error: 'current' is only valid in a query
+>   raised at: stdIn:1.22-1.29
+from i in [1,2] skip current;
+> stdIn:1.22-1.29 Error: 'current' is only valid in a query
+>   raised at: stdIn:1.22-1.29
+from i in [1,2] union [current];
+> stdIn:1.24-1.31 Error: 'current' is only valid in a query
+>   raised at: stdIn:1.24-1.31
+from i in [1,2] except [current];
+> stdIn:1.25-1.32 Error: 'current' is only valid in a query
+>   raised at: stdIn:1.25-1.32
+from i in [1,2] intersect [current];
+> stdIn:1.28-1.35 Error: 'current' is only valid in a query
+>   raised at: stdIn:1.28-1.35
+from i in [1,2] into (fn y => current);
+> stdIn:1.31-1.38 Error: 'current' is only valid in a query
+>   raised at: stdIn:1.31-1.38
 
-(*) ... but it can be used in the second
+(*) ... but a scan that is not the first step of a query has a row.
 from i in [1, 2],
   j in [current + 10, current + 20];
 > val it = [{i=1,j=11},{i=1,j=21},{i=2,j=12},{i=2,j=22}] : {i:int, j:int} list
+from x in [10,20] yield (from i in [1,2] take current);
+> val it = [[1,2],[1,2]] : int list list
+from x in [10,20] yield (from i in [1,2] skip current);
+> val it = [[],[]] : int list list
+from x in bag [10,20] yield (from i in [1,2] take current);
+> val it = [[1,2],[1,2]] : int list bag
+from x in bag [10,20] yield (from i in [1,2] skip current);
+> val it = [[],[]] : int list bag
+from x in [10,20] yield (from i in bag [1,2] take current);
+> val it = [[1,2],[1,2]] : int bag list
+from x in [10,20] yield (from i in bag [1,2] skip current);
+> val it = [[],[]] : int bag list
 
-from i in [1,2,3,4,5]
-  skip current;
-> stdIn:2.8-2.15 Error: 'current' is only valid in a query
->   raised at: stdIn:2.8-2.15
-
-from i in [1,2,3,4,5]
-  take current;
-> stdIn:2.8-2.15 Error: 'current' is only valid in a query
->   raised at: stdIn:2.8-2.15
-
-from i in [1,2,3,4,5]
-  union [current + 10];
-> stdIn:2.10-2.17 Error: 'current' is only valid in a query
->   raised at: stdIn:2.10-2.17
-
-from i in [1,2,3,4,5]
-  intersect [current + 1];
-> stdIn:2.14-2.21 Error: 'current' is only valid in a query
->   raised at: stdIn:2.14-2.21
-
-from i in [1,2,3,4,5]
-  except [current + 1];
-> stdIn:2.11-2.18 Error: 'current' is only valid in a query
->   raised at: stdIn:2.11-2.18
+(* A subquery in one of those positions is itself evaluated before its
+ * enclosing query's first row, so the reading skips that query too. *)
+from i in [1,2] take (from j in [3,4] into (fn y => current));
+> stdIn:1.53-1.60 Error: 'current' is only valid in a query
+>   raised at: stdIn:1.53-1.60
+from i in [1,2] union [(from j in [3,4] into (fn y => current))];
+> stdIn:1.55-1.62 Error: 'current' is only valid in a query
+>   raised at: stdIn:1.55-1.62
+from x in [10,20] yield (from i in [1,2] take (from j in [3,4] into (fn y => current)));
+> val it = [[1,2],[1,2]] : int list list
 
 (* Ordinal -------------------------------------------------------- *)
 
 1 + ordinal;
 > stdIn:1.5-1.12 Error: 'ordinal' is only valid in a query
 >   raised at: stdIn:1.5-1.12
-
-(*) 'ordinal' cannot be used in the first step of a query
-from i in [ordinal, ordinal + 1, ordinal + 2];
-> stdIn:1.12-1.19 Error: 'ordinal' is only valid in a query
->   raised at: stdIn:1.12-1.19
 
 from e in emps
   order e.deptno
@@ -563,6 +585,7 @@ from e in emps, i in bag [1]
   yield {ordinal, e.name};
 > stdIn:2.10-2.17 Error: cannot use 'ordinal' in unordered query
 >   raised at: stdIn:2.10-2.17
+
 from e in emps, i in bag [1]
   order e.deptno
   yield {ordinal, e.name};
@@ -595,6 +618,33 @@ from e in emps
   where ordinal > 1;
 > val it = [{deptno=30,id=102,name="Shaggy"},{deptno=30,id=103,name="Scooby"}]
 >   : {deptno:int, id:int, name:string} list
+
+(* 'ordinal' in an 'order' key counts the rows arriving at the 'order'
+   step, so sorting on its negation reverses the input. *)
+from e in emps
+  order (~ordinal)
+  yield e.name;
+> val it = ["Scooby","Shaggy","Velma","Fred"] : string list
+
+(* Reading 'ordinal' twice in one step reads one counter twice; it does
+   not advance it twice. *)
+from i in [10,20,30]
+  yield {a = ordinal, b = ordinal};
+> val it = [{a=0,b=0},{a=1,b=1},{a=2,b=2}] : {a:int, b:int} list
+
+(* A 'yield' holds the counter, so a call must still find it after the
+   contexts that compiling the expression creates: a 'let', a recursive
+   function, and a mutually recursive one. *)
+from i in [10,20] yield (let val x = ordinal in x + 1 end);
+> val it = [1,2] : int list
+from i in [10,20] yield (let fun f y = y in f 1 + ordinal end);
+> val it = [1,2] : int list
+
+(* The count advances once per row, even on a row that does not read it:
+   the ordinals on either side of a row that yields ~1 differ by 2. *)
+from i in [10,11,20,21,30]
+  yield (if i mod 10 = 0 then ordinal else ~1);
+> val it = [0,~1,2,~1,4] : int list
 
 (*) When there is a field called 'ordinal', it doesn't get used unless you quote it.
 from i in [3,1,4,5,3,5,8,9,7]
@@ -667,6 +717,19 @@ from i in [1,2]
 > val it = [{i=1,j=0},{i=1,j=1},{i=1,j=2},{i=2,j=0},{i=2,j=1},{i=2,j=2}]
 >   : {i:int, j:int} list
 
+(* A correlated subquery is evaluated afresh for each outer row, so its
+   ordinal restarts; here the number of rows it produces varies. *)
+from i in [1,2,3]
+  join j in (from k in [10,20,30] where k > i * 10 yield ordinal);
+> val it = [{i=1,j=0},{i=1,j=1},{i=2,j=0}] : {i:int, j:int} list
+
+(* Two counters are live at once: the outer one advances while the
+   inner one restarts for each outer row. *)
+from i in [10,20,30]
+  yield {a = ordinal, ks = (from k in ["p","q"] yield ordinal)};
+> val it = [{a=0,ks=[0,1]},{a=1,ks=[0,1]},{a=2,ks=[0,1]}]
+>   : {a:int, ks:int list} list
+
 (* "ordinal" is the input row's position where a group key reads
  * it, so the enumeration must advance per row -- the position once
  * stuck, collapsing every row into one group. *)
@@ -685,6 +748,69 @@ from i in [5,6,7,8] group {} compute sum over ordinal;
 (*) An argument-less aggregate still sees whole rows.
 from i in [1,2,3,4] group {} compute {c = count over (), s = sum over ordinal};
 > val it = [{c=4,s=6}] : {c:int, s:int} list
+
+(* Ordinal before the first row ----------------------------------- *)
+
+(* The expressions that a query evaluates before its first row - the
+ * collection that its first step scans, a 'take' or 'skip' count, the
+ * operands of 'union', 'except' and 'intersect', and the function of a
+ * 'through' or an 'into' - have no row to read. *)
+from i in [ordinal];
+> stdIn:1.12-1.19 Error: 'ordinal' is only valid in a query
+>   raised at: stdIn:1.12-1.19
+from i in [1,2] take ordinal;
+> stdIn:1.22-1.29 Error: 'ordinal' is only valid in a query
+>   raised at: stdIn:1.22-1.29
+from i in [1,2] skip ordinal;
+> stdIn:1.22-1.29 Error: 'ordinal' is only valid in a query
+>   raised at: stdIn:1.22-1.29
+from i in [1,2] union [ordinal];
+> stdIn:1.24-1.31 Error: 'ordinal' is only valid in a query
+>   raised at: stdIn:1.24-1.31
+from i in [1,2] except [ordinal];
+> stdIn:1.25-1.32 Error: 'ordinal' is only valid in a query
+>   raised at: stdIn:1.25-1.32
+from i in [1,2] intersect [ordinal];
+> stdIn:1.28-1.35 Error: 'ordinal' is only valid in a query
+>   raised at: stdIn:1.28-1.35
+from i in [1,2] into (fn y => ordinal);
+> stdIn:1.31-1.38 Error: 'ordinal' is only valid in a query
+>   raised at: stdIn:1.31-1.38
+
+(* A subquery in one of those positions is itself evaluated before its
+ * enclosing query's first row, so the reading skips that query too. *)
+from i in [1,2] take (from j in [3,4] into (fn y => ordinal));
+> stdIn:1.53-1.60 Error: 'ordinal' is only valid in a query
+>   raised at: stdIn:1.53-1.60
+from i in [1,2] union [(from j in [3,4] into (fn y => ordinal))];
+> stdIn:1.55-1.62 Error: 'ordinal' is only valid in a query
+>   raised at: stdIn:1.55-1.62
+
+(* Ordinal in a join condition ------------------------------------ *)
+
+(* An 'on' condition is evaluated once per candidate pair, so 'ordinal'
+   in it counts pairs, continuously across the join. *)
+from i in [0..4] join j in ["a","b","c"] on ordinal mod 2 = 0;
+> val it =
+>   [{i=0,j="a"},{i=0,j="c"},{i=1,j="b"},{i=2,j="a"},{i=2,j="c"},{i=3,j="b"},
+>    {i=4,j="a"},{i=4,j="c"}] : {i:int, j:string} list
+
+(*) Which is what materializing the ordinal after the join gives.
+from i in [0..4] join j in ["a","b","c"] yield {i, j, k = ordinal} where k mod 2 = 0 yield {i, j};
+> val it =
+>   [{i=0,j="a"},{i=0,j="c"},{i=1,j="b"},{i=2,j="a"},{i=2,j="c"},{i=3,j="b"},
+>    {i=4,j="a"},{i=4,j="c"}] : {i:int, j:string} list
+
+(*) So 'on ordinal = 0' is the join's first pair, not the first per input row.
+from i in [1,2,3] join j in [1,2] on ordinal = 0;
+> val it = [{i=1,j=1}] : {i:int, j:int} list
+
+(*) The extent is evaluated before any pair exists, and counts input rows.
+from i in [1,2,3], j in [ordinal];
+> val it = [{i=1,j=0},{i=2,j=1},{i=3,j=2}] : {i:int, j:int} list
+from i in bag [1,2] join j in ["a"] on ordinal = 0;
+> stdIn:1.40-1.47 Error: cannot use 'ordinal' in unordered query
+>   raised at: stdIn:1.40-1.47
 
 (* Outer joins ---------------------------------------------------- *)
 
@@ -1171,39 +1297,39 @@ from (x, y) in [(1,2),(3,4),(3,0)]
 (* "over" is only valid inside "compute" *)
 from i in [2, 1, 2]
   where (sum over i) > 3;
-> stdIn:2.10-2.20 Error: 'over' is only valid in 'compute'
->   raised at: stdIn:2.10-2.20
+> stdIn:2.9-2.21 Error: 'over' is only valid in 'compute'
+>   raised at: stdIn:2.9-2.21
 from i in [2, 1, 2]
   group (sum over i);
-> stdIn:2.10-2.20 Error: 'over' is only valid in 'compute'
->   raised at: stdIn:2.10-2.20
+> stdIn:2.9-2.21 Error: 'over' is only valid in 'compute'
+>   raised at: stdIn:2.9-2.21
 from i in [2, 1, 2]
   yield (sum over i);
-> stdIn:2.10-2.20 Error: 'over' is only valid in 'compute'
->   raised at: stdIn:2.10-2.20
+> stdIn:2.9-2.21 Error: 'over' is only valid in 'compute'
+>   raised at: stdIn:2.9-2.21
 from i in [2, 1, 2]
   skip (sum over i);
-> stdIn:2.9-2.19 Error: 'over' is only valid in 'compute'
->   raised at: stdIn:2.9-2.19
+> stdIn:2.8-2.20 Error: 'over' is only valid in 'compute'
+>   raised at: stdIn:2.8-2.20
 from i in [2, 1, 2]
   take (sum over i);
-> stdIn:2.9-2.19 Error: 'over' is only valid in 'compute'
->   raised at: stdIn:2.9-2.19
+> stdIn:2.8-2.20 Error: 'over' is only valid in 'compute'
+>   raised at: stdIn:2.8-2.20
 from i in [2, 1, 2]
   order (sum over i);
-> stdIn:2.10-2.20 Error: 'over' is only valid in 'compute'
->   raised at: stdIn:2.10-2.20
+> stdIn:2.9-2.21 Error: 'over' is only valid in 'compute'
+>   raised at: stdIn:2.9-2.21
 
 (* "over" is not valid inside "over" *)
 from (i, j) in [(2, 5), (1, 1), (2, 7)]
   group i compute {min over (max over j)};
-> stdIn:2.30-2.40 Error: 'over' is not valid in 'over'
->   raised at: stdIn:2.30-2.40
+> stdIn:2.29-2.41 Error: 'over' is not valid in 'over'
+>   raised at: stdIn:2.29-2.41
 
 from (i, j) in [(2, 5), (1, 1), (2, 7)]
   group i compute {min over (count over ())};
-> stdIn:2.30-2.43 Error: 'over' is not valid in 'over'
->   raised at: stdIn:2.30-2.43
+> stdIn:2.29-2.44 Error: 'over' is not valid in 'over'
+>   raised at: stdIn:2.29-2.44
 
 from i in [2, 1, 2]
   compute sum over i;

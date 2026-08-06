@@ -78,33 +78,21 @@ func unquoteIdent(text string) string {
 	return strings.ReplaceAll(s, "``", "`")
 }
 
-// QuoteIdent renders a binding name as it appears in printed
-// output: a backtick-quoted identifier (doubling any internal
-// backtick) when the name contains a backtick or a space,
-// otherwise the name unchanged. A reserved word used as a name
-// is not quoted here: the reference output prints "val val" for
-// a binding named "val". Record labels are
-// different: see QuoteLabel.
+// QuoteIdent renders a name -- a binding's or a record label's --
+// as it appears in printed output: back-tick-quoted (doubling any
+// internal backtick) when the name is a reserved word or contains
+// a backtick or a space, and unchanged otherwise. So a binding
+// named "val" prints as "val `val` = ...", and a structure with a
+// member named "exists" as "{`exists`=fn, ...}"; each is quoted
+// exactly as it must be written to be read back.
 func QuoteIdent(id string) string {
 	if strings.Contains(id, "`") {
 		return "`" + strings.ReplaceAll(id, "`", "``") + "`"
 	}
-	if strings.Contains(id, " ") {
+	if reservedWords[id] || strings.Contains(id, " ") {
 		return "`" + id + "`"
 	}
 	return id
-}
-
-// QuoteLabel renders a record label as printed output. It is like
-// QuoteIdent but also back-tick-quotes a reserved word, as
-// appendId does: a structure with a member named "exists" prints
-// as "{`exists`=fn, ...}". (A binding name of the same spelling
-// prints unquoted; only labels quote reserved words.)
-func QuoteLabel(id string) string {
-	if reservedWords[id] {
-		return "`" + id + "`"
-	}
-	return QuoteIdent(id)
 }
 
 // reservedWords are morel's keywords, which may be used as an
