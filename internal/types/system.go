@@ -311,6 +311,20 @@ func (s *System) Substitute(t Type, args []Type) Type {
 	}
 }
 
+// Qualified returns a type qualified by overload predicates. The
+// predicates and the base type share type variables; predicates
+// must be non-empty (an empty predicate list is just the base
+// type).
+func (s *System) Qualified(predicates []Predicate, base Type) Type {
+	if len(predicates) == 0 {
+		return base
+	}
+	key := qualifiedDesc(predicates, base)
+	return s.intern(key, func() Type {
+		return &Qualified{typeBase{key}, predicates, base}
+	})
+}
+
 // Var returns the type variable with the given ordinal.
 func (s *System) Var(ordinal int) Type {
 	name := varName(ordinal)

@@ -100,6 +100,60 @@ type Record struct {
 	Fields []Field
 }
 
+// Predicate is one overload constraint of a qualified type: the
+// overloaded name Name must have an instance whose type is Type (a
+// function type over the enclosing type's variables). Candidates
+// records the instance types that were in scope when the predicate
+// was formed, so the constraint can be re-created (with fresh
+// variables) each time the qualified type is instantiated.
+type Predicate struct {
+	Name       string
+	Type       Type
+	Candidates []Type
+}
+
+// Qualified is a type qualified by one or more overload constraints
+// (predicates), following "A Second Look at Overloading" (Odersky,
+// Wadler, Wehr 1995). For example
+// "(second : 'a -> 'b, first : 'a -> 'c) => 'a -> 'b * 'c" is the
+// type of a function that, for any 'a, 'b, 'c such that there are
+// instances of the overloaded names "second" of type 'a -> 'b and
+// "first" of type 'a -> 'c, maps 'a to 'b * 'c. An overloaded
+// application whose argument type is not yet known records a
+// predicate rather than resolving eagerly.
+type Qualified struct {
+	typeBase
+
+	Predicates []Predicate
+	Type       Type
+}
+
+// qualifiedDesc renders a qualified type: a single predicate in
+// braces ("{foo : 'a -> 'b} => ..."), several in parentheses
+// ("(first : ..., second : ...) => ...").
+func qualifiedDesc(predicates []Predicate, base Type) string {
+	var b strings.Builder
+	single := len(predicates) == 1
+	if single {
+		b.WriteString("{")
+	} else {
+		b.WriteString("(")
+	}
+	for i, p := range predicates {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(p.Name + " : " + p.Type.String())
+	}
+	if single {
+		b.WriteString("}")
+	} else {
+		b.WriteString(")")
+	}
+	b.WriteString(" => " + base.String())
+	return b.String()
+}
+
 // Named is an instance of a datatype, e.g. "color" or
 // "int option".
 type Named struct {

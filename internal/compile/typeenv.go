@@ -118,6 +118,32 @@ type schemeTypeEnv struct {
 	name     string
 	resolved unify.Term
 	genVars  []*unify.Var
+	// predicates carries the overload constraints the binding was left
+	// with (its value uses overloaded names at an abstract type). Each
+	// use re-instantiates them, so a let-generalized qualified binding
+	// behaves like a top-level one (hydromatic/morel#426). Empty for an
+	// ordinary generalized binding.
+	predicates []schemePredicate
+}
+
+// schemePredicate is one overload predicate of a generalized qualified
+// binding, in resolved-term form so schemeTypeEnv.get can re-create it
+// at each use, exactly as typeTerm re-creates a top-level *types.Qualified.
+// arg and result share the binding's generalizable variables (refreshed
+// per use by the scheme's fresh map); each candidate's (arg, result)
+// pair is an independent variable scope, refreshed wholesale per use.
+type schemePredicate struct {
+	name       string
+	arg        unify.Term
+	result     unify.Term
+	candidates []schemeCandidate
+}
+
+// schemeCandidate is one instance alternative of a schemePredicate: the
+// (argument, result) type-term pair of a candidate overload instance.
+type schemeCandidate struct {
+	arg    unify.Term
+	result unify.Term
 }
 
 func (e *schemeTypeEnv) get(r *typeResolver, name string) (
@@ -127,6 +153,13 @@ func (e *schemeTypeEnv) get(r *typeResolver, name string) (
 		fresh := make(map[*unify.Var]unify.Term, len(e.genVars))
 		for _, g := range e.genVars {
 			fresh[g] = r.u.Variable()
+		}
+		// Re-instantiate the binding's overload predicates against this
+		// use's fresh variables, so the predicate is resolved or
+		// re-deferred against the now-concrete argument at this use site
+		// (as a top-level qualified type is instantiated in typeTerm).
+		for _, p := range e.predicates {
+			r.instantiateSchemePredicate(p, fresh)
 		}
 		return freshTerm(e.resolved, fresh), true
 	}

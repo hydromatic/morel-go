@@ -31,6 +31,15 @@ type TypeMap struct {
 	sys      *types.System
 	nodeTerm map[ast.Node]unify.Term
 	subst    *unify.Substitution
+	// residuals are the named overload constraints left unresolved by
+	// unification (their argument type never became concrete). They
+	// become the predicates of a qualified type on the bound pattern.
+	residuals []unify.Constraint
+	// bindings gives the type of every name in the top-level
+	// environment, by name. The core resolver reads it to recognize a
+	// use of a qualified-typed binding declared in an earlier statement
+	// (dictionary passing, hydromatic/morel#426). It may be nil.
+	bindings map[string]*Binding
 }
 
 // TypeOf returns the type deduced for a node. Unification
@@ -46,6 +55,98 @@ func (m *TypeMap) TypeOf(node ast.Node) (types.Type, error) {
 		vars: map[*unify.Var]int{},
 	}
 	return c.termType(m.subst.Resolve(term))
+}
+
+// Qualify returns the type of a bound pattern qualified by the
+// overload predicates deduced for this declaration, or nil if there
+// are none that constrain the pattern's type variables. The
+// predicates and the base type are numbered by one shared pass, so
+// their type variables line up (e.g. a predicate "second : 'a ->
+// 'b" over a base "'a -> 'b * 'c"). The candidate instance types of
+// each predicate are numbered independently, since they belong to a
+// separate variable scope that is refreshed at each use.
+func (m *TypeMap) Qualify(node ast.Node) (types.Type, error) {
+	if len(m.residuals) == 0 {
+		return nil, nil //nolint:nilnil // no qualified type, no error
+	}
+	term, ok := m.nodeTerm[node]
+	if !ok {
+		return nil, fmt.Errorf("no type for node %s", node.Op())
+	}
+	c := &termToTypeConverter{m: m, vars: map[*unify.Var]int{}}
+	base, err := c.termType(m.subst.Resolve(term))
+	if err != nil {
+		return nil, err
+	}
+	// The variables that occur in the base type; a predicate is
+	// included only if it shares at least one variable with the base.
+	baseVars := map[*unify.Var]bool{}
+	collectVars(m.subst.Resolve(term), baseVars)
+	var predicates []types.Predicate
+	for _, con := range m.residuals {
+		argTerm := m.subst.Resolve(con.Arg)
+		resultTerm := m.subst.Resolve(con.Result)
+		predVars := map[*unify.Var]bool{}
+		collectVars(argTerm, predVars)
+		collectVars(resultTerm, predVars)
+		if disjointVars(predVars, baseVars) {
+			continue
+		}
+		argType, err := c.termType(argTerm)
+		if err != nil {
+			return nil, err
+		}
+		resultType, err := c.termType(resultTerm)
+		if err != nil {
+			return nil, err
+		}
+		candidates := make([]types.Type, 0, len(con.ArgResults))
+		for _, ar := range con.ArgResults {
+			// A separate converter per candidate: its variables are a
+			// scope of their own, refreshed at each instantiation.
+			cc := &termToTypeConverter{m: m, vars: map[*unify.Var]int{}}
+			cArg, err := cc.termType(m.subst.Resolve(ar.Left))
+			if err != nil {
+				return nil, err
+			}
+			cResult, err := cc.termType(m.subst.Resolve(ar.Right))
+			if err != nil {
+				return nil, err
+			}
+			candidates = append(candidates, m.sys.Fn(cArg, cResult))
+		}
+		predicates = append(predicates, types.Predicate{
+			Name:       con.Name,
+			Type:       m.sys.Fn(argType, resultType),
+			Candidates: candidates,
+		})
+	}
+	if len(predicates) == 0 {
+		return nil, nil //nolint:nilnil // no qualified type, no error
+	}
+	return m.sys.Qualified(predicates, base), nil
+}
+
+// collectVars adds every unification variable in a term to set.
+func collectVars(t unify.Term, set map[*unify.Var]bool) {
+	switch t := t.(type) {
+	case *unify.Var:
+		set[t] = true
+	case *unify.Sequence:
+		for _, child := range t.Terms {
+			collectVars(child, set)
+		}
+	}
+}
+
+// disjointVars reports whether two variable sets share no variable.
+func disjointVars(a, b map[*unify.Var]bool) bool {
+	for v := range a {
+		if b[v] {
+			return false
+		}
+	}
+	return true
 }
 
 // termToTypeConverter converts resolved unification terms to

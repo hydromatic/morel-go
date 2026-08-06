@@ -18,6 +18,7 @@
 package compile
 
 import (
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,9 +38,10 @@ func Resolve(resolved *Resolved, overloads *OverloadEnv) (core.Decl,
 	error,
 ) {
 	r := &resolver{
-		typeMap:   resolved.TypeMap,
-		aggSubst:  map[ast.Node]*core.IDPat{},
-		overloads: overloads,
+		typeMap:          resolved.TypeMap,
+		aggSubst:         map[ast.Node]*core.IDPat{},
+		overloads:        overloads,
+		dictionaryParams: map[string]*core.IDPat{},
 	}
 	decl, _, err := r.toDecl(nil, resolved.Decl)
 	return decl, err
@@ -65,6 +67,16 @@ type resolver struct {
 	// use reads it to select the instance whose parameter type
 	// accepts the argument. It may be nil.
 	overloads *OverloadEnv
+	// dictionaryParams maps an overloaded name to the dictionary
+	// parameter that supplies its instance while the body of a
+	// qualified (overload-constrained) value is being compiled. Inside
+	// that body an overloaded name used at an abstract type compiles to
+	// a reference to this parameter rather than the milestone-1
+	// placeholder (hydromatic/morel#426, dictionary passing). It is
+	// populated by toCoreWithDictionaries for the duration of the body.
+	dictionaryParams map[string]*core.IDPat
+	// dictCount names dictionary parameters uniquely ("dict$0", ...).
+	dictCount int
 }
 
 // buildRow is the value of a query row: the sole variable, or a
@@ -150,9 +162,37 @@ func (r *resolver) toDecl(env *coreEnv, decl ast.Decl) (core.Decl,
 	if err != nil {
 		return nil, nil, err
 	}
-	exp, err := r.toExp(env, bind.Exp)
-	if err != nil {
-		return nil, nil, err
+	// If the type resolver left overload constraints unresolved (the
+	// bound value is used at an abstract type), attach a qualified
+	// type to the bound name for display, e.g. "val demo = fn :
+	// (second : 'a -> 'b, first : 'a -> 'c) => 'a -> 'b * 'c".
+	var exp core.Exp
+	if idPat, ok := pat.(*core.IDPat); ok {
+		q, qerr := r.typeMap.Qualify(bind.Pat)
+		if qerr != nil {
+			return nil, nil, qerr
+		}
+		if qual, ok := q.(*types.Qualified); ok {
+			// The bound value uses overloaded names at an abstract type,
+			// so it has a qualified type. Compile it with one dictionary
+			// parameter per predicate (Wadler-Blott dictionary passing):
+			// inside the body an overloaded name at an abstract type
+			// refers to its dictionary parameter, and the value becomes a
+			// curried function that each use site supplies the selected
+			// instances to.
+			idPat.SurfaceT = qual
+			exp, err = r.toCoreWithDictionaries(env, qual.Predicates,
+				bind.Exp)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	if exp == nil {
+		exp, err = r.toExp(env, bind.Exp)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 	env2 := env
 	for _, id := range core.PatIDs(pat) {
@@ -471,6 +511,17 @@ func (r *resolver) toApply(env *coreEnv, apply *ast.Apply,
 	if err != nil {
 		return nil, err
 	}
+	// If the function is a qualified-typed binding, supply its
+	// dictionaries (the instances selected from the now-concrete use
+	// type) as curried arguments ahead of the real argument
+	// (hydromatic/morel#426, dictionary passing).
+	if id, ok := apply.Fn.(*ast.ID); ok {
+		dicts, useType, derr := r.dictionaryArgsForUse(env, id, apply.Fn)
+		if derr != nil {
+			return nil, derr
+		}
+		fn = applyDicts(fn, dicts, useType, apply.Span(), r.typeMap.sys)
+	}
 	arg, err := r.toExp(env, apply.Arg)
 	if err != nil {
 		return nil, err
@@ -482,6 +533,32 @@ func (r *resolver) toApply(env *coreEnv, apply *ast.Apply,
 		Span: apply.Span(),
 	}
 	return apply2, nil
+}
+
+// applyDicts wraps fn in one curried application per dictionary
+// argument, giving each intermediate application the curried
+// function type it produces (the innermost result is useType, the
+// value's real function type at this use site). Returns fn unchanged
+// when there are no dictionaries.
+func applyDicts(fn core.Exp, dicts []core.Exp, useType types.Type,
+	span token.Span, sys *types.System,
+) core.Exp {
+	if len(dicts) == 0 {
+		return fn
+	}
+	// after[i] is the type of fn once dicts[0..i] have been applied:
+	// the last dictionary leaves useType, each earlier one a curried
+	// function returning the next.
+	after := make([]types.Type, len(dicts))
+	acc := useType
+	for i, dict := range slices.Backward(dicts) {
+		after[i] = acc
+		acc = sys.Fn(dict.Type(), acc)
+	}
+	for i, dict := range dicts {
+		fn = &core.Apply{T: after[i], Fn: fn, Arg: dict, Span: span}
+	}
+	return fn
 }
 
 // toOverloadApply lowers a call of an overloaded name. It selects
@@ -507,6 +584,19 @@ func (r *resolver) toOverloadApply(env *coreEnv, apply *ast.Apply,
 		}
 	}
 	if len(matches) != 1 {
+		// If the argument type is not concrete, no instance can be
+		// selected statically: this is an overloaded use inside a
+		// qualified-typed value. If a dictionary parameter for this name
+		// is in scope (we are compiling the body of such a value), the
+		// use compiles to an application of that parameter, which at run
+		// time holds the instance the caller selected (dictionary
+		// passing). Otherwise emit the milestone-1 placeholder.
+		if containsVar(argType) {
+			if dictPat, ok := r.dictionaryParams[id.Name]; ok {
+				return r.dictApply(env, apply, dictPat, t)
+			}
+			return r.unresolvedOverload(env, apply, id, t)
+		}
 		return nil, &Error{
 			Span: apply.Span(),
 			Msg: "no unique instance of overloaded '" + id.Name +
@@ -524,6 +614,319 @@ func (r *resolver) toOverloadApply(env *coreEnv, apply *ast.Apply,
 		Arg:  arg,
 		Span: apply.Span(),
 	}, nil
+}
+
+// toCoreWithDictionaries compiles the value of a qualified binding,
+// introducing one dictionary parameter per predicate. Inside exp, an
+// overloaded name used at an abstract type compiles to a reference to
+// its dictionary parameter (see toOverloadApply); the compiled value
+// is wrapped in one curried lambda per predicate, so at a use site
+// the caller supplies the instances as ordinary arguments (see
+// dictionaryArgsForUse). The first predicate is the outermost
+// parameter, matching the argument order at the use site.
+func (r *resolver) toCoreWithDictionaries(env *coreEnv,
+	predicates []types.Predicate, exp ast.Expr,
+) (core.Exp, error) {
+	dictPats := make([]*core.IDPat, len(predicates))
+	for i, p := range predicates {
+		dictPat := &core.IDPat{T: p.Type, Name: r.freshDictName()}
+		dictPats[i] = dictPat
+		r.dictionaryParams[p.Name] = dictPat
+	}
+	body, err := r.toExp(env, exp)
+	for _, p := range predicates {
+		delete(r.dictionaryParams, p.Name)
+	}
+	if err != nil {
+		return nil, err
+	}
+	for _, dictPat := range slices.Backward(dictPats) {
+		fnType, ok := r.typeMap.sys.Fn(dictPat.T, body.Type()).(*types.Fn)
+		if !ok {
+			return nil, &Error{
+				Span: exp.Span(),
+				Msg:  "dictionary parameter is not a function type",
+			}
+		}
+		body = &core.Fn{T: fnType, IDPat: dictPat, Exp: body}
+	}
+	return body, nil
+}
+
+// dictApply lowers an overloaded application inside the body of a
+// qualified value to an application of the dictionary parameter that
+// carries the instance the caller selected (dictionary passing).
+func (r *resolver) dictApply(env *coreEnv, apply *ast.Apply,
+	dictPat *core.IDPat, t types.Type,
+) (core.Exp, error) {
+	arg, err := r.toExp(env, apply.Arg)
+	if err != nil {
+		return nil, err
+	}
+	return &core.Apply{
+		T:    t,
+		Fn:   &core.ID{Pat: dictPat},
+		Arg:  arg,
+		Span: apply.Span(),
+	}, nil
+}
+
+// freshDictName returns a unique dictionary-parameter name; the "$"
+// keeps it distinct from any user-written name.
+func (r *resolver) freshDictName() string {
+	name := "dict$" + itoa(r.dictCount)
+	r.dictCount++
+	return name
+}
+
+// dictionaryArgsForUse returns, for a use of a qualified-typed
+// binding named by id, the dictionary arguments to pass at this use
+// site — one per predicate, each the instance selected by the (now
+// concrete) use type — in predicate order, together with the use
+// type (the binding's real function type here). It returns nil, nil
+// when id is not a qualified-typed binding.
+func (r *resolver) dictionaryArgsForUse(env *coreEnv, id *ast.ID,
+	fnNode ast.Expr,
+) ([]core.Exp, types.Type, error) {
+	// The binding may be local to this compilation unit (its IdPat
+	// carries the qualified surface type) or declared in an earlier
+	// statement (its qualified type is in the top-level bindings).
+	var qual *types.Qualified
+	if pat := env.get(id.Name); pat != nil {
+		qual, _ = pat.SurfaceT.(*types.Qualified)
+	} else if b, ok := r.typeMap.bindings[id.Name]; ok {
+		qual, _ = b.Type.(*types.Qualified)
+	}
+	if qual == nil {
+		return nil, nil, nil
+	}
+	useType, err := r.typeMap.TypeOf(fnNode)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Recover the substitution from the scheme's type variables to the
+	// concrete types at this use site by matching the scheme's base
+	// type against the use type.
+	subst := map[int]types.Type{}
+	matchType(qual.Type, useType, subst)
+	dicts := make([]core.Exp, 0, len(qual.Predicates))
+	for _, p := range qual.Predicates {
+		pfn, ok := p.Type.(*types.Fn)
+		if !ok {
+			return nil, nil, &Error{
+				Span: id.Span(),
+				Msg:  "overload predicate is not a function type",
+			}
+		}
+		predArgType := substType(r.typeMap.sys, pfn.Param, subst)
+		inst, ok := r.selectInstance(p.Name, predArgType)
+		if !ok {
+			return nil, nil, &Error{
+				Span: id.Span(),
+				Msg: "no unique instance of overloaded '" + p.Name +
+					"' for argument type " + predArgType.String(),
+			}
+		}
+		dicts = append(dicts, &core.ID{Pat: inst.HiddenPat})
+	}
+	return dicts, useType, nil
+}
+
+// selectInstance returns the unique overload instance of name
+// callable with an argument of argType, or false if not exactly one
+// matches.
+func (r *resolver) selectInstance(name string, argType types.Type) (
+	OverloadInstance, bool,
+) {
+	var matches []OverloadInstance
+	for _, inst := range r.overloads.Instances(name) {
+		if fn, ok := inst.Type.(*types.Fn); ok &&
+			specializes(argType, fn.Param) {
+			matches = append(matches, inst)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], true
+	}
+	return OverloadInstance{}, false
+}
+
+// matchType records, for each type variable in pattern, the concrete
+// type at the corresponding position in concrete. It is a one-way
+// match (pattern has variables where concrete is concrete), enough to
+// recover a qualified scheme's use-site substitution.
+func matchType(pattern, concrete types.Type, subst map[int]types.Type) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch p := pattern.(type) {
+	case *types.Collection:
+		if c, ok := concrete.(*types.Collection); ok {
+			matchType(p.Elem, c.Elem, subst)
+		}
+	case *types.Fn:
+		if c, ok := concrete.(*types.Fn); ok {
+			matchType(p.Param, c.Param, subst)
+			matchType(p.Result, c.Result, subst)
+		}
+	case *types.List:
+		if c, ok := concrete.(*types.List); ok {
+			matchType(p.Elem, c.Elem, subst)
+		}
+	case *types.Named:
+		if c, ok := concrete.(*types.Named); ok && p.Name == c.Name {
+			matchTypes(p.Args, c.Args, subst)
+		}
+	case *types.Record:
+		if c, ok := concrete.(*types.Record); ok {
+			matchFields(p.Fields, c.Fields, subst)
+		}
+	case *types.Tuple:
+		if c, ok := concrete.(*types.Tuple); ok {
+			matchTypes(p.Args, c.Args, subst)
+		}
+	case *types.Var:
+		if _, seen := subst[p.Ordinal]; !seen {
+			subst[p.Ordinal] = concrete
+		}
+	}
+}
+
+// matchTypes matches two equal-length type lists position by
+// position (doing nothing if the lengths differ).
+func matchTypes(ps, cs []types.Type, subst map[int]types.Type) {
+	if len(ps) != len(cs) {
+		return
+	}
+	for i := range ps {
+		matchType(ps[i], cs[i], subst)
+	}
+}
+
+// matchFields is matchTypes for record fields.
+func matchFields(ps, cs []types.Field, subst map[int]types.Type) {
+	if len(ps) != len(cs) {
+		return
+	}
+	for i := range ps {
+		matchType(ps[i].Type, cs[i].Type, subst)
+	}
+}
+
+// substType applies a type-variable substitution (by ordinal),
+// leaving unmapped variables unchanged.
+func substType(sys *types.System, t types.Type,
+	subst map[int]types.Type,
+) types.Type {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch t := t.(type) {
+	case *types.Collection:
+		return sys.Collection(substType(sys, t.Elem, subst))
+	case *types.Fn:
+		return sys.Fn(substType(sys, t.Param, subst),
+			substType(sys, t.Result, subst))
+	case *types.List:
+		return sys.List(substType(sys, t.Elem, subst))
+	case *types.Named:
+		args := make([]types.Type, len(t.Args))
+		for i, a := range t.Args {
+			args[i] = substType(sys, a, subst)
+		}
+		return sys.Named(t.Name, args...)
+	case *types.Record:
+		fields := make([]types.Field, len(t.Fields))
+		for i, f := range t.Fields {
+			fields[i] = types.Field{
+				Label: f.Label, Type: substType(sys, f.Type, subst),
+			}
+		}
+		return sys.Record(fields)
+	case *types.Tuple:
+		args := make([]types.Type, len(t.Args))
+		for i, a := range t.Args {
+			args[i] = substType(sys, a, subst)
+		}
+		return sys.Tuple(args...)
+	case *types.Var:
+		if r, ok := subst[t.Ordinal]; ok {
+			return r
+		}
+		return t
+	}
+	return t
+}
+
+// unresolvedOverload builds a placeholder for an overloaded
+// application whose argument type is not concrete (so no instance
+// can be selected statically). The placeholder has the result type
+// of the application but raises Fail if it is ever evaluated; the
+// enclosing value type-checks (with a qualified type) but cannot yet
+// be applied. A later milestone will replace this with dictionary
+// passing.
+func (r *resolver) unresolvedOverload(env *coreEnv,
+	apply *ast.Apply, id *ast.ID, t types.Type,
+) (core.Exp, error) {
+	// Evaluate the argument for its effects and type, even though the
+	// result is discarded by the raise.
+	_, err := r.toExp(env, apply.Arg)
+	if err != nil {
+		return nil, err
+	}
+	sys := r.typeMap.sys
+	tc, ok := sys.LookupTyCon("Fail")
+	if !ok {
+		return nil, &Error{
+			Span: apply.Span(),
+			Msg: "no unique instance of overloaded '" + id.Name +
+				"' (cannot build placeholder)",
+		}
+	}
+	exnType := tc.Result
+	failCon, _ := r.toCon("Fail", sys.Fn(sys.String, exnType))
+	msg := &core.Literal{
+		T:    sys.String,
+		Kind: ast.StringLiteralOp,
+		Value: "overloaded '" + id.Name +
+			"' cannot yet be applied at an abstract type",
+	}
+	failExn := &core.Apply{
+		T: exnType, Fn: failCon, Arg: msg,
+		Span: apply.Span(),
+	}
+	return &core.Apply{
+		T: t,
+		Fn: &core.ID{Pat: &core.IDPat{
+			T:    sys.Fn(exnType, t),
+			Name: RaiseName,
+		}},
+		Arg:  failExn,
+		Span: apply.Span(),
+	}, nil
+}
+
+// containsVar reports whether a type contains a type variable.
+func containsVar(t types.Type) bool {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch t := t.(type) {
+	case *types.Collection:
+		return containsVar(t.Elem)
+	case *types.Fn:
+		return containsVar(t.Param) || containsVar(t.Result)
+	case *types.List:
+		return containsVar(t.Elem)
+	case *types.Named:
+		return slices.ContainsFunc(t.Args, containsVar)
+	case *types.Record:
+		for _, f := range t.Fields {
+			if containsVar(f.Type) {
+				return true
+			}
+		}
+		return false
+	case *types.Tuple:
+		return slices.ContainsFunc(t.Args, containsVar)
+	case *types.Var:
+		return true
+	}
+	return false
 }
 
 // toFrom converts a query to Core. Only the subset that evaluates
