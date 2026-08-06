@@ -40,6 +40,10 @@ const (
 	productVersion = "0.8.0"
 )
 
+// Banner is the shell's startup banner, for a front end that
+// prints it before the first prompt.
+func Banner() string { return bannerText() }
+
 // bannerText is the shell's banner. Go version numbers start with
 // 'v', which the banner supplies; productVersion does not carry it.
 func bannerText() string {

@@ -132,6 +132,9 @@ Implemented:
 * A shell that reads scripts or standard input, evaluates a single
   expression with `-e`, and checks a script against its expected
   output in `.smli` (idempotent) format
+* Command-line editing in the shell, with Emacs and Vi bindings and
+  `.inputrc` support, and history that persists across sessions in
+  `~/.morel/history-go`
 
 Not implemented:
 * `exception` declarations, and `handle`
@@ -145,8 +148,8 @@ Not implemented:
 * External data: reading from the file system, or from a database
   via ODBC or JDBC
 * Attributes (`[@ ... ]`) and quoted identifiers
-* Command-line editing and history in the shell; there is no
-  up-arrow recall, and nothing is saved between sessions
+* Syntax highlighting in the shell
+* Tab completion in the shell
 
 See also [GitHub issues](https://github.com/hydromatic/morel-go/issues).
 

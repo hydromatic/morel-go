@@ -143,6 +143,33 @@ output should be identical to the input.
 $ ./morel testdata/script/simple.smli | diff - testdata/script/simple.smli
 ```
 
-Morel Go's shell has no command-line editing and no history file, so
-unlike Morel Java and Morel Rust there is nothing to check about
-up-arrow recall or `~/.morel`.
+Confirm that a statement can span lines, and that the continuation
+prompt is `= `:
+
+```
+- 1 +
+= 2;
+val it = 3 : int
+```
+
+Quit the shell (type control+D), and confirm that the command was
+saved to the history file:
+
+```bash
+$ cat ~/.morel/history-go
+```
+
+The file should contain the commands you typed, one JSON record per
+line, with a multi-line statement held as a single entry. If you have
+not run the shell before, confirm that the `~/.morel` directory and
+the `history-go` file were created.
+
+The file name is not Morel Java's `~/.morel/history` or Morel Rust's
+`~/.morel/history-rust`: the three history formats are not
+compatible, so each implementation keeps its own.
+
+Start the shell again, press the up-arrow key, and confirm that the
+previous statement is recalled — a multi-line statement as a unit.
+Execute another command, quit, and confirm that `~/.morel/history-go`
+has grown: the new command is appended, and the earlier history is
+preserved.

@@ -15,13 +15,8 @@
 // language governing permissions and limitations under the
 // License.
 
-module github.com/hydromatic/morel-go
+package terminal
 
-go 1.25.0
+// Test hook for the unexported statement-completeness test.
 
-require github.com/reeflective/readline v1.3.0
-
-require (
-	github.com/rivo/uniseg v0.4.7 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-)
+func CompleteForTest(text string) bool { return complete(text) }

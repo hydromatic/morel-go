@@ -26,14 +26,16 @@ import (
 	"os"
 
 	"github.com/hydromatic/morel-go/internal/shell"
+	"github.com/hydromatic/morel-go/internal/shell/terminal"
 )
 
 func main() {
 	args := shell.ParseArgs(os.Args[1:])
 	var err error
 	if args.WantsRepl() && isTerminal(os.Stdin) {
-		err = args.Repl(os.Stdin, os.Stdout)
+		err = terminal.Repl(args, os.Stdout)
 	} else {
+		// A pipe, a script file, or "--terminal=dumb".
 		err = args.Run(os.Stdin, os.Stdout)
 	}
 	if err != nil {
