@@ -246,6 +246,16 @@ func (k *Kernel) Config() *Config {
 	return &k.config
 }
 
+// SetProp sets a session property, as "Sys.set" does from Morel
+// source. It is how a front end tells the kernel something only it
+// can know, such as the terminal's background color.
+func (c *Config) SetProp(name, value string) {
+	if _, ok := sysProps[name]; !ok {
+		panic("unknown property: " + name)
+	}
+	c.props[name] = value
+}
+
 // GapSamples reports the first statement that produced each gap
 // message, truncated to one line.
 func (k *Kernel) GapSamples() map[string]string {

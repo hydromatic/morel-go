@@ -38,6 +38,9 @@ func (a *Args) Run(in io.Reader, out io.Writer) error {
 		kernel.Config().Directory = a.Directory
 	}
 	kernel.Config().ScriptDirectory = a.ScriptDirectory
+	if a.ColorScheme != "" {
+		kernel.Config().SetProp("colorScheme", a.ColorScheme)
+	}
 	kernel.Config().MaxUseDepth = a.MaxUseDepth
 	if a.HasEval {
 		kernel.Config().ShowUnsupported = true
