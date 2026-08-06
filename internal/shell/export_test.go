@@ -99,3 +99,9 @@ func UnimplementedStructLibMembersForTest() []string {
 	}
 	return missing
 }
+
+// Test hook for the unexported background-to-scheme rule.
+
+func SchemeForBackgroundForTest(background string) string {
+	return schemeForBackground(background)
+}

@@ -32,6 +32,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/muesli/termenv"
 	"github.com/reeflective/readline"
 
 	"github.com/hydromatic/morel-go/internal/shell"
@@ -122,6 +123,22 @@ func Repl(a *shell.Args, out io.Writer) error {
 	kernel := shell.NewKernel(sourceStdIn)
 	if a.Directory != "" {
 		kernel.Config().Directory = a.Directory
+	}
+	if a.ColorScheme != "" {
+		kernel.Config().SetProp("colorScheme", a.ColorScheme)
+	}
+	// Ask the terminal for its background while it is idle, before
+	// the line reader starts; the color scheme follows from it
+	// when "colorScheme" does not name one.
+	if bg := deduceBackground(
+		termenv.NewOutput(os.Stdout),
+	); bg != "" {
+		kernel.Config().SetProp("terminalBackground", bg)
+	}
+	// The scheme is read on each keystroke, so that
+	// Sys.set ("colorScheme", ...) takes effect at once.
+	rl.SyntaxHighlighter = func(line []rune) string {
+		return kernel.DeduceColorScheme().Highlight(string(line))
 	}
 	for {
 		line, readErr := rl.Readline()

@@ -1,0 +1,179 @@
+// Licensed to Julian Hyde under one or more contributor license
+// agreements.  See the NOTICE file distributed with this work
+// for additional information regarding copyright ownership.
+// Julian Hyde licenses this file to you under the Apache
+// License, Version 2.0 (the "License"); you may not use this
+// file except in compliance with the License.  You may obtain a
+// copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+// either express or implied.  See the License for the specific
+// language governing permissions and limitations under the
+// License.
+
+package shell_test
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/hydromatic/morel-go/internal/shell"
+)
+
+// catLetter renders a category as one character, so that a whole
+// scan can be written as a string under the source it classifies.
+var catLetter = map[shell.Category]byte{
+	shell.CatNone:       '.',
+	shell.CatComment:    'c',
+	shell.CatConstant:   'k',
+	shell.CatError:      'e',
+	shell.CatIdentifier: 'i',
+	shell.CatKeyword:    'K',
+	shell.CatNumeric:    'n',
+	shell.CatString:     's',
+	shell.CatSymbol:     'y',
+	shell.CatTypeVar:    't',
+}
+
+// scanString renders Scan's output as one letter per byte.
+func scanString(t *testing.T, src string) string {
+	t.Helper()
+	spans := shell.Scan(src)
+	var b strings.Builder
+	prev := 0
+	for _, s := range spans {
+		if s.Start != prev {
+			t.Errorf("%q: span starts at %d, want %d",
+				src, s.Start, prev)
+		}
+		if s.End <= s.Start {
+			t.Fatalf("%q: empty span at %d", src, s.Start)
+		}
+		letter, ok := catLetter[s.Category]
+		if !ok {
+			t.Fatalf("%q: unknown category %d", src, s.Category)
+		}
+		b.WriteString(strings.Repeat(string(letter),
+			s.End-s.Start))
+		prev = s.End
+	}
+	if prev != len(src) {
+		t.Errorf("%q: spans end at %d, want %d", src, prev,
+			len(src))
+	}
+	return b.String()
+}
+
+func TestScan(t *testing.T) {
+	for _, tc := range []struct{ src, want string }{
+		// Keywords, identifiers, symbols, numbers.
+		{"val x = 1;", "KKK.i.y.ny"},
+		{"fun f x = x + 1", "KKK.i.i.y.i.y.n"},
+		// true, false and nil are constants; other identifiers
+		// keep the default style.
+		{"true", "kkkk"},
+		{"nil", "kkk"},
+		{"truest", "iiiiii"},
+		// A structure name highlights like a type variable.
+		{"List.map", "ttttyiii"},
+		// "list" is a type constructor, not a reserved word, so
+		// it keeps the default style.
+		{"'a list", "tt.iiii"},
+		// A lone quote is a symbol, not a type variable.
+		{"'", "y"},
+		// Literals: int, real, scientific, word, hex word.
+		{"1", "n"},
+		{"1.5", "nnn"},
+		{"1e~7", "nnnn"},
+		{"0w7", "nnn"},
+		{"0wx1F", "nnnnn"},
+		// "1.map" is 1, then '.', then map: the '.' does not
+		// start a fractional part unless a digit follows.
+		{"1.map", "nyiii"},
+		// "0w" with no digit is the integer 0 then the
+		// identifier w.
+		{"0w", "ni"},
+		// Comments, block and line, and nesting.
+		{"(* hi *)", "cccccccc"},
+		{"(* a (* b *) c *)", "ccccccccccccccccc"},
+		{"(*) to end", "cccccccccc"},
+		{"1 (*) two", "n.ccccccc"},
+		// Strings. An escaped quote does not end the string.
+		{`"abc"`, "sssss"},
+		{`"a\"b"`, "ssssss"},
+	} {
+		if got := scanString(t, tc.src); got != tc.want {
+			t.Errorf("Scan(%q):\n got %s\nwant %s",
+				tc.src, got, tc.want)
+		}
+	}
+}
+
+// TestScanIncomplete checks the states the shell passes through as
+// a statement is typed. The highlighter runs on every keystroke, so
+// each prefix must scan, and must not run past the end of the
+// buffer: morel-java #415 crashed on `"\`, the state every string
+// escape passes through.
+func TestScanIncomplete(t *testing.T) {
+	for _, tc := range []struct{ src, want string }{
+		{`"`, "s"},
+		{`"a`, "ss"},
+		{`"a\`, "sss"},
+		{`"a\n`, "ssss"},
+		{`"a\n"`, "sssss"},
+		{`\`, "y"},
+		{"(*", "cc"},
+		{"(* a", "cccc"},
+		{"(* a *", "cccccc"},
+		{"(* a *)", "ccccccc"},
+	} {
+		if got := scanString(t, tc.src); got != tc.want {
+			t.Errorf("Scan(%q):\n got %s\nwant %s",
+				tc.src, got, tc.want)
+		}
+	}
+}
+
+// TestScanEveryPrefix checks that scanning any prefix of a
+// statement terminates and tiles the input, as the shell does on
+// each keystroke.
+func TestScanEveryPrefix(t *testing.T) {
+	const src = `val s = "a\"b" (* c *) 0wx1F ~1.5e~7 'a List.map;`
+	for i := 0; i <= len(src); i++ {
+		scanString(t, src[:i])
+	}
+}
+
+// TestScanQuotedIdent checks that a quoted identifier is one
+// identifier span, whatever it contains: a keyword inside backticks
+// is a name, not a keyword.
+func TestScanQuotedIdent(t *testing.T) {
+	for _, tc := range []struct{ src, want string }{
+		// The user's examples.
+		{"from `from` in [1,2]", "KKKK.iiiiii.KK.ynyny"},
+		{"val `o` = 1", "KKK.iii.y.n"},
+		{"val `let val` = 2;", "KKK.iiiiiiiii.y.ny"},
+		// A plain quoted name.
+		{"`x`", "iii"},
+		// A doubled backtick is a literal one, and does not
+		// close the identifier.
+		{"`a``b`", "iiiiii"},
+		// Backticks are not swallowed by an adjacent symbol
+		// run: "=" then a quoted name, with no space.
+		{"x=`y`", "iyiii"},
+		// Unterminated: runs to the end, as the shell must
+		// color it while it is being typed.
+		{"`", "i"},
+		{"`ab", "iii"},
+		{"`a``", "iiii"},
+	} {
+		if got := scanString(t, tc.src); got != tc.want {
+			t.Errorf("Scan(%q):\n got %s\nwant %s",
+				tc.src, got, tc.want)
+		}
+	}
+}

@@ -153,13 +153,15 @@ func intPropDefault(name string) int {
 // top-level aliases, for NewKernel to inject.
 func (k *Kernel) sysBuiltins() map[string]eval.Val {
 	m := map[string]eval.Val{
-		"Sys.env":     eval.Fn(k.sysEnv),
-		"Sys.plan":    eval.Fn(k.sysPlan),
-		"Sys.planEx":  eval.Fn(k.sysPlanEx),
-		"Sys.set":     eval.Fn(k.sysSet),
-		"Sys.show":    eval.Fn(k.sysShow),
-		"Sys.showAll": eval.Fn(k.sysShowAll),
-		"Sys.unset":   eval.Fn(k.sysUnset),
+		"Sys.colorSchemes":      eval.Fn(k.sysColorSchemes),
+		"Sys.deduceColorScheme": eval.Fn(k.sysDeduceColorScheme),
+		"Sys.env":               eval.Fn(k.sysEnv),
+		"Sys.plan":              eval.Fn(k.sysPlan),
+		"Sys.planEx":            eval.Fn(k.sysPlanEx),
+		"Sys.set":               eval.Fn(k.sysSet),
+		"Sys.show":              eval.Fn(k.sysShow),
+		"Sys.showAll":           eval.Fn(k.sysShowAll),
+		"Sys.unset":             eval.Fn(k.sysUnset),
 		"Variant.print": eval.Fn(func(arg eval.Val) (eval.Val, error) {
 			return compile.VariantPrint(arg, k.sys), nil
 		}),
@@ -396,6 +398,32 @@ func (k *Kernel) showProp(name string) (string, bool) {
 		return *d, true
 	}
 	return "", false
+}
+
+// sysColorSchemes is "Sys.colorSchemes ()": the built-in
+// syntax-highlighting color schemes, each a record whose "name"
+// field is the scheme name and whose remaining fields give the
+// style of each token category.
+func (k *Kernel) sysColorSchemes(eval.Val) (eval.Val, error) {
+	out := make([]eval.Val, len(colorSchemes))
+	for i, scheme := range colorSchemes {
+		record := make([]eval.Val, len(schemeFields))
+		for j, f := range schemeFields {
+			if f.label == "name" {
+				record[j] = scheme.Name
+			} else {
+				record[j] = scheme.Style(f.category)
+			}
+		}
+		out[i] = record
+	}
+	return out, nil
+}
+
+// sysDeduceColorScheme is "Sys.deduceColorScheme ()": the name of
+// the color scheme in effect.
+func (k *Kernel) sysDeduceColorScheme(eval.Val) (eval.Val, error) {
+	return k.DeduceColorScheme().Name, nil
 }
 
 // sysShowAll is "Sys.showAll ()": every property and its

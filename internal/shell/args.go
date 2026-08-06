@@ -66,6 +66,11 @@ type Args struct {
 	// Dumb disables interactive terminal features
 	// ("--terminal=dumb").
 	Dumb bool
+
+	// ColorScheme names the syntax-highlighting color scheme
+	// ("--color-scheme="); empty means deduce one from the
+	// terminal's background.
+	ColorScheme string
 }
 
 // ParseArgs parses a command line into Args. An unrecognized flag
@@ -107,6 +112,8 @@ func ParseArgs(argv []string) *Args {
 			a.Banner = false
 		case arg == "--terminal=dumb":
 			a.Dumb = true
+		case strings.HasPrefix(arg, "--color-scheme="):
+			a.ColorScheme = arg[len("--color-scheme="):]
 		case arg == "-":
 			a.Files = append(a.Files, "-")
 		case strings.HasPrefix(arg, "-"):
@@ -140,6 +147,9 @@ Options:
   --maxUseDepth=N     Limit nested 'use' calls to N levels.
   --banner=false      Suppress the startup banner.
   --terminal=dumb     Disable interactive terminal features.
+  --color-scheme=NAME Syntax-highlighting scheme: "dark", "light"
+                      or "none" (default: deduced from the
+                      terminal's background).
   -h, --help          Print this help, then exit.
 
 A file argument of '-' means standard input.

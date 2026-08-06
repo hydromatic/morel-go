@@ -62,6 +62,9 @@ func (a *Args) Repl(in io.Reader, out io.Writer) error {
 	if a.Directory != "" {
 		kernel.Config().Directory = a.Directory
 	}
+	if a.ColorScheme != "" {
+		kernel.Config().SetProp("colorScheme", a.ColorScheme)
+	}
 	scanner := bufio.NewScanner(in)
 	buf := ""
 	write(primaryPrompt)

@@ -75,8 +75,6 @@ func TestStructLibStructuresComplete(t *testing.T) {
 func TestUnimplementedMembers(t *testing.T) {
 	want := []string{
 		"Sys.clearEnv",
-		"Sys.colorSchemes",
-		"Sys.deduceColorScheme",
 		"Sys.file",
 	}
 	got := shell.UnimplementedMembersForTest()

@@ -135,6 +135,8 @@ Implemented:
 * Command-line editing in the shell, with Emacs and Vi bindings and
   `.inputrc` support, and history that persists across sessions in
   `~/.morel/history-go`
+* Syntax highlighting in the shell, with a color scheme deduced from
+  the terminal's background or named by `--color-scheme`
 
 Not implemented:
 * `exception` declarations, and `handle`
@@ -148,7 +150,6 @@ Not implemented:
 * External data: reading from the file system, or from a database
   via ODBC or JDBC
 * Attributes (`[@ ... ]`) and quoted identifiers
-* Syntax highlighting in the shell
 * Tab completion in the shell
 
 See also [GitHub issues](https://github.com/hydromatic/morel-go/issues).
