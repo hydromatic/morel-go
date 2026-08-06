@@ -744,10 +744,11 @@ func (p *Parser) parenExpr() (ast.Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+	span := token.Span{Start: start, End: end}
 	if len(args) == 1 {
+		ast.SetSpan(args[0], span)
 		return args[0], nil
 	}
-	span := token.Span{Start: start, End: end}
 	return ast.NewTuple(span, args), nil
 }
 

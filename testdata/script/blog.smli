@@ -1721,6 +1721,11 @@ from e in scott.emps
 >
 > val it : {ename:string, rank:int, sal:real} list
 
+from e in scott.emps
+  yield {e.ename, e.sal, rank = ordinal + 1};
+> stdIn:2.33-2.40 Error: cannot use 'ordinal' in unordered query
+>   raised at: stdIn:2.33-2.40
+
 (* Compute the set of distinct rolls of two dice. *)
 from i in [1, 2, 3, 4, 5, 6],
     j in [1, 2, 3, 4, 5, 6]
