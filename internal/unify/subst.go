@@ -28,6 +28,11 @@ import (
 // expands such terms fully.
 type Substitution struct {
 	Map map[*Var]Term
+	// Residuals are the named overload constraints that were still
+	// unresolved when unification finished (their argument type never
+	// became concrete). They become the predicates of a qualified
+	// type. Empty for an ordinary unification.
+	Residuals []Constraint
 }
 
 // Resolve expands a term by applying the substitution repeatedly
@@ -53,7 +58,7 @@ func (s *Substitution) ResolveAll() *Substitution {
 	for v, t := range s.Map {
 		m[v] = s.Resolve(t)
 	}
-	return &Substitution{Map: m}
+	return &Substitution{Map: m, Residuals: s.Residuals}
 }
 
 // String returns the substitution as "[t1/V1, t2/V2]", with

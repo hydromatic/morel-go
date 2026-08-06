@@ -608,6 +608,28 @@ func (k *Kernel) executeStatement(n ast.Node) string {
 	return out
 }
 
+// qualifiedOrPlain returns surfaceT when it is a qualified type (so
+// a later use of the binding re-emits its overload constraints),
+// otherwise plainT.
+func qualifiedOrPlain(plainT, surfaceT types.Type) types.Type {
+	if _, ok := surfaceT.(*types.Qualified); ok {
+		return surfaceT
+	}
+	return plainT
+}
+
+// overDeclEcho handles an "over name" declaration: it introduces an
+// overloaded name, binds nothing at runtime, and echoes "over name".
+// Later "val inst" declarations add instances to it.
+func (k *Kernel) overDeclEcho(coreDecl core.Decl) (string, bool) {
+	overDecl, isOver := coreDecl.(*core.OverDecl)
+	if !isOver {
+		return "", false
+	}
+	k.overloads.Declare(overDecl.Name)
+	return "over " + overDecl.Name, true
+}
+
 func (k *Kernel) runStatement(n ast.Node) string {
 	k.pendingLines = nil
 	var decl ast.Decl
@@ -654,12 +676,8 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	if err != nil {
 		return k.formatCompileError(err)
 	}
-	if overDecl, isOver := coreDecl.(*core.OverDecl); isOver {
-		// An "over name" declaration introduces an overloaded name.
-		// It binds nothing at runtime and echoes "over name"; later
-		// "val inst" declarations add instances to it.
-		k.overloads.Declare(overDecl.Name)
-		return "over " + overDecl.Name
+	if s, isOver := k.overDeclEcho(coreDecl); isOver {
+		return s
 	}
 	warnings, covErr := compile.CheckCoverage(k.sys, coreDecl)
 	if covErr != nil {
@@ -745,7 +763,10 @@ func (k *Kernel) runStatement(n ast.Node) string {
 					b.Pat.SurfaceT))
 			continue
 		}
-		k.bind(b.Pat.Name, b.Pat.T)
+		// A binding whose value is used at an abstract type has a
+		// qualified surface type; bind that (not the plain function
+		// type) so a later use re-emits the overload constraints.
+		k.bind(b.Pat.Name, qualifiedOrPlain(b.Pat.T, b.Pat.SurfaceT))
 		k.values[b.Pat.Name] = v
 		lines = append(lines,
 			k.config.prettyBinding(b.Pat.Name, v, b.Pat.T,

@@ -55,9 +55,22 @@ type Candidate struct {
 // eliminated; when one remains, its action fires. Constraints
 // model overloaded operators, and will also carry hooks such as
 // "default to int" and collection-kind resolution.
+//
+// Name, Result and ArgResults are set only for a constraint that
+// arose from a user-declared overloaded name ("over"/"val inst").
+// If such a constraint is never resolved (its argument type never
+// becomes concrete), it is surfaced as a residual constraint so
+// that it can become a predicate of a qualified type; Name is used
+// for that predicate and in error messages, Result is the
+// overloaded application's result variable, and ArgResults records
+// the candidates' (argument, result) type-term pairs so that the
+// predicate can be re-created at each use of the qualified type.
 type Constraint struct {
+	Name       string
 	Arg        *Var
+	Result     *Var
 	Candidates []Candidate
+	ArgResults []TermPair
 }
 
 // Equiv returns a ConstraintAction that equates two fixed terms.
@@ -73,6 +86,17 @@ func Equiv(t1, t2 Term) ConstraintAction {
 // unifies with the argument type of exactly one candidate, then
 // result is equated with that candidate's result type.
 func Overload(arg, result *Var, argResults []TermPair) Constraint {
+	return OverloadNamed("", arg, result, argResults)
+}
+
+// OverloadNamed is as Overload, but remembers the name of the
+// overloaded function. A named constraint that unification cannot
+// resolve (its argument type never becomes concrete) is surfaced as
+// a residual constraint rather than dropped, so that it can become a
+// predicate of a qualified type.
+func OverloadNamed(name string, arg, result *Var,
+	argResults []TermPair,
+) Constraint {
 	candidates := make([]Candidate, len(argResults))
 	for i, ar := range argResults {
 		resultType := ar.Right
@@ -86,7 +110,13 @@ func Overload(arg, result *Var, argResults []TermPair) Constraint {
 			},
 		}
 	}
-	return Constraint{Arg: arg, Candidates: candidates}
+	return Constraint{
+		Name:       name,
+		Arg:        arg,
+		Result:     result,
+		Candidates: candidates,
+		ArgResults: argResults,
+	}
 }
 
 // Unifier creates variables and atoms with unique names, and
@@ -158,7 +188,16 @@ func (u *Unifier) Unify(pairs []TermPair, actions []VarAction,
 			}
 			continue
 		}
-		return &Substitution{Map: w.result}, nil
+		// Any named overload constraint that still has more than one
+		// candidate never had its argument type pinned down; surface it
+		// so that it can become a predicate of a qualified type.
+		var residuals []Constraint
+		for _, c := range w.constraints {
+			if c.name != "" && len(c.candidates) > 1 {
+				residuals = append(residuals, c.source)
+			}
+		}
+		return &Substitution{Map: w.result, Residuals: residuals}, nil
 	}
 }
 
@@ -343,6 +382,12 @@ func kindOf(left, right Term) kind {
 type mutableConstraint struct {
 	arg        Term
 	candidates []Candidate
+	// name is the overloaded function's name, or "" if the
+	// constraint did not arise from a user overload; source is the
+	// original constraint, retained so that an unresolved named
+	// constraint can be surfaced as a residual.
+	name   string
+	source Constraint
 }
 
 // work is the workspace of one Unify call: queues of pending term
@@ -367,6 +412,8 @@ func newWork(pairs []TermPair, constraints []Constraint) *work {
 		w.constraints = append(w.constraints, &mutableConstraint{
 			arg:        c.Arg,
 			candidates: candidates,
+			name:       c.Name,
+			source:     c,
 		})
 	}
 	return w

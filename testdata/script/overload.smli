@@ -54,12 +54,42 @@ val inst second = fn (x, y, z) => y;
 val inst third = fn (x, y, z) => z;
 > val third = fn : 'a * 'b * 'c -> 'c
 
+(* 'demo' uses 'first' and 'second' on an argument of unknown type, so it
+ * acquires a qualified type recording that 'first' and 'second' must have
+ * instances for that type ("A Second Look at Overloading", section 2). *)
+val demo = fn r => (second r, first r);
+> val demo = fn : (second : 'a -> 'b, first : 'a -> 'c) => 'a -> 'b * 'c
+
+(* Applying 'demo' resolves the constraints at each call site (the instances
+ * are supplied as dictionaries) and evaluates. *)
+demo (3,"four",5);
+> val it = ("four",3) : string * int
+demo (3,"four");
+> val it = ("four",3) : string * int
+
+(* 'demo' is generalized, so it can be used at two different types in one
+ * expression. *)
+(demo (3,"four",5), demo (3,"four"));
+> val it = (("four",3),("four",3)) : (string * int) * (string * int)
+
 (* The same, but defining and using 'demo' within a single 'let' (the exact
  * example from "A Second Look at Overloading"); this combines
  * let-polymorphism with qualified types. We clear the environment first so
  * that 'first' and 'second' are not also overloaded at top level. *)
 Sys.clearEnv ();
 > val it = () : unit
+let
+  over first
+  over second
+  val inst first = fn (x, y) => x
+  val inst second = fn (x, y) => y
+  val inst first = fn (x, y, z) => x
+  val inst second = fn (x, y, z) => y
+  val demo = fn r => (second r, first r)
+in
+  (demo (3, "four", 5), demo (3, "four"))
+end;
+> val it = (("four",3),("four",3)) : (string * int) * (string * int)
 
 (* -------------------------------------------------------------------
  * A qualified value can be aliased, and can be used inside another
@@ -70,6 +100,12 @@ val inst inc = fn i: int => i + 1;
 > val inc = fn : int -> int
 val inst inc = fn b: bool => not b;
 > val inc = fn : bool -> bool
+val useInc = fn r => inc r;
+> val useInc = fn : {inc : 'a -> 'b} => 'a -> 'b
+
+(*) Alias of a qualified value; dictionaries are supplied at its use sites.
+val aliasInc = useInc;
+> val aliasInc = fn : {inc : 'a -> 'b} => 'a -> 'b
 
 (* -------------------------------------------------------------------
  * Two overloads, bool -> bool and int -> int. We call with bool argument,
