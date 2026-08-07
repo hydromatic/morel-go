@@ -32,6 +32,17 @@ type labelTerm struct {
 	term  unify.Term
 }
 
+// progressiveLabel marks a record term as progressive — a record
+// whose fields are not all known yet, as a directory's are not
+// until it has been browsed.
+//
+// A term's operator is built from its labels, so a record needs a
+// label to carry the mark. Without one, "{...}" and "{}" would
+// have the same term, and "{}" is unit. The label is stripped when
+// the term is converted back to a type, and no field can collide
+// with it: "$" cannot appear in a Morel label.
+const progressiveLabel = "z$dummy"
+
 // recordTerm builds the term for a record with the given fields,
 // which must be sorted by label. A record whose labels are the
 // integers 1..n (and n is not 1) is a tuple; an empty record is

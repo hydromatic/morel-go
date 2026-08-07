@@ -60,6 +60,12 @@ func TestScripts(t *testing.T) {
 			// script's own directory, as java's harness sets
 			// scriptDirectory.
 			kernel.Config().Directory = "testdata"
+			if rel == "file.smli" {
+				// "file.smli" browses the file system, so it starts
+				// in the data directory, where what it finds is
+				// predictable; java's harness does the same.
+				kernel.Config().Directory = "testdata/data"
+			}
 			kernel.Config().ScriptDirectory = filepath.Dir(f)
 			got, err := shell.RunScript(kernel, rel, string(data))
 			if err != nil {

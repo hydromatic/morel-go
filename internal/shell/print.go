@@ -105,6 +105,12 @@ func (c *Config) valueDoc(t types.Type, v eval.Val,
 		// A foreign relation prints opaquely as "<relation>".
 		return pp.Text("<relation>")
 	}
+	if f, isFile := v.(*eval.File); isFile && f.Kind.IsData() {
+		// So does a data file seen as an entry of a directory. Its
+		// rows are read only when it is used as a collection, so
+		// printing a directory does not read every file in it.
+		return pp.Text("<relation>")
+	}
 	// lint: sort until '^\t}' where '^\tcase '
 	switch t := t.(type) {
 	case *types.Fn:
@@ -271,6 +277,16 @@ func (c *Config) primitiveString(t *types.Primitive,
 }
 
 func asVals(v eval.Val) []eval.Val {
+	if f, isFile := v.(*eval.File); isFile {
+		// A directory's values are its entries, in the same order
+		// as the fields of its type.
+		children := f.Children()
+		vals := make([]eval.Val, len(children))
+		for i, child := range children {
+			vals[i] = child
+		}
+		return vals
+	}
 	vals, ok := v.([]eval.Val)
 	if !ok {
 		return nil
@@ -344,9 +360,14 @@ func (c *Config) typeDoc(t types.Type) pp.Doc {
 
 // recordTypeDoc lays out a record type "{a:t1, b:t2}", filling
 // its fields across lines joined by ", ", with continuation lines
-// indented one column past the first field.
+// indented one column past the first field. A progressive record
+// ends with a "..." item, standing for the fields not yet
+// discovered: "{a:t1, ...}", or "{...}" if there are none.
 func (c *Config) recordTypeDoc(t *types.Record) pp.Doc {
 	n := len(t.Fields)
+	if t.Progressive {
+		n++
+	}
 	items := make([]pp.Doc, n)
 	for i, f := range t.Fields {
 		field := pp.Beside(pp.Text(parse.QuoteIdent(f.Label)+":"),
@@ -356,6 +377,9 @@ func (c *Config) recordTypeDoc(t *types.Record) pp.Doc {
 		} else {
 			items[i] = field
 		}
+	}
+	if t.Progressive {
+		items[n-1] = pp.Text("...")
 	}
 	return pp.Beside(pp.Text("{"),
 		pp.Beside(pp.Align(pp.Nest(1, pp.Fill(pp.Text(" "), items))),

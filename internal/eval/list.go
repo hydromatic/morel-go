@@ -159,6 +159,11 @@ func concatFn(arg Val) (Val, error) {
 // that extracts element i of a record or tuple value.
 func Nth(i int) Fn {
 	return func(arg Val) (Val, error) {
+		// A directory's fields are its entries, so selecting one
+		// reads that entry rather than indexing a record's values.
+		if f, isFile := arg.(*File); isFile {
+			return f.Field(i), nil
+		}
 		return asList(arg)[i], nil
 	}
 }

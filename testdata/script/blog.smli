@@ -1087,6 +1087,11 @@ fun maskToString m =
     maskToString2 (m, "", 5)
   end;
 > val maskToString = fn : int -> string
+
+val words = from w in file.data.wordle.words yield w.word;
+> val words =
+>   ["aahed","aalii","aargh","aarti","abaca","abaci","aback","abacs","abaft",
+>    "abaka","abamp","aband",...] : string list
 fun maskCount (guess, remainingWords: string list) =
   from w in remainingWords
     group {m = mask (guess, w)} compute {c = count over ()}
@@ -1102,6 +1107,16 @@ fun remaining (words: string list, []) = words
       from w in (remaining (words, rest))
         where maskToString (mask (guess, w)) = m;
 > val remaining = fn : string list * (string * string) list -> string list
+
+bestGuesses (remaining (words, [("aster", "ybbby")]));
+> val it =
+>   [{maskCount=54,w="marid"},{maskCount=54,w="moria"},
+>    {maskCount=51,w="daric"},{maskCount=51,w="moira"},
+>    {maskCount=50,w="caird"},{maskCount=50,w="coria"},
+>    {maskCount=49,w="carbo"},{maskCount=49,w="cardi"},
+>    {maskCount=49,w="coram"},{maskCount=49,w="darcy"},
+>    {maskCount=49,w="moral"},{maskCount=48,w="maria"},...]
+>   : {maskCount:int, w:string} list
 
 (*) Functional programming  –  values, types, operators
 1 + 2;

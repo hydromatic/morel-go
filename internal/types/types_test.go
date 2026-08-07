@@ -171,3 +171,41 @@ func TestParse(t *testing.T) {
 		t.Error("expected error for unknown type")
 	}
 }
+
+// TestProgressiveRecord checks that a progressive record prints
+// with a trailing "...", that the empty one is "{...}" rather than
+// unit, and that it interns apart from the plain record with the
+// same fields.
+func TestProgressiveRecord(t *testing.T) {
+	s := types.NewSystem()
+	empty := s.ProgressiveRecord(nil)
+	if got := empty.String(); got != "{...}" {
+		t.Errorf("empty progressive record: got %q, want {...}", got)
+	}
+	if empty == s.Unit {
+		t.Error("empty progressive record collapsed to unit")
+	}
+	fields := []types.Field{{Label: "a", Type: s.Int}}
+	prog := s.ProgressiveRecord(fields)
+	if got := prog.String(); got != "{a:int, ...}" {
+		t.Errorf("progressive record: got %q, want {a:int, ...}", got)
+	}
+	plain := s.Record(fields)
+	if got := plain.String(); got != "{a:int}" {
+		t.Errorf("plain record: got %q, want {a:int}", got)
+	}
+	if prog == plain {
+		t.Error("progressive and plain records interned together")
+	}
+	// Interning: the same fields give the same pointer.
+	if prog != s.ProgressiveRecord(fields) {
+		t.Error("progressive record not interned")
+	}
+	// Fields sort into label order, as for a plain record.
+	prog2 := s.ProgressiveRecord([]types.Field{
+		{Label: "b", Type: s.Bool}, {Label: "a", Type: s.Int},
+	})
+	if got := prog2.String(); got != "{a:int, b:bool, ...}" {
+		t.Errorf("got %q, want {a:int, b:bool, ...}", got)
+	}
+}
