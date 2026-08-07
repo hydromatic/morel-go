@@ -1790,8 +1790,16 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 func (r *typeResolver) deduceID(env typeEnv, id *ast.ID,
 	v *unify.Var,
 ) error {
-	term, ok := env.get(r, id.Name)
-	if ok && id.Name == ordinalName && r.stepOrd != nil {
+	// A query step binds "current" and "ordinal" under reserved
+	// names, so that a quoted occurrence -- an ordinary identifier,
+	// naming a field, say -- does not reach them.
+	name := id.Name
+	if id.Keyword {
+		name = keywordName(id.Name)
+	}
+	term, ok := env.get(r, name)
+	if ok && id.Keyword && id.Name == ordinalName &&
+		r.stepOrd != nil {
 		// "ordinal" is positional, so it is only valid in an ordered
 		// step. The step's orderedness is not yet resolved, so defer
 		// the check until unification has run.
@@ -1801,7 +1809,7 @@ func (r *typeResolver) deduceID(env typeEnv, id *ast.ID,
 	if !ok {
 		tc, isCon := r.sys.LookupTyCon(id.Name)
 		if !isCon {
-			if id.Name == currentName || id.Name == ordinalName {
+			if id.Keyword {
 				return &Error{
 					Span: id.Span(),
 					Msg: "'" + id.Name +

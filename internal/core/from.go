@@ -29,10 +29,15 @@ import (
 // orderedness (a list or a bag). Kind is FromOp for an ordinary
 // query, or ExistsOp/ForallOp for a quantifier that reduces to a
 // boolean.
+//
+// Ordinal is the hidden variable this query counts its rows in,
+// which every "ordinal" that reads them refers to; it is nil when
+// nothing reads them.
 type From struct {
-	T     types.Type
-	Steps []FromStep
-	Kind  ast.Op
+	T       types.Type
+	Steps   []FromStep
+	Kind    ast.Op
+	Ordinal *IDPat
 }
 
 // Op implements Exp.
@@ -45,8 +50,18 @@ func (*From) exp() {}
 
 // Ordinal is the query keyword "ordinal": the position of the
 // current row in its collection, an int.
+//
+// Pat is the hidden variable holding the counter it reads, which
+// the query that counts those rows declares (see From.Ordinal).
+// That is usually the query containing this node, but not in an
+// expression a query evaluates before its first row — the
+// collection its first step scans, a "take" or "skip" count, an
+// operand of "union", "except" or "intersect", and the function of
+// a "through" or an "into" — which counts the rows of the step
+// containing the query instead.
 type Ordinal struct {
-	T types.Type
+	T   types.Type
+	Pat *IDPat
 }
 
 // Op implements Exp.

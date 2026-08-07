@@ -71,7 +71,12 @@ func (r *rewriter) rewriteExp(e core.Exp) core.Exp {
 		if !changed {
 			return e
 		}
-		return &core.From{T: e.T, Steps: steps, Kind: e.Kind}
+		return &core.From{
+			T:       e.T,
+			Steps:   steps,
+			Kind:    e.Kind,
+			Ordinal: e.Ordinal,
+		}
 	case *core.Let:
 		decl := r.rewriteDecl(e.Decl)
 		body := r.rewriteExp(e.Exp)

@@ -484,7 +484,7 @@ func (p *Parser) atom() (ast.Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		return ast.NewID(tok.Span, tok.Text), nil
+		return ast.NewKeywordID(tok.Span, tok.Text), nil
 	case token.Elements:
 		err := p.next()
 		if err != nil {
