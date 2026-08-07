@@ -573,8 +573,15 @@ func (st *fromState) deduceScan(env, onEnv typeEnv,
 		// The join condition sees the earlier fields and the ones
 		// this scan binds — unwrapped, for an outer join — and
 		// must be a boolean.
+		//
+		// The condition is evaluated once per candidate pair, so an
+		// "ordinal" in it counts pairs; the pairs are ordered only
+		// if both the input and the source are.
 		vBool := r.u.Variable()
+		saved := r.stepOrd
+		r.stepOrd = r.meetSourceOrd(r.orDefaultOrd(st.ord), sourceOrd)
 		err := r.deduceExp(bindFields(onEnv, fields), scan.On, vBool)
+		r.stepOrd = saved
 		if err != nil {
 			return nil, nil, err
 		}

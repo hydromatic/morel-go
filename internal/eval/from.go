@@ -853,9 +853,14 @@ func setNone(f *Frame, slots []int) {
 }
 
 // leftJoin scans the (possibly correlated) source per input row.
+// The source is evaluated once per input row, so an "ordinal" in it
+// counts those rows; the condition is evaluated once per candidate
+// pair, so an "ordinal" in it counts pairs, continuously across the
+// join and including the pairs that the condition rejects.
 func (s *JoinStage) leftJoin(q *fromCode, f *Frame, rows [][]Val,
 ) ([][]Val, error) {
 	var out [][]Val
+	pairs := 0
 	for i, row := range rows {
 		q.restore(f, row)
 		q.setOrdinal(f, i)
@@ -869,6 +874,8 @@ func (s *JoinStage) leftJoin(q *fromCode, f *Frame, rows [][]Val,
 			if !s.Pat.Match(elem, f) {
 				continue
 			}
+			q.setOrdinal(f, pairs)
+			pairs++
 			ok, err := s.cond(f)
 			if err != nil {
 				return nil, err
@@ -903,6 +910,7 @@ func (s *JoinStage) buildJoin(q *fromCode, f *Frame, rows [][]Val,
 		unmatched[i] = true
 	}
 	var out [][]Val
+	pairs := 0
 	for i, row := range rows {
 		matchCount := 0
 		for j, elem := range source {
@@ -911,6 +919,8 @@ func (s *JoinStage) buildJoin(q *fromCode, f *Frame, rows [][]Val,
 			if !s.Pat.Match(elem, f) {
 				continue
 			}
+			q.setOrdinal(f, pairs)
+			pairs++
 			ok, err := s.cond(f)
 			if err != nil {
 				return nil, err
