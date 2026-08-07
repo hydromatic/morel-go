@@ -27,14 +27,36 @@ import (
 // from the fields), the orderedness so far (nil until the first
 // collection scan), the environment steps are typed in, and, once a
 // standalone "compute" has run, the scalar result it produced.
+//
+// outerOrd is the orderedness of the step enclosing this query,
+// which the expressions evaluated before the query's first row read
+// (see beforeFirstRow); it is nil at the top level, where there is
+// no enclosing step.
 type fromState struct {
-	r       *typeResolver
-	rootEnv typeEnv
-	env     typeEnv
-	fields  []labelTerm
-	curElem unify.Term
-	ord     unify.Term
-	scalar  unify.Term
+	r        *typeResolver
+	rootEnv  typeEnv
+	env      typeEnv
+	fields   []labelTerm
+	curElem  unify.Term
+	ord      unify.Term
+	scalar   unify.Term
+	outerOrd unify.Term
+	first    bool
+}
+
+// beforeFirstRow types an expression that the query evaluates
+// before its first row — the collection its first step scans, a
+// "take" or "skip" count, an operand of "union", "except" or
+// "intersect", and the function of a "through" or an "into". Each
+// is evaluated once per execution of the query, hence once per row
+// of the step containing it, so "ordinal" in one of them counts the
+// rows of that enclosing step, and it is that step which must be
+// ordered.
+func (st *fromState) beforeFirstRow(f func() error) error {
+	saved := st.r.stepOrd
+	st.r.stepOrd = st.outerOrd
+	defer func() { st.r.stepOrd = saved }()
+	return f()
 }
 
 // elemTerm resolves the current element type: the explicit element
@@ -70,13 +92,19 @@ func (r *typeResolver) deduceFrom(rootEnv typeEnv, from *ast.From,
 	// it so a nested query does not disturb an enclosing one.
 	savedStepOrd := r.stepOrd
 	defer func() { r.stepOrd = savedStepOrd }()
-	st := &fromState{r: r, rootEnv: rootEnv, env: rootEnv}
+	st := &fromState{
+		r:        r,
+		rootEnv:  rootEnv,
+		env:      rootEnv,
+		outerOrd: savedStepOrd,
+	}
 	steps := from.Steps
 	for i := 0; i < len(steps); i++ {
 		// A step's "ordinal" refers to the position within the input
 		// so far, so its orderedness is the query's before this step
 		// runs ("order" makes the step itself ordered only afterwards).
 		r.stepOrd = r.orDefaultOrd(st.ord)
+		st.first = i == 0
 		// A "group" absorbs the "compute" that follows it, so the
 		// aggregates are typed over the pre-group rows.
 		if g, ok := steps[i].(*ast.GroupStep); ok {
@@ -232,17 +260,26 @@ func (st *fromState) step(step ast.FromStep) error {
 	case *ast.Scan:
 		return st.scanStep(s)
 	case *ast.SetOpStep:
-		newOrd, err := r.deduceSetOp(st.rootEnv, st.elemTerm(),
-			r.orDefaultOrd(st.ord), s.Exps)
+		var newOrd unify.Term
+		err := st.beforeFirstRow(func() error {
+			var opErr error
+			newOrd, opErr = r.deduceSetOp(st.rootEnv, st.elemTerm(),
+				r.orDefaultOrd(st.ord), s.Exps)
+			return opErr
+		})
 		if err != nil {
 			return err
 		}
 		st.ord = newOrd
 		return nil
 	case *ast.SkipStep:
-		return r.deduceCount(st.rootEnv, s.Exp)
+		return st.beforeFirstRow(func() error {
+			return r.deduceCount(st.rootEnv, s.Exp)
+		})
 	case *ast.TakeStep:
-		return r.deduceCount(st.rootEnv, s.Exp)
+		return st.beforeFirstRow(func() error {
+			return r.deduceCount(st.rootEnv, s.Exp)
+		})
 	case *ast.ThroughStep:
 		return st.throughStep(s)
 	case *ast.UnorderStep:
@@ -279,7 +316,7 @@ func (st *fromState) scanStep(s *ast.Scan) error {
 		}
 		env = st.rootEnv
 	}
-	newFields, sourceOrd, err := r.deduceScan(env, st.env, s)
+	newFields, sourceOrd, err := st.deduceScan(env, st.env, s)
 	if err != nil {
 		return err
 	}
@@ -340,8 +377,10 @@ func (st *fromState) intoStep(s *ast.IntoStep) error {
 	rv := st.r.u.Variable()
 	// "into f" applies f to the whole result, so f is typed in the
 	// root scope; the query variables are out of scope inside it.
-	err := st.r.deduceAggregate(st.rootEnv, s.Exp, st.elemTerm(),
-		st.r.orDefaultOrd(st.ord), rv)
+	err := st.beforeFirstRow(func() error {
+		return st.r.deduceAggregate(st.rootEnv, s.Exp, st.elemTerm(),
+			st.r.orDefaultOrd(st.ord), rv)
+	})
 	if err != nil {
 		return err
 	}
@@ -364,7 +403,11 @@ func (st *fromState) throughStep(s *ast.ThroughStep) error {
 		r.asOrdVar(r.orDefaultOrd(st.ord)))
 	outOrd := r.u.Variable()
 	vFn := r.u.Variable()
-	err = r.deduceExp(st.env, s.Exp, vFn)
+	// "through f" applies f to the whole input collection, so f is
+	// typed in the root scope, before the query's first row.
+	err = st.beforeFirstRow(func() error {
+		return r.deduceExp(st.rootEnv, s.Exp, vFn)
+	})
 	if err != nil {
 		return err
 	}
@@ -476,21 +519,34 @@ func (r *typeResolver) naryMeetOrderedness(ords []*unify.Var,
 // here; the query itself becomes unordered. A "join ... on"
 // condition is a boolean typed over the earlier fields and the
 // pattern this scan binds.
-func (r *typeResolver) deduceScan(env, onEnv typeEnv,
+//
+// The source of the query's first scan is evaluated before the
+// query has a row, so its "ordinal" counts the rows of the
+// enclosing step; the "on" condition, which runs per row, does not.
+func (st *fromState) deduceScan(env, onEnv typeEnv,
 	scan *ast.Scan,
 ) ([]labelTerm, *unify.Var, error) {
+	r := st.r
+	source := func(f func() error) error { return f() }
+	if st.first {
+		source = st.beforeFirstRow
+	}
 	vElem := r.u.Variable()
 	var sourceOrd *unify.Var
 	// lint: sort until '^\t}' where '^\tcase '
 	switch scan.Kind {
 	case ast.ScanEq:
-		err := r.deduceExp(env, scan.Exp, vElem)
+		err := source(func() error {
+			return r.deduceExp(env, scan.Exp, vElem)
+		})
 		if err != nil {
 			return nil, nil, err
 		}
 	case ast.ScanIn:
 		vColl := r.u.Variable()
-		err := r.deduceExp(env, scan.Exp, vColl)
+		err := source(func() error {
+			return r.deduceExp(env, scan.Exp, vColl)
+		})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -652,10 +708,15 @@ func bindFields(env typeEnv, fields []labelTerm) typeEnv {
 }
 
 // Keywords bound in each query step: "current" is the current row,
-// "ordinal" its position.
+// "ordinal" its position. A step binds each under a name that no
+// identifier can spell, so that a field of the same name (which a
+// quoted "`current`" or "`ordinal`" reaches) does not collide with
+// it, and the keyword wins where both are in scope.
 const (
-	currentName = "current"
-	ordinalName = "ordinal"
+	currentName    = "current"
+	ordinalName    = "ordinal"
+	currentKeyword = "$current"
+	ordinalKeyword = "$ordinal"
 )
 
 // bindStep is the environment a query step is typed in: the root
@@ -670,8 +731,17 @@ func (r *typeResolver) bindStep(rootEnv typeEnv, fields []labelTerm,
 	if elem == nil {
 		elem = r.rowElem(fields)
 	}
-	env = bind(env, currentName, elem)
-	return bind(env, ordinalName, r.primTerm(intName))
+	env = bind(env, currentKeyword, elem)
+	return bind(env, ordinalKeyword, r.primTerm(intName))
+}
+
+// keywordName is the reserved name a query step binds the keyword
+// "current" or "ordinal" under.
+func keywordName(name string) string {
+	if name == currentName {
+		return currentKeyword
+	}
+	return ordinalKeyword
 }
 
 // unsupportedStep reports a query step whose form is not yet

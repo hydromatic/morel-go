@@ -474,6 +474,10 @@ type GroupAggCode struct {
 type groupRows struct {
 	key  []Val
 	rows [][]Val
+	// ords is each row's position in the input arriving at the
+	// group, which "ordinal" reads inside an aggregate argument;
+	// a row keeps that position, not the one it has in its group.
+	ords []int
 }
 
 func (s *GroupStage) transform(q *fromCode, f *Frame, rows [][]Val,
@@ -495,7 +499,7 @@ func (s *GroupStage) transform(q *fromCode, f *Frame, rows [][]Val,
 		}
 		aggs := make([]Val, len(s.Aggs))
 		for i, a := range s.Aggs {
-			aggs[i], err = a.eval(q, f, g.rows)
+			aggs[i], err = a.eval(q, f, g)
 			if err != nil {
 				return nil, err
 			}
@@ -536,6 +540,7 @@ func (s *GroupStage) partition(q *fromCode, f *Frame, rows [][]Val,
 			order = append(order, gk)
 		}
 		g.rows = append(g.rows, row)
+		g.ords = append(g.ords, i)
 	}
 	// A group with no keys ("group {}") is over a zero-field
 	// relation: it always produces exactly one output row, even
@@ -551,20 +556,20 @@ func (s *GroupStage) partition(q *fromCode, f *Frame, rows [][]Val,
 // eval computes an aggregate over a group's rows: it applies the
 // aggregate function to the collection of the argument's value per
 // row (a unit per row for a bare aggregate, which just counts).
-func (a *GroupAggCode) eval(q *fromCode, f *Frame, rows [][]Val,
+func (a *GroupAggCode) eval(q *fromCode, f *Frame, g *groupRows,
 ) (Val, error) {
 	fn, err := a.Fn.Eval(f)
 	if err != nil {
 		return nil, err
 	}
-	args := make([]Val, len(rows))
-	for i, row := range rows {
+	args := make([]Val, len(g.rows))
+	for i, row := range g.rows {
 		if a.Arg == nil {
 			args[i] = core.Unit{}
 			continue
 		}
 		q.restore(f, row)
-		q.setOrdinal(f, i)
+		q.setOrdinal(f, g.ords[i])
 		args[i], err = a.Arg.Eval(f)
 		if err != nil {
 			return nil, err

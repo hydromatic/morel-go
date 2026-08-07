@@ -101,15 +101,29 @@ func NewLiteral(span token.Span, kind Op, value string) *Literal {
 func (l *Literal) Op() Op { return l.Kind }
 
 // ID is a reference to a name.
+// Keyword is true for "current" and "ordinal" written as
+// keywords. Quoted, they are ordinary identifiers -- a field of
+// that name, say -- and the keyword meaning does not apply.
 type ID struct {
 	exprBase
 
-	Name string
+	Name    string
+	Keyword bool
 }
 
 // NewID returns an identifier reference.
 func NewID(span token.Span, name string) *ID {
 	return &ID{exprBase: exprBase{base{span}}, Name: name}
+}
+
+// NewKeywordID returns a reference to "current" or "ordinal"
+// written as a keyword.
+func NewKeywordID(span token.Span, name string) *ID {
+	return &ID{
+		exprBase: exprBase{base{span}},
+		Name:     name,
+		Keyword:  true,
+	}
 }
 
 // Op implements Node.

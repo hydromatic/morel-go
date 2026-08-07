@@ -54,11 +54,22 @@ func cloneExp(e core.Exp, fresh map[*core.IDPat]*core.IDPat,
 		pat := cloneIDPat(e.IDPat, fresh)
 		return &core.Fn{T: e.T, IDPat: pat, Exp: cloneExp(e.Exp, fresh)}
 	case *core.From:
+		// The counter is declared by the query, so a copy gets its
+		// own; map it before the steps that read it are cloned.
+		ordinal := e.Ordinal
+		if ordinal != nil {
+			ordinal = cloneIDPat(ordinal, fresh)
+		}
 		steps := make([]core.FromStep, len(e.Steps))
 		for i, s := range e.Steps {
 			steps[i] = cloneStep(s, fresh)
 		}
-		return &core.From{T: e.T, Steps: steps, Kind: e.Kind}
+		return &core.From{
+			T:       e.T,
+			Steps:   steps,
+			Kind:    e.Kind,
+			Ordinal: ordinal,
+		}
 	case *core.ID:
 		if pat, ok := fresh[e.Pat]; ok {
 			return &core.ID{Pat: pat}
@@ -69,6 +80,11 @@ func cloneExp(e core.Exp, fresh map[*core.IDPat]*core.IDPat,
 		return &core.Let{Decl: decl, Exp: cloneExp(e.Exp, fresh)}
 	case *core.List:
 		return &core.List{T: e.T, Args: cloneExps(e.Args, fresh)}
+	case *core.Ordinal:
+		if pat, ok := fresh[e.Pat]; ok {
+			return &core.Ordinal{T: e.T, Pat: pat}
+		}
+		return e
 	case *core.RangeList:
 		items := make([]core.RangeItem, len(e.Items))
 		for i, item := range e.Items {
@@ -82,8 +98,7 @@ func cloneExp(e core.Exp, fresh map[*core.IDPat]*core.IDPat,
 	case *core.Tuple:
 		return &core.Tuple{T: e.T, Args: cloneExps(e.Args, fresh)}
 	default:
-		// Leaves without bindings: Literal, Con, Selector,
-		// Ordinal, Unit.
+		// Leaves without bindings: Literal, Con, Selector, Unit.
 		return e
 	}
 }

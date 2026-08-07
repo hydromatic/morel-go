@@ -58,6 +58,21 @@ type resolver struct {
 	// inQuery is true while resolving a query's steps, where
 	// "ordinal" is a valid keyword.
 	inQuery bool
+	// ordinalScopes is the counter of each query being converted,
+	// innermost last.
+	ordinalScopes []*ordinalScope
+	// ordinalOwner is the 1-based index in ordinalScopes of the
+	// query whose rows "ordinal" counts here, and 0 where "ordinal"
+	// has no query to count. It is the query being converted,
+	// except in the expressions that a query evaluates before its
+	// first row (see beforeFirstRow), where it is the enclosing
+	// query's.
+	ordinalOwner int
+	// enclosingRow and enclosingOwner are currentRow and
+	// ordinalOwner as they were outside the query being converted;
+	// beforeFirstRow restores them.
+	enclosingRow   core.Exp
+	enclosingOwner int
 	// aggSubst maps an "over" aggregate or "elements" node,
 	// hoisted out of a compute field into a hidden group
 	// aggregate, to the variable holding its per-group result.
@@ -385,11 +400,17 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 	case *ast.From:
 		return r.toFrom(env, e, t)
 	case *ast.ID:
-		if e.Name == currentName && r.currentRow != nil {
+		if e.Keyword && e.Name == currentName &&
+			r.currentRow != nil {
 			return r.currentRow, nil
 		}
-		if e.Name == ordinalName && r.inQuery {
-			return &core.Ordinal{T: r.typeMap.sys.Int}, nil
+		if e.Keyword && e.Name == ordinalName && r.ordinalOwner > 0 {
+			// The occurrence reads the counter of the query whose
+			// rows it counts, which that query then maintains.
+			sc := r.ordinalScopes[r.ordinalOwner-1]
+			sc.used = true
+			return &core.Ordinal{T: r.typeMap.sys.Int, Pat: sc.pat},
+				nil
 		}
 		if pat := env.get(e.Name); pat != nil {
 			return &core.ID{Pat: pat}, nil
@@ -938,11 +959,27 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 	t types.Type,
 ) (core.Exp, error) {
 	// "current" rewrites to the row entering each step, and
-	// "ordinal" is valid; save the outer state for a nested query,
-	// restore it on the way out.
+	// "ordinal" counts this query's rows; save the outer state for a
+	// nested query, restore it on the way out. The enclosing state
+	// stays reachable: the expressions this query evaluates before
+	// its first row read it (see beforeFirstRow).
 	savedCurrent, savedInQuery := r.currentRow, r.inQuery
-	defer func() { r.currentRow, r.inQuery = savedCurrent, savedInQuery }()
+	savedOwner, savedScopes := r.ordinalOwner, r.ordinalScopes
+	savedEnclosingRow := r.enclosingRow
+	savedEnclosingOwner := r.enclosingOwner
+	defer func() {
+		r.currentRow, r.inQuery = savedCurrent, savedInQuery
+		r.ordinalOwner, r.ordinalScopes = savedOwner, savedScopes
+		r.enclosingRow = savedEnclosingRow
+		r.enclosingOwner = savedEnclosingOwner
+	}()
+	r.enclosingRow, r.enclosingOwner = r.currentRow, r.ordinalOwner
 	r.inQuery = true
+	scope := &ordinalScope{
+		pat: &core.IDPat{T: r.typeMap.sys.Int, Name: ordinalName},
+	}
+	r.ordinalScopes = append(r.ordinalScopes, scope)
+	r.ordinalOwner = len(r.ordinalScopes)
 	steps := make([]core.FromStep, 0, len(from.Steps))
 	cur := env
 	computeScalar := false
@@ -1007,7 +1044,7 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 			continue
 		}
 		newSteps, newCur, _, err := r.toQueryStep(env, cur,
-			rowVars, step)
+			rowVars, step, i == 0)
 		if err != nil {
 			return nil, err
 		}
@@ -1033,10 +1070,47 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 		}
 		steps = append([]core.FromStep{seed}, steps...)
 	}
-	if computeScalar {
-		return r.onlyWrap(t, steps, from), nil
+	// The query maintains a counter only if something reads it.
+	var ordinal *core.IDPat
+	if scope.used {
+		ordinal = scope.pat
 	}
-	return &core.From{T: t, Steps: steps, Kind: from.Kind}, nil
+	if computeScalar {
+		return r.onlyWrap(t, steps, from, ordinal), nil
+	}
+	return &core.From{
+		T:       t,
+		Steps:   steps,
+		Kind:    from.Kind,
+		Ordinal: ordinal,
+	}, nil
+}
+
+// ordinalScope is one query's row counter: the hidden variable
+// that holds it, and whether any "ordinal" reads it — a query that
+// nothing counts does not maintain one.
+type ordinalScope struct {
+	pat  *core.IDPat
+	used bool
+}
+
+// beforeFirstRow converts an expression that the query evaluates
+// before its first row — the collection its first step scans, a
+// "take" or "skip" count, an operand of "union", "except" or
+// "intersect", and the function of a "through" or an "into". Such
+// an expression is evaluated once per execution of the query, hence
+// once per row of the step containing it, so "current" and
+// "ordinal" in it read that enclosing row, not one of this query's.
+// A query in one of those positions is evaluated before its
+// enclosing query's first row too, so the reading skips that query
+// as well.
+func (r *resolver) beforeFirstRow(
+	f func() (core.Exp, error),
+) (core.Exp, error) {
+	savedRow, savedOwner := r.currentRow, r.ordinalOwner
+	r.currentRow, r.ordinalOwner = r.enclosingRow, r.enclosingOwner
+	defer func() { r.currentRow, r.ordinalOwner = savedRow, savedOwner }()
+	return f()
 }
 
 // toGroupAbsorb converts a "group" step at index i, absorbing the
@@ -1067,7 +1141,7 @@ func isScanStep(s core.FromStep) bool {
 // from collects the empty-key group's single row, and "only"
 // unwraps it to the scalar.
 func (r *resolver) onlyWrap(t types.Type, steps []core.FromStep,
-	from *ast.From,
+	from *ast.From, ordinal *core.IDPat,
 ) core.Exp {
 	sys := r.typeMap.sys
 	bagT := sys.Named("bag", t)
@@ -1077,7 +1151,12 @@ func (r *resolver) onlyWrap(t types.Type, steps []core.FromStep,
 			T:    sys.Fn(bagT, t),
 			Name: onlyName,
 		}},
-		Arg:  &core.From{T: bagT, Steps: steps, Kind: from.Kind},
+		Arg: &core.From{
+			T:       bagT,
+			Steps:   steps,
+			Kind:    from.Kind,
+			Ordinal: ordinal,
+		},
 		Span: from.Span(),
 	}
 }
@@ -1105,7 +1184,7 @@ func updateRowVars(rowVars []*core.IDPat,
 // variables; skip/take counts, set-op arguments, and an "into"
 // function see only the root scope.
 func (r *resolver) toQueryStep(env, cur *coreEnv,
-	rowVars []*core.IDPat, step ast.FromStep,
+	rowVars []*core.IDPat, step ast.FromStep, first bool,
 ) ([]core.FromStep, *coreEnv, bool, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch s := step.(type) {
@@ -1115,7 +1194,9 @@ func (r *resolver) toQueryStep(env, cur *coreEnv,
 		// "into f" applies f to the whole query result, so f is an
 		// expression of the root scope, not the query row's -- the
 		// query variables are out of scope inside it.
-		fn, err := r.toExp(env, s.Exp)
+		fn, err := r.beforeFirstRow(func() (core.Exp, error) {
+			return r.toExp(env, s.Exp)
+		})
 		return []core.FromStep{&core.Into{Fn: fn}}, cur, true, err
 	case *ast.OrderStep:
 		exp, err := r.toExp(cur, s.Exp)
@@ -1126,19 +1207,23 @@ func (r *resolver) toQueryStep(env, cur *coreEnv,
 		exp, err := r.toExp(cur, s.Exp)
 		return []core.FromStep{&core.Yield{Exp: exp}}, cur, true, err
 	case *ast.Scan:
-		scanSteps, newCur, err := r.toScanStep(cur, rowVars, s)
+		scanSteps, newCur, err := r.toScanStep(cur, rowVars, s, first)
 		return scanSteps, newCur, false, err
 	case *ast.SetOpStep:
 		setOp, err := r.toSetOpStep(env, s)
 		return []core.FromStep{setOp}, cur, false, err
 	case *ast.SkipStep:
-		exp, err := r.toExp(env, s.Exp)
+		exp, err := r.beforeFirstRow(func() (core.Exp, error) {
+			return r.toExp(env, s.Exp)
+		})
 		return []core.FromStep{&core.Skip{Exp: exp}}, cur, false, err
 	case *ast.TakeStep:
-		exp, err := r.toExp(env, s.Exp)
+		exp, err := r.beforeFirstRow(func() (core.Exp, error) {
+			return r.toExp(env, s.Exp)
+		})
 		return []core.FromStep{&core.Take{Exp: exp}}, cur, false, err
 	case *ast.ThroughStep:
-		return r.toThroughStep(cur, s)
+		return r.toThroughStep(env, cur, s)
 	case *ast.UnorderStep:
 		// "unorder" only changes orderedness (a bag), which the type
 		// records; the collection value is unchanged, so it produces
@@ -1357,7 +1442,9 @@ func (r *resolver) toSetOpStep(env *coreEnv, s *ast.SetOpStep) (
 ) {
 	args := make([]core.Exp, len(s.Exps))
 	for i, arg := range s.Exps {
-		a, err := r.toExp(env, arg)
+		a, err := r.beforeFirstRow(func() (core.Exp, error) {
+			return r.toExp(env, arg)
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -1368,14 +1455,19 @@ func (r *resolver) toSetOpStep(env *coreEnv, s *ast.SetOpStep) (
 
 // toThroughStep converts a "through pat in f" step: f maps the
 // collection to a new one whose elements pat binds. The pattern's
-// variables become the query's variables downstream.
-func (r *resolver) toThroughStep(cur *coreEnv, s *ast.ThroughStep,
+// variables become the query's variables downstream. Like "into",
+// f applies to the whole collection, so it is an expression of the
+// root scope, evaluated before the query's first row.
+func (r *resolver) toThroughStep(env, cur *coreEnv,
+	s *ast.ThroughStep,
 ) ([]core.FromStep, *coreEnv, bool, error) {
 	pat, err := r.toPat(s.Pat)
 	if err != nil {
 		return nil, nil, false, err
 	}
-	fn, err := r.toExp(cur, s.Exp)
+	fn, err := r.beforeFirstRow(func() (core.Exp, error) {
+		return r.toExp(env, s.Exp)
+	})
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -1390,13 +1482,21 @@ func (r *resolver) toThroughStep(cur *coreEnv, s *ast.ThroughStep,
 // toScanStep converts an "in" scan, returning the Core steps it
 // produces (a scan, plus a where for a "join ... on" condition) and
 // the environment extended with the scan's variables. A scalar
-// ("=") scan is not yet supported.
+// ("=") scan is not yet supported. first says whether the scan is
+// the query's first step, whose source is evaluated before the
+// query has a row of its own.
 func (r *resolver) toScanStep(cur *coreEnv,
-	rowVars []*core.IDPat, s *ast.Scan,
+	rowVars []*core.IDPat, s *ast.Scan, first bool,
 ) ([]core.FromStep, *coreEnv, error) {
 	pat, err := r.toPat(s.Pat)
 	if err != nil {
 		return nil, nil, err
+	}
+	source := func(f func() (core.Exp, error)) (core.Exp, error) {
+		return f()
+	}
+	if first {
+		source = r.beforeFirstRow
 	}
 	var exp core.Exp
 	// lint: sort until '^\t}' where '^\tcase '
@@ -1404,7 +1504,9 @@ func (r *resolver) toScanStep(cur *coreEnv,
 	case ast.ScanEq:
 		// "pat = exp" binds the pattern to the value of exp; it
 		// lowers to a scan of the singleton list of that value.
-		val, valErr := r.toExp(cur, s.Exp)
+		val, valErr := source(func() (core.Exp, error) {
+			return r.toExp(cur, s.Exp)
+		})
 		if valErr != nil {
 			return nil, nil, valErr
 		}
@@ -1415,7 +1517,9 @@ func (r *resolver) toScanStep(cur *coreEnv,
 	case ast.ScanIn:
 		// The source is in the current scope, so a later scan may
 		// depend on an earlier scan's variables.
-		exp, err = r.toExp(cur, s.Exp)
+		exp, err = source(func() (core.Exp, error) {
+			return r.toExp(cur, s.Exp)
+		})
 		if err != nil {
 			return nil, nil, err
 		}
