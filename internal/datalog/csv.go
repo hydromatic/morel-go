@@ -20,30 +20,31 @@ package datalog
 import (
 	"strconv"
 	"strings"
+
+	"github.com/hydromatic/morel-go/internal/csv"
 )
 
-// CSVFacts converts CSV content — a "name:type,..." header line
-// followed by one row per line, with strings optionally
-// single-quoted — into facts for a declared relation, matching
-// columns to the declaration's parameters by name, as the
+// CSVFacts converts CSV content — read in the dialect that
+// package csv describes — into facts for a declared relation,
+// matching columns to the declaration's parameters by name, as the
 // reference implementation's .input loading does. The facts keep
 // the file's row order.
+//
+// A program names the file it wants, so a file that does not match
+// the declaration is an error rather than something to read around;
+// that is where this parts company with the "file" value, which
+// browses whatever it finds.
 func CSVFacts(decl *Declaration, content string) ([]Statement, error) {
 	lines := strings.Split(content, "\n")
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) == "" {
 		return nil, errorf("Input file for relation '%s' is empty",
 			decl.Name)
 	}
-	type column struct {
-		index int
-		typ   string
+	columns := map[string]csv.Column{}
+	for _, col := range csv.ParseHeader(lines[0]) {
+		columns[col.Name] = col
 	}
-	columns := map[string]column{}
-	for i, field := range strings.Split(lines[0], ",") {
-		name, typ, _ := strings.Cut(strings.TrimSpace(field), ":")
-		columns[name] = column{index: i, typ: typ}
-	}
-	selected := make([]column, len(decl.Params))
+	selected := make([]csv.Column, len(decl.Params))
 	for i, p := range decl.Params {
 		col, ok := columns[p.Name]
 		if !ok {
@@ -59,16 +60,16 @@ func CSVFacts(decl *Declaration, content string) ([]Statement, error) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		values := strings.Split(line, ",")
+		values := csv.Cells(line)
 		args := make([]Term, len(selected))
 		for i, col := range selected {
-			if col.index >= len(values) {
+			if col.Index >= len(values) {
 				return nil, errorf(
 					"Row %q in input file for relation '%s' is "+
 						"too short", line, decl.Name,
 				)
 			}
-			c, err := csvConstant(values[col.index], col.typ)
+			c, err := csvConstant(values[col.Index], col.Type)
 			if err != nil {
 				return nil, err
 			}
@@ -81,8 +82,10 @@ func CSVFacts(decl *Declaration, content string) ([]Statement, error) {
 	return facts, nil
 }
 
-// csvConstant parses one CSV value by its column type; strings
-// shed surrounding single quotes.
+// csvConstant parses one CSV value by its column type. Datalog
+// knows only int and string, so a column declaring anything else
+// is read as a string; a value that does not parse as an int is an
+// error.
 func csvConstant(value, typ string) (*Constant, error) {
 	value = strings.TrimSpace(value)
 	if typ == typeInt {
@@ -92,9 +95,5 @@ func csvConstant(value, typ string) (*Constant, error) {
 		}
 		return &Constant{Type: typeInt, Int: n}, nil
 	}
-	if len(value) >= 2 && value[0] == '\'' &&
-		value[len(value)-1] == '\'' {
-		value = value[1 : len(value)-1]
-	}
-	return &Constant{Type: typeString, Str: value}, nil
+	return &Constant{Type: typeString, Str: csv.Unquote(value)}, nil
 }

@@ -175,7 +175,14 @@ func TopBindings(sys *types.System) []Binding {
 		bindings = append(bindings,
 			Binding{Name: name, Type: t})
 	}
-	return append(bindings, collectionBindings(sys)...)
+	bindings = append(bindings, collectionBindings(sys)...)
+	// "file" is the file system, of type "{...}" — a record whose
+	// fields are not known until it is browsed. The binding gives
+	// it the type it has before any browsing, which is what the
+	// environment reports; a statement that uses it sees whatever
+	// has been discovered by then.
+	return append(bindings,
+		Binding{Name: FileName, Type: sys.ProgressiveRecord(nil)})
 }
 
 // collectionBindings returns the built-ins whose type involves a

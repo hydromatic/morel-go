@@ -29,6 +29,22 @@ Sys.set ("timeZone", "UTC");
 Sys.set ("now", "2024-01-01T00:00:00Z");
 > val it = () : unit
 
+Sys;
+> val it =
+>   {clearEnv=fn,colorSchemes=fn,deduceColorScheme=fn,env=fn,file={},
+>    parseTree=fn,plan=fn,planEx=fn,set=fn,show=fn,showAll=fn,unset=fn}
+>   : {clearEnv:unit -> unit,
+>       colorSchemes:unit
+>                     -> {comment:string, constant:string, error:string,
+>                          identifier:string, keyword:string, name:string,
+>                          numeric:string, string:string, symbol:string,
+>                          typeVar:string} list,
+>       deduceColorScheme:unit -> string, env:unit -> (string * string) list,
+>       file:{...}, parseTree:string -> string, plan:unit -> string,
+>       planEx:string -> string, set:string * 'a -> unit,
+>       show:string -> string option,
+>       showAll:unit -> (string * string option) list, unset:string -> unit}
+
 (*) val colorSchemes : unit -> {...} list
 Sys.colorSchemes ();
 > val it =

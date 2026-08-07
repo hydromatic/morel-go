@@ -242,13 +242,23 @@ func (c *termToTypeConverter) recordType(s *unify.Sequence) (
 	if len(labels) != len(s.Terms) {
 		return nil, fmt.Errorf("cannot convert term %s", s)
 	}
-	fields := make([]types.Field, len(s.Terms))
-	for i, term := range s.Terms {
-		t, err := c.termType(term)
+	// The progressive mark is not a field; it says that the fields
+	// are not all known yet. Strip it, and record what it said.
+	progressive := false
+	if n := len(labels) - 1; n >= 0 && labels[n] == progressiveLabel {
+		progressive = true
+		labels = labels[:n]
+	}
+	fields := make([]types.Field, len(labels))
+	for i := range labels {
+		t, err := c.termType(s.Terms[i])
 		if err != nil {
 			return nil, err
 		}
 		fields[i] = types.Field{Label: labels[i], Type: t}
+	}
+	if progressive {
+		return c.m.sys.ProgressiveRecord(fields), nil
 	}
 	return c.m.sys.Record(fields), nil
 }

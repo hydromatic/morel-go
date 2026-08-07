@@ -65,10 +65,51 @@ type Resolved struct {
 func Deduce(sys *types.System, bindings []Binding,
 	overloads *OverloadEnv, decl ast.Decl,
 ) (*Resolved, error) {
+	return DeduceFiles(sys, bindings, overloads, decl, nil)
+}
+
+// maxFileRetries bounds the passes that DeduceFiles makes. Each
+// retry follows a discovery, and a discovery strictly widens the
+// file system's types, so the passes cannot go on for ever; the
+// bound is a backstop, not a limit we expect to reach.
+const maxFileRetries = 16
+
+// DeduceFiles is Deduce, over an environment that also contains
+// the progressive file system that "file" browses.
+//
+// A field selected from a file is not in the file's type until the
+// file has been browsed for it. So a pass that selects an
+// undiscovered field discovers it and starts again, against the
+// now-wider type. Discovery is monotonic — a file never loses a
+// field — so a program that has been typed stays typed.
+func DeduceFiles(sys *types.System, bindings []Binding,
+	overloads *OverloadEnv, decl ast.Decl, files *Files,
+) (*Resolved, error) {
+	for range maxFileRetries {
+		resolved, widened, err := deduceOnce(sys, bindings,
+			overloads, decl, files)
+		if !widened {
+			return resolved, err
+		}
+	}
+	// The bound was reached. Make a last pass, and report whatever
+	// it says rather than looping for ever.
+	resolved, _, err := deduceOnce(sys, bindings, overloads, decl,
+		files)
+	return resolved, err
+}
+
+// deduceOnce makes one pass of type deduction. It reports whether
+// the pass discovered a file field, in which case its result is
+// stale and the caller should make another pass.
+func deduceOnce(sys *types.System, bindings []Binding,
+	overloads *OverloadEnv, decl ast.Decl, files *Files,
+) (*Resolved, bool, error) {
 	r := &typeResolver{
 		sys:      sys,
 		u:        unify.New(),
 		nodeTerm: map[ast.Node]unify.Term{},
+		files:    files,
 	}
 	var env typeEnv = emptyTypeEnv{}
 	if len(bindings) > 0 {
@@ -80,11 +121,33 @@ func Deduce(sys *types.System, bindings []Binding,
 		r.bindings = byName
 	}
 	env = r.overloadEnv(env, overloads)
+	if files != nil {
+		// Outermost, so that a local binding of the same name still
+		// shadows a file.
+		env = &fileTypeEnv{parent: env, files: files, sys: sys}
+	}
 	var termMap []patTerm
 	decl2, err := r.deduceDecl(env, decl, &termMap)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
+	// Browse the file system for the fields this declaration
+	// selects. Deduction has collected the selectors but not yet
+	// unified, so a discovery can be acted on by starting again,
+	// before any type has been reported.
+	if r.discoverFileFields() {
+		return nil, true, nil
+	}
+	resolved, err := r.unify(sys, decl, decl2)
+	return resolved, false, err
+}
+
+// unify solves the constraints that deducing a declaration
+// gathered, and checks the results that could not be checked until
+// every type was known.
+func (r *typeResolver) unify(sys *types.System, decl ast.Decl,
+	decl2 ast.Decl,
+) (*Resolved, error) {
 	// Unify; if an operator's type is undetermined and it has a
 	// preferred type (e.g. int for "+"), apply the preference and
 	// unify again.
@@ -234,6 +297,13 @@ func (r *typeResolver) checkFieldRefs(m *TypeMap) error {
 			}
 		}
 		if !slices.Contains(names, call.sel.Name) {
+			// The receiver's type need not list a file's entries:
+			// "Sys.file" is declared as "{...}" however much has
+			// been browsed. The entry itself decides.
+			if f := r.fileOf(call.apply.Arg); f != nil &&
+				f.Child(call.sel.Name) != nil {
+				continue
+			}
 			return &Error{
 				Span: call.sel.Span(),
 				Msg: "no field '" + call.sel.Name + "' in type '" +
@@ -442,6 +512,9 @@ type typeResolver struct {
 	// orderedness of the step it appears in; "ordinal" is positional,
 	// so it is only valid where that orderedness is a list.
 	ordinalUses []ordinalUse
+	// files is the progressive file system that "file" browses, or
+	// nil in a session that has none.
+	files *Files
 }
 
 // ordinalUse is one reference to "ordinal": the orderedness of the
@@ -702,11 +775,21 @@ func (r *typeResolver) typeTerm(t types.Type,
 		}
 		return r.typeTerm(t.Type, subst)
 	case *types.Record:
-		labels := make([]string, len(t.Fields))
-		terms := make([]unify.Term, len(t.Fields))
-		for i, f := range t.Fields {
-			labels[i] = f.Label
-			terms[i] = r.typeTerm(f.Type, subst)
+		n := len(t.Fields)
+		if t.Progressive {
+			n++
+		}
+		labels := make([]string, 0, n)
+		terms := make([]unify.Term, 0, n)
+		for _, f := range t.Fields {
+			labels = append(labels, f.Label)
+			terms = append(terms, r.typeTerm(f.Type, subst))
+		}
+		if t.Progressive {
+			// The mark sorts last, and keeps "{...}" from becoming
+			// the empty record, which is unit.
+			labels = append(labels, progressiveLabel)
+			terms = append(terms, r.primTerm("unit"))
 		}
 		return unify.Apply(recordLabel(labels), terms...)
 	case *types.Tuple:
@@ -1975,12 +2058,14 @@ func (r *typeResolver) deduceApply(env typeEnv, apply *ast.Apply,
 		// type) resolves to a record, we can deduce v. A safe
 		// selector ("arg?.field") instead tunnels through the
 		// receiver's functor layers.
+		param := unify.Term(vArg)
 		if sel.Safe {
 			r.safeSelectorAction(sel, vArg, v)
 		} else {
 			r.selectorAction(sel, vArg, v)
+			param = r.fileSelectorParam(apply, sel, v, param)
 		}
-		r.reg2(sel, r.fnTerm(vArg, v))
+		r.reg2(sel, r.fnTerm(param, v))
 		r.selectorCalls = append(r.selectorCalls,
 			selectorCall{sel: sel, apply: apply})
 	} else {

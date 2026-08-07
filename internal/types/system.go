@@ -378,14 +378,27 @@ func (s *System) Record(fields []Field) Type {
 		// "{}" is unit, as in SML.
 		return s.Unit
 	}
+	return s.record(fields, false)
+}
+
+// ProgressiveRecord returns the progressive record type with the
+// fields discovered so far. Unlike Record, it does not collapse the
+// empty case to unit: "{...}", the record whose fields are not yet
+// known, is a record — it is what a directory or data file has
+// before it is browsed.
+func (s *System) ProgressiveRecord(fields []Field) Type {
+	return s.record(fields, true)
+}
+
+func (s *System) record(fields []Field, progressive bool) Type {
 	sorted := make([]Field, len(fields))
 	copy(sorted, fields)
 	sort.Slice(sorted, func(i, j int) bool {
 		return LabelLess(sorted[i].Label, sorted[j].Label)
 	})
-	key := recordDesc(sorted)
+	key := recordDesc(sorted, progressive)
 	return s.intern(key, func() Type {
-		return &Record{typeBase{key}, sorted}
+		return &Record{typeBase{key}, sorted, progressive}
 	})
 }
 
