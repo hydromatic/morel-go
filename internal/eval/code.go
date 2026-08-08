@@ -96,9 +96,68 @@ type Closure struct {
 	NSlots        int
 }
 
-// Apply calls the closure: a fresh frame gets the captured
-// values and the argument, and the body runs in it.
+// tailCall is what an application in tail position evaluates to
+// instead of calling the function: the trampoline in Closure.Apply
+// makes the call. A tail-recursive function therefore runs in
+// constant Go stack space, however deep the recursion.
+//
+// A sentinel never escapes an activation. Every tail application
+// is compiled inside a function body (only the body of a "fn" is
+// compiled in tail position), and "case" and "let" return their
+// body's value unchanged, so the sentinel arrives at the
+// Closure.Apply that began the activation and goes no further.
+//
+// span is where the application is, so that the trampoline can
+// report an exception raised by the call at the same place a
+// non-tail call would.
+type tailCall struct {
+	fn   Val
+	arg  Val
+	span token.Span
+}
+
+// Apply calls the closure, bouncing on the tail calls its body
+// returns until one produces a value. Every call after the first
+// replaces the one before it rather than nesting, so the Go stack
+// does not grow with the recursion.
 func (c *Closure) Apply(arg Val) (Val, error) {
+	v, err := c.applyBody(arg)
+	for err == nil {
+		tc, isTail := v.(*tailCall)
+		if !isTail {
+			return v, nil
+		}
+		fn := tc.fn
+		for {
+			cell, isCell := fn.(*recCell)
+			if !isCell {
+				break
+			}
+			fn = cell.v
+		}
+		if closure, isClosure := fn.(*Closure); isClosure {
+			// Bounce: run the body directly, not through Apply,
+			// so that trampolines do not nest.
+			v, err = closure.applyBody(tc.arg)
+		} else {
+			// The call left the closures behind — a built-in, say.
+			// It cannot tail-call back, so this is the last hop.
+			v, err = ApplyVal(fn, tc.arg)
+		}
+		if err != nil {
+			err = stampSpan(err, tc.span)
+		}
+	}
+	return nil, err
+}
+
+// applyBody binds the argument and evaluates the body: a fresh
+// frame gets the captured values and the argument, and the body
+// runs in it.
+//
+// The value may be a tail-call sentinel, so only Closure.Apply,
+// which bounces on those, may call this.
+func (c *Closure) applyBody(arg Val) (Val, error) {
 	f := NewFrame(c.NSlots)
 	for i, slot := range c.CapturedSlots {
 		f.Slots[slot] = c.Captured[i]
@@ -202,6 +261,11 @@ func (c *applyCode) Eval(f *Frame) (Val, error) {
 	argVal, err := c.arg.Eval(f)
 	if err != nil {
 		return nil, err
+	}
+	if c.tail {
+		// Hand the call to the trampoline in Closure.Apply rather
+		// than making it here, so that the stack does not grow.
+		return &tailCall{fn: fnVal, arg: argVal, span: c.span}, nil
 	}
 	v, err := ApplyVal(fnVal, argVal)
 	if err != nil {
