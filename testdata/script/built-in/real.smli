@@ -222,6 +222,9 @@ Real.rem (13.0, Real.negInf);
 (*) In the following, Morel returns 13.0 per the spec; sml-nj returns nan.
 Real.rem (13.0, Real.posInf);
 > val it = 13 : real
+Sys.plan ();
+> val it = "apply2(fnValue Real.rem, constant(13.0), constant(Infinity))"
+>   : string
 
 (* "*+ (a, b, c)" and "*- (a, b, c)" return a * b + c and a * b - c,
    respectively. Their behaviors on infinities follow from the behaviors derived
@@ -280,6 +283,9 @@ Real.min (Real.posInf, 4.5);
 > val it = 4.5 : real
 Real.min (Real.negInf, 4.5);
 > val it = ~inf : real
+Sys.plan ();
+> val it = "apply2(fnValue Real.min, constant(-Infinity), constant(4.5))"
+>   : string
 
 Real.max;
 > val it = fn : real * real -> real
@@ -293,6 +299,9 @@ Real.max (Real.posInf, 4.5);
 > val it = inf : real
 Real.max (Real.negInf, 4.5);
 > val it = 4.5 : real
+Sys.plan ();
+> val it = "apply2(fnValue Real.max, constant(-Infinity), constant(4.5))"
+>   : string
 
 (* "sign r" returns ~1 if r is negative, 0 if r is zero, or 1 if r is positive.
     An infinity returns its sign; a zero returns 0 regardless of its sign.

@@ -61,6 +61,16 @@ func (c *constantCode) Describe() string {
 	return "constant(" + PlanString(c.v) + ")"
 }
 
+// ConstantValue returns the value of code that yields a fixed
+// value, and whether the code is such a one. It lets the compiler
+// fold an expression whose parts are all known at compile time.
+func ConstantValue(code Code) (Val, bool) {
+	if c, isConstant := code.(*constantCode); isConstant {
+		return c.v, true
+	}
+	return nil, false
+}
+
 // GetSlot returns code that reads a variable's slot.
 func GetSlot(slot int, name string) Code {
 	return &getCode{slot: slot, name: name}

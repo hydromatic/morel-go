@@ -193,6 +193,8 @@ List.map (fn x => (x, Math.cosh x))
 (* "val e : real" The base e (2.718281828...) of the natural logarithm. *)
 Math.e;
 > val it = 2.7182817 : real
+Sys.plan ();
+> val it = "constant(2.7182817)" : string
 
 (* "exp x" returns e(x), i.e., e raised to the x(th) power. If x is
    +infinity, it returns +infinity; if x is -infinity, it returns 0. *)
@@ -245,6 +247,8 @@ List.map (fn x => (x, Math.log10 x))
 (* "val pi : real" The constant pi (3.141592653...). *)
 Math.pi;
 > val it = 3.1415927 : real
+Sys.plan ();
+> val it = "constant(3.1415927)" : string
 
 (* "pow (x, y)" returns x(y), i.e., x raised to the y(th) power. For
    finite x and y, this is well-defined when x > 0, or when x < 0 and

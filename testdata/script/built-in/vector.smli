@@ -82,6 +82,8 @@ Sys.plan ();
 (*) Vector.maxLen: int
 Vector.maxLen;
 > val it = 16777215 : int
+Sys.plan ();
+> val it = "constant(16777215)" : string
 
 (*) Vector.tabulate : int * (int -> 'a) -> 'a vector
 Vector.tabulate;

@@ -54,6 +54,8 @@ String;
 (*) val maxSize : int
 String.maxSize;
 > val it = 2147483647 : int
+Sys.plan ();
+> val it = "constant(2147483647)" : string
 
 (*) val size : string -> int
 String.size;

@@ -858,8 +858,36 @@ func (c *compiler) compileApply(e *core.Apply, tail bool) (eval.Code,
 	if err != nil {
 		return nil, err
 	}
+	if code, folded := foldSelector(e.Fn, arg); folded {
+		return code, nil
+	}
 	name, arity, curried := c.builtinFnInfo(e.Fn, fn)
 	return eval.Apply(fn, arg, e.Span, name, arity, curried, tail), nil
+}
+
+// foldSelector folds a field selection whose record is already
+// known — a member of a built-in structure, such as "List.nil" —
+// to the field's value, so that the plan reads "constant([])"
+// rather than a selector applied to the whole structure.
+//
+// It fires only when the record is a value that has the field to
+// hand. A directory (the "file" value) is a record whose fields
+// are its entries, but it reads them as it is browsed, so it is
+// left to be selected from at run time.
+func foldSelector(fnExp core.Exp, arg eval.Code) (eval.Code, bool) {
+	sel, isSelector := fnExp.(*core.Selector)
+	if !isSelector {
+		return nil, false
+	}
+	v, isConstant := eval.ConstantValue(arg)
+	if !isConstant {
+		return nil, false
+	}
+	fields, isRecord := v.([]eval.Val)
+	if !isRecord || sel.Index < 0 || sel.Index >= len(fields) {
+		return nil, false
+	}
+	return eval.Constant(fields[sel.Index]), true
 }
 
 // compileTail compiles an expression in tail position. Tail-ness
