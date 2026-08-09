@@ -113,67 +113,18 @@ func TestScan(t *testing.T) {
 	}
 }
 
-// TestScanIncomplete checks the states the shell passes through as
-// a statement is typed. The highlighter runs on every keystroke, so
-// each prefix must scan, and must not run past the end of the
-// buffer: morel-java #415 crashed on `"\`, the state every string
-// escape passes through.
-func TestScanIncomplete(t *testing.T) {
-	for _, tc := range []struct{ src, want string }{
-		{`"`, "s"},
-		{`"a`, "ss"},
-		{`"a\`, "sss"},
-		{`"a\n`, "ssss"},
-		{`"a\n"`, "sssss"},
-		{`\`, "y"},
-		{"(*", "cc"},
-		{"(* a", "cccc"},
-		{"(* a *", "cccccc"},
-		{"(* a *)", "ccccccc"},
-	} {
-		if got := scanString(t, tc.src); got != tc.want {
-			t.Errorf("Scan(%q):\n got %s\nwant %s",
-				tc.src, got, tc.want)
-		}
-	}
-}
+// What the scanner makes of incomplete input and of quoted
+// identifiers is tested by "highlight.smli", via "Test.highlight",
+// which reports the finer classification and covers more cases
+// than the tests that used to be here.
 
 // TestScanEveryPrefix checks that scanning any prefix of a
 // statement terminates and tiles the input, as the shell does on
-// each keystroke.
+// each keystroke. It stays here because it is a property over
+// every prefix, which a script cannot express.
 func TestScanEveryPrefix(t *testing.T) {
 	const src = `val s = "a\"b" (* c *) 0wx1F ~1.5e~7 'a List.map;`
 	for i := 0; i <= len(src); i++ {
 		scanString(t, src[:i])
-	}
-}
-
-// TestScanQuotedIdent checks that a quoted identifier is one
-// identifier span, whatever it contains: a keyword inside backticks
-// is a name, not a keyword.
-func TestScanQuotedIdent(t *testing.T) {
-	for _, tc := range []struct{ src, want string }{
-		// The user's examples.
-		{"from `from` in [1,2]", "KKKK.iiiiii.KK.ynyny"},
-		{"val `o` = 1", "KKK.iii.y.n"},
-		{"val `let val` = 2;", "KKK.iiiiiiiii.y.ny"},
-		// A plain quoted name.
-		{"`x`", "iii"},
-		// A doubled backtick is a literal one, and does not
-		// close the identifier.
-		{"`a``b`", "iiiiii"},
-		// Backticks are not swallowed by an adjacent symbol
-		// run: "=" then a quoted name, with no space.
-		{"x=`y`", "iyiii"},
-		// Unterminated: runs to the end, as the shell must
-		// color it while it is being typed.
-		{"`", "i"},
-		{"`ab", "iii"},
-		{"`a``", "iiii"},
-	} {
-		if got := scanString(t, tc.src); got != tc.want {
-			t.Errorf("Scan(%q):\n got %s\nwant %s",
-				tc.src, got, tc.want)
-		}
 	}
 }

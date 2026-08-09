@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -131,8 +132,14 @@ type Kernel struct {
 	// initBindings and initValues snapshot the freshly initialized
 	// environment — the built-ins plus the global datasets, but no
 	// user bindings; Sys.clearEnv restores the session to them.
+	// They hold every structure, including the ones the
+	// "excludeStructures" property hides, so that clearing the
+	// property makes those visible without reloading them.
 	initBindings []compile.Binding
 	initValues   map[string]eval.Val
+	// structureNames are the structures the signature files
+	// declare, which is what "excludeStructures" chooses from.
+	structureNames []string
 	// gaps counts the not-yet-implemented errors and panics that
 	// suppression hid, by message — the inventory of what running
 	// the input would need. Gaps reports it; gapSample keeps the
@@ -257,6 +264,10 @@ func NewKernel(name string) *Kernel {
 	// Sys.clearEnv can restore exactly it.
 	k.initBindings = slices.Clone(k.bindings)
 	k.initValues = maps.Clone(k.values)
+	for _, b := range result.Bindings {
+		k.structureNames = append(k.structureNames, b.Name)
+	}
+	k.hideExcludedStructures()
 	return k
 }
 
@@ -359,6 +370,7 @@ func (k *Kernel) Execute(stmt string) string {
 func (k *Kernel) clearEnv() {
 	k.bindings = slices.Clone(k.initBindings)
 	k.values = maps.Clone(k.initValues)
+	k.hideExcludedStructures()
 	k.overloads = compile.NewOverloadEnv()
 	k.inlineExps = map[string]core.Exp{}
 	k.recFns = map[string]*core.Fn{}
@@ -377,6 +389,45 @@ func (k *Kernel) recordGap(msg string) {
 			sample = sample[:maxSample] + "..."
 		}
 		k.gapSample[msg] = sample
+	}
+}
+
+// hideExcludedStructures removes from the environment the
+// structures that the "excludeStructures" property names — by
+// default "Test", which exists to be called from scripts and
+// would otherwise clutter every listing of the environment.
+//
+// It reads from the snapshot rather than from what is in scope, so
+// that clearing the property brings a hidden structure back. The
+// property is consulted whenever the environment is built, which
+// is at startup and at every Sys.clearEnv.
+func (k *Kernel) hideExcludedStructures() {
+	pattern, _ := k.showProp("excludeStructures")
+	if pattern == "" {
+		return
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		// A pattern that does not compile hides nothing, rather
+		// than failing a session that is merely misconfigured.
+		return
+	}
+	hidden := map[string]bool{}
+	for _, name := range k.structureNames {
+		if re.MatchString(name) {
+			hidden[name] = true
+		}
+	}
+	if len(hidden) == 0 {
+		return
+	}
+	k.bindings = slices.DeleteFunc(slices.Clone(k.bindings),
+		func(b compile.Binding) bool { return hidden[b.Name] })
+	for name := range k.values {
+		structure, _, isMember := strings.Cut(name, ".")
+		if hidden[name] || isMember && hidden[structure] {
+			delete(k.values, name)
+		}
 	}
 }
 

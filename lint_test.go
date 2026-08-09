@@ -41,10 +41,17 @@ func TestStructureScripts(t *testing.T) {
 		t.Fatalf("read lib: %v", err)
 	}
 	scriptDir := "testdata/script/built-in"
+	// "Test" exists so that the implementation can be tested from a
+	// script, and is hidden from a session by the
+	// "excludeStructures" property. Its members are exercised by the
+	// scripts that use them -- "Test.highlight" by "highlight.smli"
+	// -- as they are in morel-java, which has no "built-in/test.smli"
+	// either.
+	exempt := map[string]bool{"test.sig": true}
 	var missing []string
 	for _, sig := range sigs {
 		name := sig.Name()
-		if !strings.HasSuffix(name, ".sig") {
+		if !strings.HasSuffix(name, ".sig") || exempt[name] {
 			continue
 		}
 		script := strings.TrimSuffix(name, ".sig") + ".smli"

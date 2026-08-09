@@ -170,6 +170,10 @@ func (k *Kernel) sysBuiltins() map[string]eval.Val {
 			s, _ := arg.(string)
 			return compile.VariantParse(s, k.sys)
 		}),
+		"Test.highlight": eval.Fn(func(arg eval.Val) (eval.Val, error) {
+			s, _ := arg.(string)
+			return Highlight(s), nil
+		}),
 		"Time.now": eval.Fn(k.timeNow),
 		"Date.date": eval.Fn(func(arg eval.Val) (eval.Val, error) {
 			rec, _ := arg.([]eval.Val)
