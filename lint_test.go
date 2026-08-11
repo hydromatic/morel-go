@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -273,11 +274,24 @@ type textState struct {
 	lang       language
 	// runStart and runEnd delimit the current run of consecutive
 	// "(*)" line comments; runStart is 0 when not in a run.
-	runStart    int
-	runEnd      int
-	inPre       bool
-	inRawString bool
-	inGenerated bool
+	runStart int
+	runEnd   int
+	// commentDepth is the block-comment nesting depth at the start
+	// of the line being checked.
+	commentDepth int
+	// pendingOpenLine is the line on which a block comment opened
+	// with a bare "(*"; the line after it says whether the block is
+	// prose or commented-out code. It is 0 when none is pending.
+	pendingOpenLine int
+	// commentedOutCode says that the open block comment holds code
+	// rather than prose, so its lines are not starred.
+	commentedOutCode bool
+	// lintEnableLine is the line at which a "lint:skip" directive
+	// stops suppressing warnings.
+	lintEnableLine int
+	inPre          bool
+	inRawString    bool
+	inGenerated    bool
 }
 
 // goSwitch tracks one open switch statement in a Go file.
@@ -289,8 +303,44 @@ type goSwitch struct {
 }
 
 func (s *textState) warnf(line int, format string, args ...any) {
+	if line < s.lintEnableLine {
+		return
+	}
 	prefix := fmt.Sprintf("%s:%d: ", s.name, line)
 	s.warn(prefix + fmt.Sprintf(format, args...))
+}
+
+// skipMarker is built by concatenation so that this file does not
+// suppress its own warnings.
+func skipMarker() string {
+	return "lint:" + "skip"
+}
+
+// skipRegexp matches a "skip" directive in a line comment -- "//"
+// in Go, "(*)" in Morel -- optionally followed by a count.
+func skipRegexp() *regexp.Regexp {
+	return regexp.MustCompile(`(?://|\(\*\)) ` + skipMarker() +
+		`(?: (\d+))?\s*$`)
+}
+
+// maybeSkip acts on a "skip" directive, which suppresses warnings
+// for its own line and for the N lines after it (N defaults to 1).
+// It is how a file keeps a deliberately malformed comment, such as
+// those that test the parser.
+func (s *textState) maybeSkip(n int, l string) {
+	m := skipRegexp().FindStringSubmatch(l)
+	if m == nil {
+		return
+	}
+	count := 1
+	if m[1] != "" {
+		var err error
+		count, err = strconv.Atoi(m[1])
+		if err != nil {
+			return
+		}
+	}
+	s.lintEnableLine = n + count + 1
 }
 
 func (s *textState) lintText(contents string) {
@@ -309,6 +359,7 @@ func (s *textState) lintText(contents string) {
 }
 
 func (s *textState) line(n int, l string) {
+	s.maybeSkip(n, l)
 	s.checkSorted(n, l)
 	if strings.HasSuffix(l, " ") {
 		s.warnf(n, "Trailing spaces")
@@ -320,6 +371,7 @@ func (s *textState) line(n int, l string) {
 		s.checkSetMode(n, l)
 		s.checkDecorative(n, l)
 		s.checkCommentRun(n, l)
+		s.checkBlockComment(n, l)
 	}
 	if s.lang == langGo {
 		s.checkGoSwitch(n, l)
@@ -503,6 +555,104 @@ func (s *textState) checkCommentRun(n int, l string) {
 			s.runStart, s.runEnd)
 	}
 	s.runStart = 0
+}
+
+// checkBlockComment requires that a continuation line of a block
+// comment -- one the comment was already open at the start of --
+// begin with zero or more spaces and then "*":
+//
+//	(* A multi-line
+//	 * block comment. *)
+//
+// The line that closes the comment is exempt, and so is a comment
+// that holds code rather than prose: one that opens with a bare
+// "(*" whose next line starts flush, or one that opens "(* TODO".
+func (s *textState) checkBlockComment(n int, l string) {
+	if s.pendingOpenLine != 0 && s.pendingOpenLine == n-1 {
+		// The line after a bare "(*" says what kind of comment this
+		// is. Code is written flush left, and starring it would have
+		// to be undone to bring it back.
+		if l != "" && l[0] != ' ' {
+			s.commentedOutCode = true
+		}
+		s.pendingOpenLine = 0
+	}
+	if s.commentDepth > 0 && !s.commentedOutCode &&
+		!strings.HasPrefix(strings.TrimSpace(l), "*)") &&
+		!strings.HasPrefix(strings.TrimLeft(l, " "), "*") {
+		s.warnf(n, "block comment continuation line must start "+
+			"with '*'")
+	}
+	s.scanComment(n, l)
+}
+
+// scanComment advances the block-comment depth over one line, so
+// that checkBlockComment reads it at the start of the next.
+func (s *textState) scanComment(n int, l string) {
+	inString := false
+	i := 0
+	for i+1 < len(l) {
+		switch {
+		case inString:
+			// Inside a string literal, "(*" and "*)" are ordinary
+			// characters; "highlight.smli" is full of such strings.
+			if l[i] == '\\' {
+				i += 2
+				continue
+			}
+			if l[i] == '"' {
+				inString = false
+			}
+			i++
+		case s.commentDepth == 0 && l[i] == '"':
+			inString = true
+			i++
+		case l[i] == '(' && l[i+1] == '*':
+			if i+2 < len(l) && l[i+2] == ')' {
+				if s.commentDepth == 0 {
+					// "(*)" comments to the end of the line, so nothing
+					// later on it opens or closes a block. Reading on
+					// would see the "(*" in a line such as
+					//   "a" ^ (*) line comment with (* fake block open
+					// and believe a block comment had opened.
+					return
+				}
+				// Within a block comment, "(*)" is three characters.
+				i += 3
+				continue
+			}
+			s.commentDepth++
+			if s.commentDepth == 1 {
+				s.openBlock(n, l)
+			}
+			i += 2
+		case l[i] == '*' && l[i+1] == ')':
+			s.commentDepth--
+			if s.commentDepth == 0 {
+				s.pendingOpenLine = 0
+				s.commentedOutCode = false
+			}
+			i += 2
+		default:
+			i++
+		}
+	}
+}
+
+// openBlock notes what an opening "(*" says about its block:
+// nothing, if it is bare, in which case the line after it decides;
+// or that the block holds code, if it opens "(* TODO".
+func (s *textState) openBlock(n int, l string) {
+	t := strings.TrimSpace(l)
+	switch {
+	case t == "(*":
+		s.pendingOpenLine = n
+	case strings.HasPrefix(t, "(* TODO"):
+		// A comment that opens "(* TODO" introduces the code it
+		// comments out rather than describing it, and says so on its
+		// opening line, so its body needs no line to say so.
+		s.commentedOutCode = true
+	}
 }
 
 // sortMarker is built by concatenation so that this file does not

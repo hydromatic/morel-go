@@ -35,7 +35,7 @@ Sys.set ("printDepth", 6);
 > val it = 2147483647 : int
 
 (* Integer literals outside the 32-bit 'int' range (~2147483648 to
-   2147483647) are rejected during validation. *)
+ * 2147483647) are rejected during validation. *)
 2147483648;
 > stdIn:1.1-1.11 Error: literal '2147483648' is too large for type int
 >   raised at: stdIn:1.1-1.11
@@ -280,6 +280,7 @@ fun compareInt (x: int, y: int) : `order` =
 > val compareInt = fn : int * int -> order
 
 (* Comments ------------------------------------------------------- *)
+(*) lint:skip 55
 
 1 + (* 2 + *) 3;
 > val it = 4 : int
@@ -359,6 +360,7 @@ fun compareInt (x: int, y: int) : `order` =
 > val it = "ab" : string
 
 (* Nested line comments inside block *)
+(*) lint:skip 5
 "a" ^ (* start
          (* line 1
           * line 2 *)
@@ -398,6 +400,7 @@ str #"(" ^ str #"*" ^ str #")";
 "\"(*\" and \"*)\"";
 > val it = "\"(*\" and \"*)\"" : string
 
+(*) lint:skip 12
 (* The scripting framework gets confused by output lines ('>')
    after a line comment ('(*)') inside a
    block comment. *)

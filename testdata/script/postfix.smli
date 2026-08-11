@@ -34,8 +34,8 @@ r.age;
 > val it = 30 : int
 
 (* Atom-arg form works with bound variables (not just with literals).
-   These exercise the case where the receiver is a bare identifier that
-   refers to a non-record value, not a module/structure. *)
+ * These exercise the case where the receiver is a bare identifier that
+ * refers to a non-record value, not a module/structure. *)
 val xs = [3, 1, 4, 1, 5];
 > val xs = [3,1,4,1,5] : int list
 xs.drop 2;
@@ -69,7 +69,8 @@ let val n = 42     in n.toString () end;
 > val it = "42" : string
 
 (* The following would work if the limitation were lifted: a top-level
-   function definition followed by a postfix call in a separate statement.
+ * function definition followed by a postfix call in a separate statement. *)
+(*
 fun greet self = "Hello, " ^ self;
 > val greet = fn : string -> string
 "world".greet ();
