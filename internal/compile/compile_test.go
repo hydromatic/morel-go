@@ -210,6 +210,22 @@ func TestDeduce(t *testing.T) {
 		{"abs ~3", "int"},
 		{"let val x = 1.0 in x + 2.0 end", "real"},
 		{"1: int", "int"},
+		// "typeof" resolves in the environment the annotation
+		// appears in, whether the annotation is on an expression
+		// or on a pattern.
+		{
+			"let val s = \"a\" in (1, s) : typeof (2, s) end",
+			"int * string",
+		},
+		{
+			"let val s = \"a\" in fn x: typeof s => [x] end",
+			"string -> string list",
+		},
+		{
+			"let val r = {a = 1, b = true}" +
+				" in fn x: typeof r => x.a end",
+			"{a:int, b:bool} -> int",
+		},
 		{"fn x: int => true", "int -> bool"},
 		{
 			"fn (x: int, y: string) => (true, [1])",

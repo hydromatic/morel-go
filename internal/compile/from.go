@@ -395,7 +395,7 @@ func (st *fromState) throughStep(s *ast.ThroughStep) error {
 	r := st.r
 	elem := r.u.Variable()
 	var termMap []patTerm
-	err := r.deducePat(s.Pat, &termMap, nil, elem)
+	err := r.deducePat(st.env, s.Pat, &termMap, nil, elem)
 	if err != nil {
 		return err
 	}
@@ -561,7 +561,7 @@ func (st *fromState) deduceScan(env, onEnv typeEnv,
 		}
 	}
 	var termMap []patTerm
-	err := r.deducePat(scan.Pat, &termMap, nil, vElem)
+	err := r.deducePat(env, scan.Pat, &termMap, nil, vElem)
 	if err != nil {
 		return nil, nil, err
 	}

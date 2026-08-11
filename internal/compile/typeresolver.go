@@ -846,22 +846,18 @@ func (r *typeResolver) instantiateSchemePredicate(p schemePredicate,
 		unify.OverloadNamed(p.name, argVar, resultVar, argResults))
 }
 
-// astTypeTerm converts a type annotation to a term. A type
-// variable resolves in the innermost annotation scope, created
-// if absent, so annotations within one declaration share their
-// type variables.
-func (r *typeResolver) astTypeTerm(t ast.Type) (unify.Term,
-	error,
+// astTypeTerm converts a type annotation to a term, in the
+// environment the annotation appears in. A type variable resolves
+// in the innermost annotation scope, created if absent, so
+// annotations within one declaration share their type variables.
+func (r *typeResolver) astTypeTerm(env typeEnv, t ast.Type) (
+	unify.Term, error,
 ) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch t := t.(type) {
 	case *ast.ExpressionType:
 		// "typeof exp": the annotation's type is the deduced type
-		// of exp, resolved against the top-level bindings.
-		var env typeEnv = emptyTypeEnv{}
-		if r.bindings != nil {
-			env = &bindingTypeEnv{parent: env, bindings: r.bindings}
-		}
+		// of exp.
 		v := r.u.Variable()
 		err := r.deduceExp(env, t.Exp, v)
 		if err != nil {
@@ -869,21 +865,21 @@ func (r *typeResolver) astTypeTerm(t ast.Type) (unify.Term,
 		}
 		return v, nil
 	case *ast.FnType:
-		param, err := r.astTypeTerm(t.Param)
+		param, err := r.astTypeTerm(env, t.Param)
 		if err != nil {
 			return nil, err
 		}
-		result, err := r.astTypeTerm(t.Result)
+		result, err := r.astTypeTerm(env, t.Result)
 		if err != nil {
 			return nil, err
 		}
 		return r.fnTerm(param, result), nil
 	case *ast.NamedType:
-		return r.astNamedTerm(t)
+		return r.astNamedTerm(env, t)
 	case *ast.RecordType:
 		fields := make([]labelTerm, len(t.Fields))
 		for i, f := range t.Fields {
-			term, err := r.astTypeTerm(f.Type)
+			term, err := r.astTypeTerm(env, f.Type)
 			if err != nil {
 				return nil, err
 			}
@@ -894,7 +890,7 @@ func (r *typeResolver) astTypeTerm(t ast.Type) (unify.Term,
 	case *ast.TupleType:
 		terms := make([]unify.Term, len(t.Args))
 		for i, arg := range t.Args {
-			term, err := r.astTypeTerm(arg)
+			term, err := r.astTypeTerm(env, arg)
 			if err != nil {
 				return nil, err
 			}
@@ -923,20 +919,20 @@ func (r *typeResolver) astTypeTerm(t ast.Type) (unify.Term,
 
 // astNamedTerm converts a named type annotation: a primitive, a
 // list, or an instance of a datatype.
-func (r *typeResolver) astNamedTerm(t *ast.NamedType) (unify.Term,
-	error,
-) {
+func (r *typeResolver) astNamedTerm(env typeEnv,
+	t *ast.NamedType,
+) (unify.Term, error) {
 	if alias, ok := r.sys.LookupAlias(t.Name); ok &&
 		len(alias.TyVars) == len(t.Args) {
 		subst := make(map[string]ast.Type, len(alias.TyVars))
 		for i, tv := range alias.TyVars {
 			subst[tv] = t.Args[i]
 		}
-		return r.astTypeTerm(ast.SubstituteType(alias.Body, subst))
+		return r.astTypeTerm(env, ast.SubstituteType(alias.Body, subst))
 	}
 	terms := make([]unify.Term, len(t.Args))
 	for i, arg := range t.Args {
-		term, err := r.astTypeTerm(arg)
+		term, err := r.astTypeTerm(env, arg)
 		if err != nil {
 			return nil, err
 		}
@@ -1087,7 +1083,7 @@ func (r *typeResolver) deduceValBind(env typeEnv,
 	defer func() {
 		r.tyVarScopes = r.tyVarScopes[:len(r.tyVarScopes)-1]
 	}()
-	err := r.deducePat(bind.Pat, termMap, nil, vPat)
+	err := r.deducePat(env, bind.Pat, termMap, nil, vPat)
 	if err != nil {
 		return err
 	}
@@ -1103,8 +1099,8 @@ func (r *typeResolver) deduceValBind(env typeEnv,
 // pattern, e.g. "SOME x". The constructor's argument and result
 // types share one instantiation, so "SOME x" has type
 // "'a option" where "x" has type "'a".
-func (r *typeResolver) deduceConPat(pat *ast.ConPat,
-	termMap *[]patTerm, v *unify.Var,
+func (r *typeResolver) deduceConPat(env typeEnv,
+	pat *ast.ConPat, termMap *[]patTerm, v *unify.Var,
 ) error {
 	tc, ok := r.sys.LookupTyCon(pat.Name)
 	if !ok || tc.Arg == nil {
@@ -1115,7 +1111,7 @@ func (r *typeResolver) deduceConPat(pat *ast.ConPat,
 		}
 	}
 	vArg := r.u.Variable()
-	err := r.deducePat(pat.Arg, termMap, nil, vArg)
+	err := r.deducePat(env, pat.Arg, termMap, nil, vArg)
 	if err != nil {
 		return err
 	}
@@ -1352,18 +1348,20 @@ func unboundTyVar(t ast.Type, bound map[string]int) *ast.TyVar {
 	return nil
 }
 
-func (r *typeResolver) deducePat(pat ast.Pat,
+// deducePat types a pattern, in the environment it appears in —
+// which an annotation that uses "typeof" resolves against.
+func (r *typeResolver) deducePat(env typeEnv, pat ast.Pat,
 	termMap *[]patTerm, labelNames []string, v *unify.Var,
 ) error {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch p := pat.(type) {
 	case *ast.AnnotatedPat:
-		term, err := r.astTypeTerm(p.Type)
+		term, err := r.astTypeTerm(env, p.Type)
 		if err != nil {
 			return err
 		}
 		r.equiv(v, term)
-		err = r.deducePat(p.Pat, termMap, nil, v)
+		err = r.deducePat(env, p.Pat, termMap, nil, v)
 		if err != nil {
 			return err
 		}
@@ -1373,22 +1371,22 @@ func (r *typeResolver) deducePat(pat ast.Pat,
 		// "name as p": the name and the sub-pattern both have the
 		// matched value's type.
 		*termMap = append(*termMap, patTerm{name: p.Name, term: v})
-		err := r.deducePat(p.Pat, termMap, nil, v)
+		err := r.deducePat(env, p.Pat, termMap, nil, v)
 		if err != nil {
 			return err
 		}
 		r.reg(pat, v)
 		return nil
 	case *ast.ConPat:
-		return r.deduceConPat(p, termMap, v)
+		return r.deduceConPat(env, p, termMap, v)
 	case *ast.ConsPat:
 		vElem := r.u.Variable()
 		vList := r.u.Variable()
-		err := r.deducePat(p.A0, termMap, nil, vElem)
+		err := r.deducePat(env, p.A0, termMap, nil, vElem)
 		if err != nil {
 			return err
 		}
-		err = r.deducePat(p.A1, termMap, nil, vList)
+		err = r.deducePat(env, p.A1, termMap, nil, vList)
 		if err != nil {
 			return err
 		}
@@ -1411,7 +1409,7 @@ func (r *typeResolver) deducePat(pat ast.Pat,
 	case *ast.ListPat:
 		vElem := r.u.Variable()
 		for _, arg := range p.Args {
-			err := r.deducePat(arg, termMap, nil, vElem)
+			err := r.deducePat(env, arg, termMap, nil, vElem)
 			if err != nil {
 				return err
 			}
@@ -1421,12 +1419,12 @@ func (r *typeResolver) deducePat(pat ast.Pat,
 	case *ast.LiteralPat:
 		return r.deduceLiteral(pat, p.Kind, p.Value, v)
 	case *ast.RecordPat:
-		return r.deduceRecordPat(p, termMap, labelNames, v)
+		return r.deduceRecordPat(env, p, termMap, labelNames, v)
 	case *ast.TuplePat:
 		terms := make([]unify.Term, len(p.Args))
 		for i, arg := range p.Args {
 			vArg := r.u.Variable()
-			err := r.deducePat(arg, termMap, nil, vArg)
+			err := r.deducePat(env, arg, termMap, nil, vArg)
 			if err != nil {
 				return err
 			}
@@ -1752,7 +1750,7 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 	// lint: sort until '^\t}' where '^\tcase '
 	switch e := exp.(type) {
 	case *ast.AnnotatedExp:
-		term, err := r.astTypeTerm(e.Type)
+		term, err := r.astTypeTerm(env, e.Type)
 		if err != nil {
 			return err
 		}
@@ -2241,8 +2239,9 @@ func (r *typeResolver) deduceRecord(env typeEnv,
 
 // deduceRecordPat handles a record pattern, e.g. "{a, b = p}" or
 // "{a, ...}".
-func (r *typeResolver) deduceRecordPat(pat *ast.RecordPat,
-	termMap *[]patTerm, labelNames []string, v *unify.Var,
+func (r *typeResolver) deduceRecordPat(env typeEnv,
+	pat *ast.RecordPat, termMap *[]patTerm, labelNames []string,
+	v *unify.Var,
 ) error {
 	byLabel := map[string]ast.Pat{}
 	for _, f := range pat.Fields {
@@ -2263,7 +2262,7 @@ func (r *typeResolver) deduceRecordPat(pat *ast.RecordPat,
 	for i := range fields {
 		vArg := r.u.Variable()
 		if fieldPat, ok := byLabel[fields[i].label]; ok {
-			err := r.deducePat(fieldPat, termMap, nil, vArg)
+			err := r.deducePat(env, fieldPat, termMap, nil, vArg)
 			if err != nil {
 				return err
 			}
@@ -2469,7 +2468,7 @@ func (r *typeResolver) deduceMatchList(env typeEnv,
 ) error {
 	for _, m := range matches {
 		var termMap []patTerm
-		err := r.deducePat(m.Pat, &termMap, labelNames,
+		err := r.deducePat(env, m.Pat, &termMap, labelNames,
 			argVariable)
 		if err != nil {
 			return err
@@ -2490,7 +2489,7 @@ func (r *typeResolver) deduceMatch(env typeEnv, match *ast.Match,
 ) error {
 	vPat := r.u.Variable()
 	var termMap []patTerm
-	err := r.deducePat(match.Pat, &termMap, nil, vPat)
+	err := r.deducePat(env, match.Pat, &termMap, nil, vPat)
 	if err != nil {
 		return err
 	}
