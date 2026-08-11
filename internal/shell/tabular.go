@@ -37,17 +37,17 @@ const tabularEllipsis = "..."
 
 // tabularBinding renders "name : type" preceded by a table, when the
 // value is a collection (list or bag) of records or tuples whose
-// fields are tabular-printable. A field may itself be a primitive, an
-// option of a primitive (NONE prints blank), a collection of
-// primitives (expanding vertically), or a record/tuple -- recursively
-// -- rendered as a nested sub-table. The bool result is false when
+// fields are tabular-printable. A field may itself be a scalar (a
+// primitive or an enum), an option of a scalar (NONE prints blank), a
+// collection of scalars (expanding vertically), or a record/tuple --
+// recursively -- rendered as a nested sub-table. The bool result is false when
 // the type is not tabular-printable, so the caller falls back to
 // classic rendering.
 func (c *Config) tabularBinding(name string, v eval.Val,
 	t types.Type,
 ) (string, bool) {
 	elem := collectionElemType(t)
-	if elem == nil || !canPrintRecordLike(elem) {
+	if elem == nil || !c.canPrintRecordLike(elem) {
 		return "", false
 	}
 	// The table is at query depth 0; a printDepth of 0 would render
@@ -55,7 +55,7 @@ func (c *Config) tabularBinding(name string, v eval.Val,
 	if c.PrintDepth >= 0 && c.PrintDepth < 1 {
 		return "", false
 	}
-	root := sectionForRecord("", elem, tabList)
+	root := c.sectionForRecord("", elem, tabList)
 	rootCell, _ := c.buildCell(root, v).(*recordListCell)
 	root.finalizeWidths()
 
@@ -94,12 +94,12 @@ func collectionElemType(t types.Type) types.Type {
 
 // canPrintRecordLike reports whether a record or tuple type, and all
 // its fields, can be printed as a table.
-func canPrintRecordLike(t types.Type) bool {
+func (c *Config) canPrintRecordLike(t types.Type) bool {
 	if !isRecordLike(t) {
 		return false
 	}
 	for _, f := range recordLikeFields(t) {
-		if !canPrintField(f.Type) {
+		if !c.canPrintField(f.Type) {
 			return false
 		}
 	}
@@ -107,30 +107,63 @@ func canPrintRecordLike(t types.Type) bool {
 }
 
 // canPrintField reports whether a field type is acceptable in a row:
-// a primitive; an option of a primitive (NONE prints blank); a record
+// a scalar; an option of a scalar (NONE prints blank); a record
 // or tuple (a nested sub-table); a record/tuple option (a sub-table,
 // blank for NONE, only if not every field is itself an option); or a
-// collection of primitives or of records/tuples (recursively).
-func canPrintField(t types.Type) bool {
-	if _, ok := t.(*types.Primitive); ok {
+// collection of scalars or of records/tuples (recursively).
+func (c *Config) canPrintField(t types.Type) bool {
+	if c.isScalar(t) {
 		return true
 	}
-	if _, ok := optionScalar(t); ok {
+	if _, ok := c.optionScalar(t); ok {
 		return true
 	}
 	if isRecordLike(t) {
-		return canPrintRecordLike(t)
+		return c.canPrintRecordLike(t)
 	}
 	if or := optionRecord(t); or != nil {
-		return canPrintRecordLike(or) && !allFieldsOption(or)
+		return c.canPrintRecordLike(or) && !allFieldsOption(or)
 	}
 	if elem := collectionElemType(t); elem != nil {
-		if _, ok := elem.(*types.Primitive); ok {
+		if c.isScalar(elem) {
 			return true
 		}
-		return canPrintRecordLike(elem)
+		return c.canPrintRecordLike(elem)
 	}
 	return false
+}
+
+// isScalar reports whether a type prints as a single-token scalar,
+// namely a primitive or an enum.
+func (c *Config) isScalar(t types.Type) bool {
+	if _, ok := t.(*types.Primitive); ok {
+		return true
+	}
+	return c.isEnum(t)
+}
+
+// isEnum reports whether t is a datatype every constructor of which
+// is nullary, such as "order", or a user-defined "datatype color =
+// BLUE | GREEN | RED". Its values print as the bare constructor
+// name, and so occupy a scalar column.
+//
+// A collection ("bag") is a datatype with no constructors, and is
+// excluded: it is handled as a collection.
+func (c *Config) isEnum(t types.Type) bool {
+	named, ok := t.(*types.Named)
+	if !ok || c.sys == nil {
+		return false
+	}
+	cons := c.sys.Constructors(named.Name)
+	if len(cons) == 0 {
+		return false
+	}
+	for _, con := range cons {
+		if con.Arg != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // isRecordLike reports whether t is a record or tuple.
@@ -169,13 +202,12 @@ func optionArg(t types.Type) (types.Type, bool) {
 	return nil, false
 }
 
-// optionScalar returns T if t is "T option" with T a primitive, else
-// nil, false.
-func optionScalar(t types.Type) (types.Type, bool) {
-	if a, ok := optionArg(t); ok {
-		if _, isPrim := a.(*types.Primitive); isPrim {
-			return a, true
-		}
+// optionScalar returns T if t is "T option" with T a scalar, else
+// nil, false. Such a field is a scalar column: "SOME x" renders as
+// x, and NONE as a blank cell.
+func (c *Config) optionScalar(t types.Type) (types.Type, bool) {
+	if a, ok := optionArg(t); ok && c.isScalar(a) {
+		return a, true
 	}
 	return nil, false
 }
@@ -253,12 +285,13 @@ type section struct {
 }
 
 // sectionForRecord builds a section for a record or tuple type.
-func sectionForRecord(name string, t types.Type, shape tabShape,
+func (c *Config) sectionForRecord(name string, t types.Type,
+	shape tabShape,
 ) *section {
 	fields := recordLikeFields(t)
 	children := make([]*section, len(fields))
 	for i, f := range fields {
-		children[i] = sectionForField(f.Label, f.Type)
+		children[i] = c.sectionForField(f.Label, f.Type)
 	}
 	return &section{
 		kind: tabRecordList, name: name, shape: shape,
@@ -267,33 +300,35 @@ func sectionForRecord(name string, t types.Type, shape tabShape,
 }
 
 // sectionForField builds a section for one field of a record-like type.
-func sectionForField(name string, t types.Type) *section {
-	if p, ok := t.(*types.Primitive); ok {
+func (c *Config) sectionForField(name string,
+	t types.Type,
+) *section {
+	if c.isScalar(t) {
 		return &section{
-			kind: tabScalar, name: name, rightAlign: isNumericType(p),
-			prim: p, width: len(name),
+			kind: tabScalar, name: name, rightAlign: isNumericType(t),
+			prim: t, width: len(name),
 		}
 	}
-	if p, ok := optionScalar(t); ok {
+	if p, ok := c.optionScalar(t); ok {
 		return &section{
 			kind: tabScalar, name: name, rightAlign: isNumericType(p),
 			optional: true, prim: p, width: len(name),
 		}
 	}
 	if isRecordLike(t) {
-		return sectionForRecord(name, t, tabSingle)
+		return c.sectionForRecord(name, t, tabSingle)
 	}
 	if or := optionRecord(t); or != nil {
-		return sectionForRecord(name, or, tabOption)
+		return c.sectionForRecord(name, or, tabOption)
 	}
 	elem := collectionElemType(t)
-	if _, ok := elem.(*types.Primitive); ok {
+	if c.isScalar(elem) {
 		return &section{
 			kind: tabScalarList, name: name,
 			rightAlign: isNumericType(elem), prim: elem, width: len(name),
 		}
 	}
-	return sectionForRecord(name, elem, tabList)
+	return c.sectionForRecord(name, elem, tabList)
 }
 
 // finalizeWidths propagates widths bottom-up: a record-list's width is
@@ -681,10 +716,13 @@ func (c *Config) optionString(s string) string {
 	return s
 }
 
-// scalarString renders a primitive value unquoted for a table cell: an
+// scalarString renders a scalar value unquoted for a table cell: an
 // int in plain decimal, a string verbatim (truncated by stringDepth),
-// a word in hexadecimal.
+// a word in hexadecimal, an enum as its bare constructor name.
 func (c *Config) scalarString(prim types.Type, v eval.Val) string {
+	if con, ok := v.(eval.Con); ok && con.Arg == nil {
+		return con.Name
+	}
 	// lint: sort until '^\t}' where '^\tcase '
 	switch prim.String() {
 	case boolType:
