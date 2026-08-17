@@ -27,6 +27,7 @@ import (
 	"github.com/hydromatic/morel-go/internal/compile"
 	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/eval"
+	"github.com/hydromatic/morel-go/internal/parse"
 	"github.com/hydromatic/morel-go/internal/types"
 )
 
@@ -292,6 +293,9 @@ func (k *Kernel) sysEnv(eval.Val) (eval.Val, error) {
 // datatype -- so it keeps its "forall".
 func (k *Kernel) envTypeString(name string, t types.Type) string {
 	t = userFacing(k.sys, t)
+	if rec, isRecord := t.(*types.Record); isRecord {
+		return k.envRecordString(rec)
+	}
 	n := 0
 	countTypeVars(t, &n)
 	if n == 0 || k.isDatatypeCon(name) {
@@ -304,6 +308,71 @@ func (k *Kernel) envTypeString(name string, t types.Type) string {
 	}
 	b.WriteString(". " + t.String())
 	return b.String()
+}
+
+// envRecordString renders a record -- a structure is one, its
+// members its fields -- with each member quantified on its own.
+// morel-java quantifies inside the record rather than outside it,
+// because each member is independently polymorphic: two members
+// that both mention "'a" do not thereby share a type.
+func (k *Kernel) envRecordString(rec *types.Record) string {
+	var b strings.Builder
+	b.WriteString("{")
+	for i, f := range rec.Fields {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		// A member whose name is a keyword is quoted, as it must
+		// be written and as the pretty-printer writes it.
+		b.WriteString(parse.QuoteIdent(f.Label) + ":" +
+			k.memberTypeString(f.Type))
+	}
+	if rec.Progressive {
+		if len(rec.Fields) > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString("...")
+	}
+	b.WriteString("}")
+	return b.String()
+}
+
+// memberTypeString renders one member of a record: its type
+// variables renumbered from "'a" -- the record numbers them
+// across all its members, so one member alone may start at "'c"
+// -- and quantified if it has any.
+func (k *Kernel) memberTypeString(t types.Type) string {
+	ordinals := varOrdinals(t)
+	if len(ordinals) == 0 {
+		return t.String()
+	}
+	args := make([]types.Type, ordinals[len(ordinals)-1]+1)
+	for i := range args {
+		args[i] = k.sys.Var(i)
+	}
+	for i, ordinal := range ordinals {
+		args[ordinal] = k.sys.Var(i)
+	}
+	var b strings.Builder
+	b.WriteString("forall")
+	for i := range ordinals {
+		b.WriteString(" " + k.sys.Var(i).String())
+	}
+	b.WriteString(". " + k.sys.Substitute(t, args).String())
+	return b.String()
+}
+
+// varOrdinals are the distinct type-variable ordinals in a type,
+// in increasing order.
+func varOrdinals(t types.Type) []int {
+	seen := map[int]bool{}
+	forEachVar(t, func(ordinal int) { seen[ordinal] = true })
+	ordinals := make([]int, 0, len(seen))
+	for ordinal := range seen {
+		ordinals = append(ordinals, ordinal)
+	}
+	slices.Sort(ordinals)
+	return ordinals
 }
 
 // isDatatypeCon reports whether a name is a nullary constructor
@@ -342,6 +411,20 @@ func userFacing(sys *types.System, t types.Type) types.Type {
 			args[i] = userFacing(sys, arg)
 		}
 		return sys.Named(t.Name, args...)
+	case *types.Record:
+		fields := make([]types.Field, len(t.Fields))
+		for i, f := range t.Fields {
+			fields[i] = types.Field{
+				Label: f.Label, Type: userFacing(sys, f.Type),
+			}
+		}
+		if t.Progressive {
+			// A progressive record keeps its "..."; rebuilding it as
+			// an ordinary record would drop it, and an empty one
+			// would become unit.
+			return sys.ProgressiveRecord(fields)
+		}
+		return sys.Record(fields)
 	case *types.Tuple:
 		args := make([]types.Type, len(t.Args))
 		for i, arg := range t.Args {
@@ -356,29 +439,39 @@ func userFacing(sys *types.System, t types.Type) types.Type {
 // countTypeVars sets n to one more than the highest type-variable
 // ordinal in t, so that ordinals 0..n-1 quantify it.
 func countTypeVars(t types.Type, n *int) {
+	forEachVar(t, func(ordinal int) {
+		if ordinal >= *n {
+			*n = ordinal + 1
+		}
+	})
+}
+
+// forEachVar calls action for every type variable in t, including
+// repeats.
+func forEachVar(t types.Type, action func(ordinal int)) {
 	// lint: sort until '^	}' where '^	case '
 	switch t := t.(type) {
+	case *types.Collection:
+		forEachVar(t.Elem, action)
 	case *types.Fn:
-		countTypeVars(t.Param, n)
-		countTypeVars(t.Result, n)
+		forEachVar(t.Param, action)
+		forEachVar(t.Result, action)
 	case *types.List:
-		countTypeVars(t.Elem, n)
+		forEachVar(t.Elem, action)
 	case *types.Named:
 		for _, arg := range t.Args {
-			countTypeVars(arg, n)
+			forEachVar(arg, action)
 		}
 	case *types.Record:
 		for _, f := range t.Fields {
-			countTypeVars(f.Type, n)
+			forEachVar(f.Type, action)
 		}
 	case *types.Tuple:
 		for _, arg := range t.Args {
-			countTypeVars(arg, n)
+			forEachVar(arg, action)
 		}
 	case *types.Var:
-		if t.Ordinal >= *n {
-			*n = t.Ordinal + 1
-		}
+		action(t.Ordinal)
 	}
 }
 
