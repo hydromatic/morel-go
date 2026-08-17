@@ -273,6 +273,10 @@ type SetOpStage struct {
 	// are always full frame snapshots, whatever earlier steps
 	// bound.
 	Slots []int
+	// Atom says whether a one-variable row is a bare value rather
+	// than a record. A one-field record row also has one
+	// variable, but each element of it is a one-field record.
+	Atom bool
 }
 
 func (s *SetOpStage) transform(q *fromCode, f *Frame, rows [][]Val,
@@ -288,7 +292,12 @@ func (s *SetOpStage) transform(q *fromCode, f *Frame, rows [][]Val,
 		if err != nil {
 			return nil, err
 		}
-		args[i] = asList(v)
+		elems := asList(v)
+		arg := make([]Val, len(elems))
+		for j, elem := range elems {
+			arg[j] = s.elemValue(elem)
+		}
+		args[i] = arg
 	}
 	var result []Val
 	// lint: sort until '^	}' where '^	case '
@@ -323,6 +332,20 @@ func (s *SetOpStage) rowValue(f *Frame) Val {
 		}
 		return vals
 	}
+}
+
+// elemValue converts an element of an argument collection to the
+// form that rowValue gives the input rows, so that the two sides
+// are comparable. The forms agree except for a one-field record,
+// whose row value is the field's value rather than a record of
+// one field.
+func (s *SetOpStage) elemValue(v Val) Val {
+	if len(s.Slots) == 1 && !s.Atom {
+		if vals, ok := v.([]Val); ok && len(vals) == 1 {
+			return vals[0]
+		}
+	}
+	return v
 }
 
 // snapshot is the full frame snapshot for a row value, the

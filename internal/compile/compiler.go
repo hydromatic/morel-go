@@ -736,11 +736,20 @@ func (c *compiler) compileSetOp(s *core.SetOp, scanPats []core.Pat,
 	for i, id := range ids {
 		slots[i] = c.allocSlot(id)
 	}
+	// A one-variable row is a bare value unless it is a one-field
+	// record, whose sole field has the variable's name; the
+	// arguments' element type tells the two apart.
+	atom := true
+	if len(ids) == 1 && len(s.Args) > 0 {
+		elem := collectionElem(s.Args[0].Type())
+		atom = !singletonRecord(elem, ids[0].Name)
+	}
 	return &eval.SetOpStage{
 		Args:     args,
 		Kind:     setOpKinds[s.Kind],
 		Distinct: s.Distinct,
 		Slots:    slots,
+		Atom:     atom,
 	}, nil
 }
 
