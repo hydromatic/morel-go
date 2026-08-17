@@ -50,6 +50,15 @@ func TestComplete(t *testing.T) {
 		{"(* hi *) 1;", true},
 		{`"abc`, false},
 		{`"abc";`, true},
+		// A backslash escapes within the literal, and nothing
+		// unescapes the line before the lexer sees it: a string
+		// ending in an escaped backslash is closed, and one whose
+		// closing quote is escaped is not. morel-java had a line
+		// reader that unescaped first, so both went wrong there
+		// (morel-java#447); morel-go has no such layer.
+		{`"a\\";`, true},
+		{`#"\n";`, true},
+		{`"a\";`, false},
 		// Text that cannot lex is accepted, so that the error
 		// is reported rather than the shell waiting for a
 		// continuation that cannot come.
