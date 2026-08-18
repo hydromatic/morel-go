@@ -321,11 +321,6 @@ func (st *fromState) scanStep(s *ast.Scan) error {
 		return err
 	}
 	st.ord = r.meetSourceOrd(st.ord, sourceOrd)
-	if s.Kind == ast.ScanUnbounded {
-		// Iterating all values of a type has no order, so an
-		// unbounded scan makes the whole query a bag.
-		st.ord = r.u.Atom(unorderedName)
-	}
 	if optionalizesLeft(s.Join) {
 		for i := range st.fields {
 			st.fields[i].term = optionTerm(st.fields[i].term)

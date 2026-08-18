@@ -762,18 +762,28 @@ func (r *rebuilder) projectedScan(g *generator,
 	return &core.Scan{Pat: outerPat, Exp: sub}
 }
 
-// distinctScan wraps a collection in a deduplicating subquery,
-// "from p in exp distinct", with a fresh pattern.
+// distinctScan wraps a collection in a subquery that takes its
+// distinct values in order, "from v in exp distinct order v".
+//
+// An unbounded variable stands for the values that its predicate
+// allows, which is a set; and a set that the query reads back has
+// to be read in some order, of which the values' own is the only
+// one that does not depend on which generator the predicate
+// happened to yield. The subquery scans the collection into one
+// variable rather than the generator's pattern, so that a pattern
+// with parts that bind nothing -- a literal field, say -- still
+// yields elements of the collection's own type, which the scan
+// outside then destructures.
 func distinctScan(sys *types.System, pat core.Pat,
 	exp core.Exp,
 ) core.Exp {
-	fresh := map[*core.IDPat]*core.IDPat{}
-	subPat := clonePat(pat, fresh)
+	elem := &core.IDPat{T: pat.Type(), Name: "$elem"}
 	return &core.From{
-		T: sys.Named("bag", pat.Type()),
+		T: sys.List(pat.Type()),
 		Steps: []core.FromStep{
-			&core.Scan{Pat: subPat, Exp: exp},
+			&core.Scan{Pat: elem, Exp: exp},
 			&core.Distinct{},
+			&core.Order{Exp: &core.ID{Pat: elem}},
 		},
 		Kind: ast.FromOp,
 	}

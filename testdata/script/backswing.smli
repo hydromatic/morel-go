@@ -36,5 +36,5 @@ from i in [1,2,3] group {} compute c = count over ();
  * prints a unit value as "()" where morel-java prints "{}", so this
  * stays here rather than in such-that.smli. *)
 from bc where bc = (true, ()) orelse true;
-> val it = [(false,()),(true,())] : (bool * unit) bag
+> val it = [(false,()),(true,())] : (bool * unit) list
 

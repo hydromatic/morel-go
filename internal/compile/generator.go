@@ -1183,11 +1183,14 @@ func collectionGenerator(sys *types.System,
 		}
 	}
 	return &generator{
-		exp:        coll,
-		pat:        pat,
+		exp:  coll,
+		pat:  pat,
+		card: finite,
+		// The collection is whatever the predicate names, and may
+		// repeat a value; the scan that grounds the variable takes
+		// its distinct values.
+		unique:     false,
 		freePats:   freePats,
-		card:       finite,
-		unique:     true,
 		sealed:     true,
 		provenance: map[core.Exp]bool{conjunct: true},
 		conds:      conds,
