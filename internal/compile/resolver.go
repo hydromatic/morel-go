@@ -1592,8 +1592,7 @@ func (r *resolver) toScanStep(cur *coreEnv,
 			Msg:  "cannot convert to core: " + s.Op().String(),
 		}
 	}
-	scan := &core.Scan{Pat: pat, Exp: exp, Join: s.Join}
-	steps := []core.FromStep{scan}
+	steps := r.extentScans(s, pat, exp)
 	for _, id := range core.PatIDs(pat) {
 		cur = cur.bind(id)
 	}
@@ -1606,8 +1605,11 @@ func (r *resolver) toScanStep(cur *coreEnv,
 		if err != nil {
 			return nil, nil, err
 		}
-		if s.Join == ast.LeftJoinOp || s.Join == ast.RightJoinOp ||
-			s.Join == ast.FullJoinOp {
+		scan, isScan := steps[0].(*core.Scan)
+		if isScan && (s.Join == ast.LeftJoinOp ||
+			s.Join == ast.RightJoinOp || s.Join == ast.FullJoinOp) {
+			// An outer join has one scan; extentScans only splits a
+			// sourceless scan, which has no "on".
 			scan.On = on
 		} else {
 			steps = append(steps, &core.Where{Exp: on})
@@ -1629,6 +1631,77 @@ func (r *resolver) toScanStep(cur *coreEnv,
 		}
 	}
 	return steps, cur, nil
+}
+
+// extentScans is the scan, or scans, a scan step lowers to.
+// Usually it is the one scan, over the source the caller built.
+//
+// A sourceless scan whose pattern is composite is different. Its
+// rows are the combinations of the variables the pattern binds;
+// the pattern's other parts -- literals, constructors, wildcards
+// -- bind nothing, and so say nothing about the rows. So a
+// pattern that binds no variables leaves no scans, and the step
+// contributes the one row that binds nothing.
+//
+// A pattern that does bind variables is left as one scan over the
+// extent of its whole type while that extent has an end. Where it
+// has none -- a record with an int field, say -- that one scan
+// grounds nothing, because a single unbounded component makes the
+// whole of it unbounded, and a variable of a bounded type loses
+// the bound its own type gives it; so the pattern becomes one
+// scan per variable, each over the extent of that variable's own
+// type, and a variable of an unbounded type is left for a
+// predicate to ground, as a lone unbounded variable is.
+//
+// An "as" pattern is never split. Its variable stands for the
+// whole of what the components match, which separate scans would
+// not keep in step.
+func (r *resolver) extentScans(s *ast.Scan, pat core.Pat,
+	exp core.Exp,
+) []core.FromStep {
+	_, isID := pat.(*core.IDPat)
+	ids := core.PatIDs(pat)
+	split := len(ids) == 0 || isInfiniteExtent(exp)
+	if s.Kind != ast.ScanUnbounded || isID || s.On != nil ||
+		!split || containsAsPat(pat) {
+		return []core.FromStep{
+			&core.Scan{Pat: pat, Exp: exp, Join: s.Join},
+		}
+	}
+	var steps []core.FromStep
+	for i, id := range ids {
+		// The first scan keeps the step's join; those that follow
+		// are joined to it by comma.
+		join := ast.ScanOp
+		if i == 0 {
+			join = s.Join
+		}
+		steps = append(steps, &core.Scan{
+			Pat:  id,
+			Exp:  r.extentExp(id.T, s.Span()),
+			Join: join,
+		})
+	}
+	return steps
+}
+
+// containsAsPat reports whether a pattern names the whole of what
+// some part of it matches, "p as (b, c)".
+func containsAsPat(pat core.Pat) bool {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch p := pat.(type) {
+	case *core.AsPat:
+		return true
+	case *core.ConPat:
+		return containsAsPat(p.Arg)
+	case *core.ConsPat:
+		return containsAsPat(p.Head) || containsAsPat(p.Tail)
+	case *core.ListPat:
+		return slices.ContainsFunc(p.Args, containsAsPat)
+	case *core.TuplePat:
+		return slices.ContainsFunc(p.Args, containsAsPat)
+	}
+	return false
 }
 
 // ExtentName is the name of the internal builtin that returns an
