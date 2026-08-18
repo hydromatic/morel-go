@@ -520,6 +520,10 @@ nonEmpty;
 > val it = fn : 'a bag -> bool
 Relational.nonEmpty;
 > val it = fn : 'a bag -> bool
+
+(* "only" is a Morel alias for "Relational.only". *)
+only;
+> val it = fn : 'a bag -> 'a
 Relational.only;
 > val it = fn : 'a bag -> 'a
 
@@ -642,6 +646,9 @@ op /;
 > val it = fn : real * real -> real
 3.0 / 2.0;
 > val it = 1.5 : real
+3 / 2;
+> stdIn:1.1-1.6 Error: Cannot deduce type: conflict: int vs real
+>   raised at: stdIn:1.1-1.6
 
 (* "op ~" : num (int, real, word). For word, '~' is the 2's complement. *)
 op ~;
