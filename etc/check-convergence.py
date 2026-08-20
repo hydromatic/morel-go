@@ -50,7 +50,11 @@ import sys
 
 GO_PREFIX = "testdata/script/"
 JAVA_PREFIX = "src/test/resources/script/"
-DEFAULT_JAVA_REPO = os.path.expanduser("~/dev/morel.0")
+# The canonical morel-java checkout, which tracks origin/main.
+# `pull-passing.py` uses the same one: a run that pulls from one
+# checkout and measures against another can fail a file the commit
+# never touched.
+DEFAULT_JAVA_REPO = os.path.expanduser("~/dev/morel.1")
 
 
 def git(repo, *args):
