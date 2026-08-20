@@ -125,6 +125,7 @@ func deduceOnce(sys *types.System, bindings []Binding,
 		desugared:    map[*ast.Record]ast.Expr{},
 		methods:      methods,
 		methodCalls:  map[*ast.Apply]ast.Expr{},
+		userMethods:  map[string]bool{},
 		headSubstAt:  -1,
 		recordFields: map[*ast.Record][]labelTerm{},
 	}
@@ -566,6 +567,13 @@ type typeResolver struct {
 	// it desugars to; the core resolver follows it, as it does
 	// desugared.
 	methodCalls map[*ast.Apply]ast.Expr
+	// userMethods names the functions this declaration defines whose
+	// first parameter is "self", which may be called as methods. The
+	// value is whether "self" is the first element of a tuple
+	// parameter, in which case the receiver splices in. It is per
+	// declaration, as morel-java's is, so a function defined by an
+	// earlier statement is not a method in a later one.
+	userMethods map[string]bool
 	// headSubst is the solve that typed the last method receiver
 	// the constraints did not obviously type, and headSubstAt the
 	// number of constraints it was made from — -1 for no solve yet,
@@ -1076,6 +1084,7 @@ func (r *typeResolver) deduceDecl(env typeEnv, decl ast.Decl,
 	case *ast.DatatypeDecl:
 		return r.deduceDatatypeDecl(d, termMap)
 	case *ast.FunDecl:
+		r.registerUserMethods(d)
 		return r.deduceValDecl(env, funToVal(d), termMap)
 	case *ast.OverDecl:
 		*termMap = append(*termMap,

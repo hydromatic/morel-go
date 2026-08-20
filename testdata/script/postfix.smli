@@ -87,6 +87,30 @@ yield {size = e.ename.size (), initial = e.ename.sub 0};
 > val it = [{initial=#"a",size=5},{initial=#"b",size=3}]
 >   : {initial:char, size:int} list
 
+(* User-defined postfix functions work when the function definition and call
+ * site are in the same TypeResolver scope (e.g. the same let expression).
+ * Limitation: a function defined at the top level in a previous statement is
+ * not visible to the postfix interceptor in a later statement, because each
+ * statement is resolved independently. *)
+let
+  fun greet self = "Hello, " ^ self
+in
+  "world".greet ()
+end;
+> val it = "Hello, world" : string
+
+(* User-defined function with self as first element of a tuple. *)
+let
+  fun pad (self : string, width : int) =
+      let val n = String.size self
+      in if n >= width then self
+         else self ^ String.implode (List.tabulate (width - n, fn _ => #" "))
+      end
+in
+  "hi".pad 5
+end;
+> val it = "hi   " : string
+
 (* Disambiguation between functions with the same name in different structures.
  * Six names are shared between Int and Real: abs, max, min, rem, sign,
  * toString. Bool and Char also have toString.

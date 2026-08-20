@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/hydromatic/morel-go/internal/ast"
+	"github.com/hydromatic/morel-go/internal/token"
 	"github.com/hydromatic/morel-go/internal/types"
 	"github.com/hydromatic/morel-go/internal/unify"
 )
@@ -192,23 +193,32 @@ func (reg *MethodRegistry) desugarHead(apply *ast.Apply, name string,
 		// An overload rewrites to its own hidden binding.
 		member = ast.NewID(span, cand.target)
 	}
-	arg := apply.Arg
-	if lit, ok := arg.(*ast.Literal); ok && lit.Kind == ast.UnitLiteralOp {
-		// receiver.f () → Structure.f receiver
-		return ast.NewApply(span, member, receiver), true
+	return postfixCall(span, member, receiver, apply.Arg,
+		cand.paramIsTuple), true
+}
+
+// postfixCall builds the call that "receiver.f arg" desugars to,
+// given the function the method resolved to.
+func postfixCall(span token.Span, fn, receiver, arg ast.Expr,
+	paramIsTuple bool,
+) ast.Expr {
+	if lit, isLit := arg.(*ast.Literal); isLit &&
+		lit.Kind == ast.UnitLiteralOp {
+		// receiver.f () → f receiver
+		return ast.NewApply(span, fn, receiver)
 	}
-	if cand.paramIsTuple {
-		// receiver.f arg → Structure.f (receiver, arg)
+	if paramIsTuple {
+		// receiver.f arg → f (receiver, arg)
 		elems := []ast.Expr{receiver}
-		if tup, ok := arg.(*ast.Tuple); ok {
+		if tup, isTuple := arg.(*ast.Tuple); isTuple {
 			elems = append(elems, tup.Args...)
 		} else {
 			elems = append(elems, arg)
 		}
-		return ast.NewApply(span, member, ast.NewTuple(span, elems)), true
+		return ast.NewApply(span, fn, ast.NewTuple(span, elems))
 	}
-	// receiver.f arg → Structure.f receiver arg
-	return ast.NewApply(span, ast.NewApply(span, member, receiver), arg), true
+	// receiver.f arg → f receiver arg
+	return ast.NewApply(span, ast.NewApply(span, fn, receiver), arg)
 }
 
 // headMatches reports whether a method whose receiver is of head
@@ -264,6 +274,49 @@ func (reg *MethodRegistry) memberType(structure, member string) types.Type {
 	return nil
 }
 
+// selfName is the parameter name that makes a user-defined function
+// callable as a method.
+const selfName = "self"
+
+// registerUserMethods records which of a declaration's functions
+// may be called as methods: those whose first parameter is named
+// "self", or whose first parameter is a tuple whose first element
+// is. A method of the second kind takes its receiver spliced into
+// the tuple, as "String.sub" does.
+func (r *typeResolver) registerUserMethods(decl *ast.FunDecl) {
+	for _, bind := range decl.Binds {
+		if len(bind.Matches) == 0 || len(bind.Matches[0].Pats) == 0 {
+			continue
+		}
+		switch pat := unwrapPat(bind.Matches[0].Pats[0]).(type) {
+		case *ast.IDPat:
+			if pat.Name == selfName {
+				r.userMethods[bind.Matches[0].Name] = false
+			}
+		case *ast.TuplePat:
+			if len(pat.Args) == 0 {
+				continue
+			}
+			if id, isID := unwrapPat(pat.Args[0]).(*ast.IDPat); isID &&
+				id.Name == selfName {
+				r.userMethods[bind.Matches[0].Name] = true
+			}
+		}
+	}
+}
+
+// unwrapPat strips the type annotations from a pattern, so that
+// "(self : string, width : int)" is seen as a tuple of names.
+func unwrapPat(pat ast.Pat) ast.Pat {
+	for {
+		annotated, isAnnotated := pat.(*ast.AnnotatedPat)
+		if !isAnnotated {
+			return pat
+		}
+		pat = annotated.Pat
+	}
+}
+
 // methodCall matches "receiver.method arg" — parsed as
 // "Apply(Apply(#method, receiver), arg)" — where the name is a
 // registered method, and returns the name and the receiver.
@@ -281,7 +334,9 @@ func (r *typeResolver) methodCall(apply *ast.Apply) (string, ast.Expr,
 	if !isSel || sel.Safe {
 		return "", nil, false
 	}
-	if _, known := r.methods.byName[sel.Name]; !known {
+	_, isBuiltin := r.methods.byName[sel.Name]
+	_, isUser := r.userMethods[sel.Name]
+	if !isBuiltin && !isUser {
 		return "", nil, false
 	}
 	// "Structure.member arg" is a member call, not a postfix one --
@@ -302,6 +357,15 @@ func (r *typeResolver) methodApply(env typeEnv, apply *ast.Apply,
 	name, receiver, isCall := r.methodCall(apply)
 	if !isCall {
 		return nil, false
+	}
+	// A user-defined method -- a function of this declaration whose
+	// first parameter is "self" -- dispatches on the name alone;
+	// there is only ever one of them, so the receiver's type says
+	// nothing that its parameter does not.
+	if paramIsTuple, isUser := r.userMethods[name]; isUser {
+		span := apply.Span()
+		return postfixCall(span, ast.NewID(span, name), receiver,
+			apply.Arg, paramIsTuple), true
 	}
 	head := r.receiverHead(env, receiver)
 	if head == "" {
