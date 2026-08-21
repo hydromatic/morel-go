@@ -86,6 +86,26 @@ val it = [4,6,8] : int list
 Named files are run as scripts; a file argument of `-` means standard
 input. Run `./morel --help` for the full list of options.
 
+## Contributing
+
+We welcome contributions of all kinds: code, bug reports, feature
+requests, documentation, or just feedback. If you are thinking of
+implementing a feature or fixing a non-trivial bug, please create an
+issue before you start work.
+
+Before you submit a pull request, check that the build, lint and tests
+pass:
+
+```bash
+$ go build ./...
+$ golangci-lint run
+$ go test ./...
+```
+
+Continuous integration runs the same three commands.
+[golangci-lint](https://golangci-lint.run/welcome/install/) version 2
+or higher is required.
+
 ## Documentation
 
 Morel Go does not yet have documentation of its own; the language it
