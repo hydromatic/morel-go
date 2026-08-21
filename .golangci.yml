@@ -26,6 +26,7 @@ linters:
     # Requires every struct literal to set every field; fights the
     # many partially-initialized AST/config structs an interpreter has.
     - exhaustruct
+    - exhaustruct_v5
     # Forbids fmt.Print*; a REPL prints to stdout by design.
     - forbidigo
     # Forbids returning interfaces; the evaluator's Code values are
