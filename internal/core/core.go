@@ -195,10 +195,12 @@ type RangeItem struct {
 }
 
 // RangeList enumerates a list from range items, "[1 .. 5, 10]". An
-// unbounded item raises Size when the list is enumerated.
+// unbounded item raises Size when the list is enumerated; Span is
+// where that is reported.
 type RangeList struct {
 	T     types.Type
 	Items []RangeItem
+	Span  token.Span
 }
 
 // Op implements Exp.

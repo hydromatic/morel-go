@@ -366,6 +366,7 @@ func rangePushdown(sys *types.System, from *core.From,
 			Exp: &core.RangeList{
 				T:     rl.T,
 				Items: []core.RangeItem{item2},
+				Span:  rl.Span,
 			},
 		}
 		removeConjunct(sys, steps[i+1:], consumed)

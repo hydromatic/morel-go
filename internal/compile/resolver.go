@@ -2022,7 +2022,7 @@ func (r *resolver) toRangeList(env *coreEnv, rl *ast.RangeList,
 		}
 		items[i] = ci
 	}
-	return &core.RangeList{T: t, Items: items}, nil
+	return &core.RangeList{T: t, Items: items, Span: rl.Span()}, nil
 }
 
 // toCon converts a reference to a datatype constructor. The

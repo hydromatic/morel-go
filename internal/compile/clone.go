@@ -94,7 +94,7 @@ func cloneExp(e core.Exp, fresh map[*core.IDPat]*core.IDPat,
 				items[i].Hi = cloneExp(item.Hi, fresh)
 			}
 		}
-		return &core.RangeList{T: e.T, Items: items}
+		return &core.RangeList{T: e.T, Items: items, Span: e.Span}
 	case *core.Tuple:
 		return &core.Tuple{T: e.T, Args: cloneExps(e.Args, fresh)}
 	default:

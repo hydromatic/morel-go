@@ -122,7 +122,7 @@ func (r *rewriter) rewriteRangeList(e *core.RangeList) core.Exp {
 	if !changed {
 		return e
 	}
-	return &core.RangeList{T: e.T, Items: items}
+	return &core.RangeList{T: e.T, Items: items, Span: e.Span}
 }
 
 // rewriteCase rewrites a case's scrutinee and arm bodies.

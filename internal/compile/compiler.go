@@ -1248,7 +1248,7 @@ func (c *compiler) compileRangeList(e *core.RangeList) (eval.Code,
 	if err != nil {
 		return nil, err
 	}
-	return eval.RangeList(items), nil
+	return eval.RangeList(items, e.Span), nil
 }
 
 // compileRangeItems compiles each range-list item's bound codes.

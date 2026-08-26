@@ -22,6 +22,7 @@ import (
 	"slices"
 
 	"github.com/hydromatic/morel-go/internal/ast"
+	"github.com/hydromatic/morel-go/internal/token"
 )
 
 // The Range structure. A "range" value is a Con of the "range"
@@ -729,12 +730,13 @@ type RangeItem struct {
 
 // RangeList returns code that enumerates a list from range items,
 // "[1 .. 5, 10]".
-func RangeList(items []RangeItem) Code {
-	return &rangeListCode{items: items}
+func RangeList(items []RangeItem, span token.Span) Code {
+	return &rangeListCode{items: items, span: span}
 }
 
 type rangeListCode struct {
 	items []RangeItem
+	span  token.Span
 }
 
 func (c *rangeListCode) Eval(f *Frame) (Val, error) {
@@ -757,7 +759,9 @@ func (c *rangeListCode) Eval(f *Frame) (Val, error) {
 		}
 		vals, err := enumerateRangeItem(item.Kind, lo, hi)
 		if err != nil {
-			return nil, err
+			// An item with no end raises Size; report it at the
+			// range list, which is where it was asked for.
+			return nil, stampSpan(err, c.span)
 		}
 		out = append(out, vals...)
 	}
