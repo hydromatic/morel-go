@@ -59,7 +59,9 @@ func TestLoad(t *testing.T) {
 		{"SOME", "'a -> 'a option"},
 		{"nil", "'a list"},
 		{"LESS", "order"},
-		{"o", "('a -> 'b) * ('c -> 'a) -> 'c -> 'b"},
+		// An unqualified binding keeps the type-variable names
+		// the signature declared it with.
+		{"o", "('b -> 'c) * ('a -> 'b) -> 'a -> 'c"},
 		{"ignore", "'a -> unit"},
 	} {
 		typ, ok := byName[tc.name]

@@ -25,6 +25,8 @@ import (
 	"io/fs"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/hydromatic/morel-go/internal/compile"
 	"github.com/hydromatic/morel-go/internal/parse"
@@ -193,6 +195,12 @@ func (f *file) declareCons(sys *types.System,
 				}
 			}
 			sys.DeclareTyCon(c.name, argType, result2)
+			if !isIdentifier(c.name) {
+				// A constructor whose name is an operator, such as
+				// "::", is written "x :: xs" or "op ::"; the bare
+				// name is not a term, so it does not bind.
+				continue
+			}
 			conType := result2
 			if argType != nil {
 				conType = sys.Fn(argType, result2)
@@ -202,6 +210,15 @@ func (f *file) declareCons(sys *types.System,
 		}
 	}
 	return nil
+}
+
+// isIdentifier reports whether a name can be written as a term.
+// A constructor named for an operator cannot; "true" and "nil"
+// can, though a signature quotes the first because it is a
+// keyword.
+func isIdentifier(name string) bool {
+	r, _ := utf8.DecodeRuneInString(name)
+	return unicode.IsLetter(r)
 }
 
 // conResultType returns the type that a datatype specification's
@@ -261,8 +278,16 @@ func (f *file) bindVals(sys *types.System, result *Result) {
 			})
 		}
 		if f.structure == "General" {
+			// The unqualified binding keeps the type-variable names
+			// the signature declared, because that is the type
+			// Sys.env reports; the record member above is renumbered
+			// with its neighbours, so it is parsed separately.
+			declared, err := sys.Parse(v.typ)
+			if err != nil {
+				declared = t
+			}
 			result.Bindings = append(result.Bindings,
-				compile.Binding{Name: v.name, Type: t})
+				compile.Binding{Name: v.name, Type: declared})
 		}
 	}
 	if len(members) == 0 {
