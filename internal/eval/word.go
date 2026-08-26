@@ -179,41 +179,6 @@ func wordToStringFn(arg Val) (Val, error) {
 	return wordHex(asWord(arg)), nil
 }
 
-// wordFromStringFn is "Word.fromString s": scans, after leading
-// whitespace, the longest prefix of hexadecimal digits as a word,
-// returning NONE if there is none.
-func wordFromStringFn(arg Val) (Val, error) {
-	s := asString(arg)
-	i := 0
-	for i < len(s) && isSpaceByte(s[i]) {
-		i++
-	}
-	// An optional "0wx"/"0wX" or "0x"/"0X" prefix, stripped only when
-	// a hex digit follows; otherwise the leading "0" is the value
-	// (so "0xG" scans as 0w0).
-	switch {
-	case i+3 < len(s) && s[i] == '0' &&
-		(s[i+1] == 'w' || s[i+1] == 'W') &&
-		(s[i+2] == 'x' || s[i+2] == 'X') && isHexByte(s[i+3]):
-		i += 3
-	case i+2 < len(s) && s[i] == '0' &&
-		(s[i+1] == 'x' || s[i+1] == 'X') && isHexByte(s[i+2]):
-		i += 2
-	}
-	start := i
-	for i < len(s) && isHexByte(s[i]) {
-		i++
-	}
-	if i == start {
-		return noneVal, nil
-	}
-	u, err := strconv.ParseUint(s[start:i], 16, 64)
-	if err != nil {
-		return noneVal, nil //nolint:nilerr // NONE, not an error
-	}
-	return someVal(u), nil
-}
-
 // isHexByte reports whether b is a hexadecimal digit.
 func isHexByte(b byte) bool {
 	return b >= '0' && b <= '9' ||

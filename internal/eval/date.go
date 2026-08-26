@@ -19,7 +19,6 @@ package eval
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -30,7 +29,12 @@ import (
 const (
 	monthDatatype   = "month"
 	weekdayDatatype = "weekday"
+	// ctimeLayout is the format that "%c" writes, which pads a
+	// single-digit day with a space. "Date.toString" writes
+	// toStringLayout, which pads it with a zero; that is the format
+	// "Date.scan" and "Date.fromString" read.
 	ctimeLayout     = "Mon Jan _2 15:04:05 2006"
+	toStringLayout  = "Mon Jan 02 15:04:05 2006"
 	daysPerWeek     = 7
 	hoursPerHalfDay = 12
 	yearsPerCentury = 100
@@ -56,10 +60,14 @@ func asDate(v Val) time.Time {
 // the seconds field when the second and sub-second parts are both
 // zero: "1970-01-01T00:00Z",
 // "1995-03-08T19:06:45Z".
+//
+// A year of more than four digits is written with a leading "+",
+// as ISO-8601 requires: "+12023-03-08T19:06:45Z".
 func FormatDate(v Val) string {
 	t := asDate(v)
-	s := fmt.Sprintf("%04d-%02d-%02dT%02d:%02d",
-		t.Year(), int(t.Month()), t.Day(), t.Hour(), t.Minute())
+	s := fmt.Sprintf("%s-%02d-%02dT%02d:%02d",
+		formatYear(t.Year()), int(t.Month()), t.Day(), t.Hour(),
+		t.Minute())
 	if n := t.Nanosecond(); t.Second() != 0 || n != 0 {
 		s += fmt.Sprintf(":%02d", t.Second())
 		switch {
@@ -74,6 +82,18 @@ func FormatDate(v Val) string {
 	}
 	return s + formatOffset(t)
 }
+
+// formatYear renders a year in at least four digits, with a
+// leading "+" if it needs more than four.
+func formatYear(year int) string {
+	if year > maxIsoYear {
+		return fmt.Sprintf("+%d", year)
+	}
+	return fmt.Sprintf("%04d", year)
+}
+
+// maxIsoYear is the largest year ISO-8601 writes without a sign.
+const maxIsoYear = 9999
 
 // formatOffset renders the zone offset: "Z" for UTC, else "+HH:MM"
 // or "-HH:MM".
@@ -107,27 +127,45 @@ func monthFromName(name string) int {
 	return 0
 }
 
+// weekdayNames are the weekdays of the weekday datatype, which
+// runs Mon..Sun (Mon = 0), so Sunday is last.
+var weekdayNames = []string{
+	"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun",
+}
+
+// weekdayFromName is the 1..7 number of a weekday name, or 0. A
+// scanned date's weekday must be a name, though the date itself
+// says which day it is.
+func weekdayFromName(name string) int {
+	for i, n := range weekdayNames {
+		if n == name {
+			return i + 1
+		}
+	}
+	return 0
+}
+
 // weekdayVal builds a weekday datatype value from a Go weekday. The
 // weekday datatype runs Mon..Sun (Mon = 0), so Sunday is last.
 func weekdayVal(w time.Weekday) Val {
-	names := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+	names := weekdayNames
 	// Go's Sunday = 0; shift so Monday = 0.
 	i := (int(w) + daysPerWeek - 1) % daysPerWeek
 	return Con{Datatype: weekdayDatatype, Name: names[i], Ordinal: i}
 }
 
-// DateConstruct validates the calendar fields and builds a date in
-// the given location, raising Date on any out-of-range field (Go's
-// time.Date silently normalizes, so a round-trip check catches it).
+// DateConstruct builds a date in the given location, normalizing a
+// day, hour, minute or second that is out of range by carrying
+// into the field above, as SML/NJ and C's "mktime" do: day 32 of
+// March is April 1, day 0 is the last day of February, and hour 25
+// is hour 1 of the next day. Go's time.Date normalizes the same
+// way, and any year that forms a date is accepted, so "0000" is a
+// year like any other.
 func DateConstruct(
 	year, month, day, hour, minute, second int, loc *time.Location,
 ) (Val, error) {
-	t := time.Date(year, time.Month(month), day, hour, minute, second, 0, loc)
-	if t.Year() != year || int(t.Month()) != month || t.Day() != day ||
-		t.Hour() != hour || t.Minute() != minute || t.Second() != second {
-		return nil, &MorelError{Exn: ExnDate}
-	}
-	return t, nil
+	return time.Date(year, time.Month(month), day, hour, minute,
+		second, 0, loc), nil
 }
 
 // DateConstructRecord is "Date.date {…}". The record arrives in
@@ -202,36 +240,7 @@ func dateIsDstFn(Val) (Val, error) {
 // dateToStringFn is "Date.toString d": the ctime form, e.g.
 // "Wed Dec 31 00:00:00 1969".
 func dateToStringFn(arg Val) (Val, error) {
-	return asDate(arg).Format(ctimeLayout), nil
-}
-
-// dateFromStringFn is "Date.fromString s": parses the ctime form
-// (ignoring the weekday token), returning SOME date at UTC or NONE.
-func dateFromStringFn(arg Val) (Val, error) {
-	fields := strings.Fields(asString(arg))
-	const ctimeTokens = 5
-	if len(fields) != ctimeTokens {
-		return noneVal, nil
-	}
-	month := monthFromName(fields[1])
-	timeParts := strings.Split(fields[3], ":")
-	const clockParts = 3
-	if month == 0 || len(timeParts) != clockParts {
-		return noneVal, nil
-	}
-	day, e1 := strconv.Atoi(fields[2])
-	hour, e2 := strconv.Atoi(timeParts[0])
-	minute, e3 := strconv.Atoi(timeParts[1])
-	second, e4 := strconv.Atoi(timeParts[2])
-	year, e5 := strconv.Atoi(fields[4])
-	if e1 != nil || e2 != nil || e3 != nil || e4 != nil || e5 != nil {
-		return noneVal, nil //nolint:nilerr // unparsable fields mean NONE
-	}
-	d, err := DateConstruct(year, month, day, hour, minute, second, time.UTC)
-	if err != nil {
-		return noneVal, nil //nolint:nilerr // out-of-range parses to NONE
-	}
-	return someVal(d), nil
+	return asDate(arg).Format(toStringLayout), nil
 }
 
 // dateFmtFn is "Date.fmt s d": strftime-style formatting.

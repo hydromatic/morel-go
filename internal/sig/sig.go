@@ -69,7 +69,10 @@ func Load(sys *types.System, fsys fs.FS) (*Result, error) {
 	// type, because values refer to types across files (e.g.
 	// "Real.fromInt" mentions "real" and "int").
 	for _, f := range files {
-		f.declareTypes(sys)
+		err := f.declareTypes(sys)
+		if err != nil {
+			return nil, err
+		}
 	}
 	for _, f := range files {
 		err := f.declareCons(sys, result)
@@ -96,6 +99,10 @@ type typeSpec struct {
 	name   string
 	tyVars []string
 	cons   []conSpec
+	// body is the right-hand side of a transparent type alias,
+	// "type ('a, 'b) reader = 'b -> ('a * 'b) option"; empty for a
+	// datatype or an abstract type.
+	body string
 }
 
 // conSpec is one constructor of a datatype specification.
@@ -136,8 +143,19 @@ func structureName(fileName string) string {
 // so that value types anywhere in the library can refer to them.
 // A type that already exists (e.g. "bool", "unit") is not
 // redeclared.
-func (f *file) declareTypes(sys *types.System) {
+func (f *file) declareTypes(sys *types.System) error {
 	for _, t := range f.typs {
+		if t.body != "" {
+			// A transparent alias stands for its body, which is
+			// expanded wherever the name is used.
+			body, err := parse.TypeString("sig", t.body)
+			if err != nil {
+				return fmt.Errorf("sig: %s: type %s: %w",
+					f.name, t.name, err)
+			}
+			sys.DeclareAlias(t.name, t.tyVars, body)
+			continue
+		}
 		if t.name == "list" || sys.Lookup(t.name) != nil {
 			continue
 		}
@@ -146,6 +164,7 @@ func (f *file) declareTypes(sys *types.System) {
 		}
 		sys.DeclareDatatype(t.name, len(t.tyVars))
 	}
+	return nil
 }
 
 // declareCons registers the constructors of the file's datatypes

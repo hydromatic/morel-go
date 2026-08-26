@@ -53,6 +53,8 @@ var itemKeywords = map[string]bool{
 
 const datatypeKeyword = "datatype"
 
+const typeKeyword = "type"
+
 func (f *file) parseItem(item string) error {
 	method := strings.Contains(item, "[@@method]")
 	item = stripAttributes(item)
@@ -63,7 +65,7 @@ func (f *file) parseItem(item string) error {
 		return nil
 	case "val":
 		return f.parseValSpec(item, method)
-	case datatypeKeyword, "eqtype", "type":
+	case datatypeKeyword, "eqtype", typeKeyword:
 		return f.parseTypeSpec(tokens[0], item)
 	default:
 		return fmt.Errorf("unknown specification %q", tokens[0])
@@ -105,6 +107,11 @@ func (f *file) parseTypeSpec(keyword, item string) error {
 	spec := typeSpec{name: unquote(name), tyVars: tyVars}
 	body, hasBody := strings.CutPrefix(
 		strings.TrimSpace(rest), "=")
+	if keyword == typeKeyword && hasBody {
+		// A transparent alias: the body is a type, not a list of
+		// constructors.
+		spec.body = strings.TrimSpace(body)
+	}
 	if keyword == datatypeKeyword {
 		if !hasBody {
 			return fmt.Errorf("expected '=' in %q", item)

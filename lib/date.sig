@@ -74,9 +74,23 @@ sig
   val fmt : string -> date -> string [@@prototype "fmt s d"]
 
   (**
-   * parses a date from the string `s`, which should be in the format
-   * produced by `toString` (e.g., `"Thu Jan  1 00:00:00 1970"`).
-   * Returns `SOME d` if successful, `NONE` otherwise.
+   * reads a date from a prefix of the character stream `strm`, in the format
+   * `"Www Mmm DD HH:MM:SS YYYY"` produced by `toString`. It does not skip
+   * leading whitespace, the fields are separated by exactly one space, and
+   * the day may be written with a leading zero or a leading space. Returns
+   * `SOME (d, rest)`, or `NONE` if the stream does not begin with a date in
+   * that format. The weekday must be a valid name but is otherwise ignored;
+   * the weekday of the result is determined by the date. Fields that are out
+   * of range are normalized, as in `date`.
+   *)
+  val scan : (char, 'a) reader -> (date, 'a) reader
+      [@@prototype "scan getc strm"]
+
+  (**
+   * parses a date from a prefix of the string `s`, which should be in the
+   * format produced by `toString` (e.g., `"Thu Jan 01 00:00:00 1970"`).
+   * Returns `SOME d` if successful, `NONE` otherwise; characters after the
+   * date are ignored. Equivalent to `StringCvt.scanString scan`.
    *)
   val fromString : string -> date option [@@prototype "fromString s"]
 

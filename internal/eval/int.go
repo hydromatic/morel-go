@@ -18,7 +18,6 @@
 package eval
 
 import (
-	"math"
 	"strconv"
 	"strings"
 )
@@ -176,35 +175,4 @@ func radixBase(radix Val) int {
 	default:
 		return decRadix
 	}
-}
-
-// intFromStringFn is "Int.fromString s": parses the longest
-// prefix of s that looks like an integer, returning NONE if
-// there is none.
-func intFromStringFn(arg Val) (Val, error) {
-	s := asString(arg)
-	i := 0
-	neg := false
-	if i < len(s) && (s[i] == '~' || s[i] == '-' || s[i] == '+') {
-		neg = s[i] == '~' || s[i] == '-'
-		i++
-	}
-	start := i
-	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
-		i++
-	}
-	if i == start {
-		return noneVal, nil
-	}
-	v, err := strconv.ParseInt(s[start:i], 10, 64)
-	if err != nil {
-		return noneVal, nil //nolint:nilerr // NONE, not an error
-	}
-	if neg {
-		v = -v
-	}
-	if v < math.MinInt32 || v > math.MaxInt32 {
-		return noneVal, nil
-	}
-	return someVal(int32(v)), nil
 }

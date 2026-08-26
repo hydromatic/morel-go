@@ -21,9 +21,7 @@
  *)
 fun toString true = "true"
   | toString false = "false";
-fun fromString "true" = SOME true
-  | fromString "false" = SOME false
-  | fromString _ = NONE;
+val fromString = StringCvt.scanString scan;
 fun `andalso` (a, b) = a andalso b;
 fun `orelse` (a, b) = a orelse b;
 fun `implies` (a, b) = a implies b;

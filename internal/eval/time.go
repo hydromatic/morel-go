@@ -139,13 +139,3 @@ func timeFmtFn(n Val) (Val, error) {
 func timeToStringFn(arg Val) (Val, error) {
 	return formatTimeSeconds(asTime(arg), toStringDigits), nil
 }
-
-// timeFromStringFn is "Time.fromString s": parses seconds as a real,
-// returning SOME time or NONE.
-func timeFromStringFn(arg Val) (Val, error) {
-	f, err := strconv.ParseFloat(strings.TrimSpace(asString(arg)), 64)
-	if err != nil {
-		return noneVal, nil //nolint:nilerr // an unparsable string is NONE
-	}
-	return someVal(int64(f * nsPerSecond)), nil
-}

@@ -249,76 +249,12 @@ func realFromManExpFn(arg Val) (Val, error) {
 	return float32(math.Ldexp(man, int(exp))), nil
 }
 
-// isSpaceByte reports whether b is a whitespace character that
-// Real.fromString skips before the number.
-func isSpaceByte(b byte) bool {
-	switch b {
-	case ' ', '\t', '\n', '\v', '\f', '\r':
-		return true
-	default:
-		return false
-	}
-}
-
-// realFromStringFn is "Real.fromString s": after leading
-// whitespace, parses the longest prefix of s that looks like a
-// real, returning NONE if there is none.
-func realFromStringFn(arg Val) (Val, error) {
-	s := asString(arg)
-	i := 0
-	for i < len(s) && isSpaceByte(s[i]) {
-		i++
-	}
-	start := i
-	accept := func(test func(byte) bool) bool {
-		if i < len(s) && test(s[i]) {
-			i++
-			return true
-		}
-		return false
-	}
-	digit := func(c byte) bool { return c >= '0' && c <= '9' }
-	sign := func(c byte) bool {
-		return c == '~' || c == '-' || c == '+'
-	}
-	accept(sign)
-	digits := 0
-	for accept(digit) {
-		digits++
-	}
-	dot := i
-	if accept(func(c byte) bool { return c == '.' }) {
-		fracDigits := 0
-		for accept(digit) {
-			fracDigits++
-		}
-		if fracDigits == 0 {
-			i = dot
-		} else {
-			digits += fracDigits
-		}
-	}
-	if digits == 0 {
-		return noneVal, nil
-	}
-	e := i
-	if accept(func(c byte) bool { return c == 'e' || c == 'E' }) {
-		accept(sign)
-		expDigits := 0
-		for accept(digit) {
-			expDigits++
-		}
-		if expDigits == 0 {
-			i = e
-		}
-	}
-	text := strings.ReplaceAll(s[start:i], "~", "-")
-	f, err := strconv.ParseFloat(text, 64)
-	if err != nil {
-		return noneVal, nil //nolint:nilerr // NONE, not an error
-	}
-	return someVal(float32(f)), nil
-}
+// The spellings of the non-finite reals, which both the printer
+// and the scanner name.
+const (
+	nanText = "nan"
+	infText = "inf"
+)
 
 // minNormal is the smallest positive normal float32.
 const minNormal = 1.1754943508222875e-38
@@ -343,9 +279,9 @@ func FormatReal(f float32) string {
 	f64 := float64(f)
 	switch {
 	case math.IsNaN(f64):
-		return "nan"
+		return nanText
 	case math.IsInf(f64, 1):
-		return "inf"
+		return infText
 	case math.IsInf(f64, -1):
 		return "~inf"
 	}
@@ -495,13 +431,13 @@ func realFmt(spec Val, r float32) string {
 	kind, n := parseFmtSpec(spec)
 	f := float64(r)
 	if math.IsNaN(f) {
-		return "nan"
+		return nanText
 	}
 	if math.IsInf(f, 0) {
 		if math.Signbit(f) {
 			return "~inf"
 		}
-		return "inf"
+		return infText
 	}
 	neg := math.Signbit(f)
 	abs := float32(math.Abs(f))
