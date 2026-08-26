@@ -383,6 +383,11 @@ Range.flatten [POINT ()];
 Range.flatten [CLOSED ((false, false), (true, true))];
 > val it = [(false,false),(false,true),(true,false),(true,true)]
 >   : (bool * bool) list
+
+(* An endpoint left unbounded is the end of the domain, and a bounded
+ * domain has one, so these enumerate rather than raising Size. *)
+Range.flatten [AT_LEAST #"\253"];
+> val it = [#"\253",#"\254",#"\255"] : char list
 Range.flatten [ALL] : bool list;
 > val it = [false,true] : bool list
 Range.flatten [ALL] : (bool * bool) list;

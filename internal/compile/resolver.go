@@ -2412,6 +2412,29 @@ func (r *resolver) flattenLet(env *coreEnv, decls []ast.Decl,
 	return &core.Let{Decl: decl, Exp: body}, nil
 }
 
+// charValue is the value of a character constant, from its
+// unquoted text.
+//
+// A morel character is a byte, and a morel string is a string of
+// bytes, so a "\ddd" escape decodes to the one byte ddd -- which
+// above 127 is not a character of UTF-8 on its own. Reading the
+// text as UTF-8 would make such a constant the replacement
+// character, 65533, so a text of one byte is that byte. A
+// character written as itself is read as UTF-8, since that is how
+// the source is; it is a character only if it is one a byte can
+// hold.
+func charValue(text string) (int32, bool) {
+	if len(text) == 1 {
+		return int32(text[0]), true
+	}
+	runes := []rune(text)
+	const charCount = 256
+	if len(runes) == 1 && runes[0] < charCount {
+		return runes[0], true
+	}
+	return 0, false
+}
+
 // literalValue converts a literal's text to its runtime value.
 func literalValue(kind ast.Op, text string) (any, error) {
 	// lint: sort until '^\t}' where '^\tcase '
@@ -2420,13 +2443,13 @@ func literalValue(kind ast.Op, text string) (any, error) {
 		// A constant that is not exactly one character is rejected
 		// earlier, at type resolution (see checkCharLiteral); guard
 		// here too so a stray bad literal cannot index out of range.
-		runes := []rune(text)
-		if len(runes) != 1 {
+		c, ok := charValue(text)
+		if !ok {
 			return nil, &Error{
 				Msg: "character constant not length one",
 			}
 		}
-		return runes[0], nil
+		return c, nil
 	case ast.IntLiteralOp, ast.IntLiteralPatOp:
 		i, err := strconv.ParseInt(
 			strings.ReplaceAll(text, "~", "-"), 10, 32,

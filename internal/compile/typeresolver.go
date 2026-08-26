@@ -21,7 +21,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/hydromatic/morel-go/internal/ast"
 	"github.com/hydromatic/morel-go/internal/token"
@@ -2119,7 +2118,7 @@ func (r *typeResolver) deduceLiteral(node ast.Node, kind ast.Op,
 // would try to read its first rune, whether the constant is used
 // as an expression or a pattern.
 func checkCharLiteral(node ast.Node, value string) error {
-	if utf8.RuneCountInString(value) != 1 {
+	if _, ok := charValue(value); !ok {
 		return &Error{
 			Span: node.Span(),
 			Msg:  "character constant not length one",
