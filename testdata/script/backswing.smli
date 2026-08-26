@@ -18,23 +18,11 @@
  *
  * Regression tests for morel-go behavior that morel-java's corpus
  * does not pin. Go-local, like parse.smli: the pull never touches
- * this file. Each remaining entry either has no upstream counterpart
- * or prints differently in morel-java, so it cannot move to a pulled
- * .smli file; each names the reason.
+ * this file, so an entry here is one that no pulled .smli file can
+ * hold -- morel-java has no equivalent, or prints it differently.
+ * An entry that morel-java could hold belongs upstream instead, so
+ * that the pull keeps it: add it there, pull the file, and take the
+ * entry out of here. The file is empty because every entry it had
+ * has made that move.
  *)
-
-(* "compute" takes an expression, not a binder: "compute c = e"
- * parses "c = e" as an equality whose left side is unbound, unlike
- * "group" and "yield", which do allow a binder. morel-go once
- * accepted the binder form. morel-java's corpus has no equivalent
- * rejection test, so this stays here. *)
-from i in [1,2,3] group {} compute c = count over ();
-> stdIn:1.36 Error: unbound variable or constructor: c
->   raised at: stdIn:1.36
-
-(* A tuple extent is a cartesian product. In "tabular" output morel-go
- * prints a unit value as "()" where morel-java prints "{}", so this
- * stays here rather than in such-that.smli. *)
-from bc where bc = (true, ()) orelse true;
-> val it = [(false,()),(true,())] : (bool * unit) list
 
