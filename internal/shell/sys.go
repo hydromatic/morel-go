@@ -18,12 +18,14 @@
 package shell
 
 import (
+	"fmt"
 	"math/big"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/hydromatic/morel-go/internal/compile"
 	"github.com/hydromatic/morel-go/internal/core"
@@ -67,8 +69,10 @@ const (
 	// bigIntProp accepts a number too large for a Morel "int",
 	// written as an int or as a numeral in a string.
 	bigIntProp
+	// fileProp accepts a file name, written as a string.
+	fileProp
 	// dynamicProp is computed from the session (banner,
-	// directory) and cannot be set.
+	// productName) and cannot be set.
 	dynamicProp
 )
 
@@ -87,6 +91,7 @@ const (
 	printDepthProp  = "printDepth"
 	printLengthProp = "printLength"
 	stringDepthProp = "stringDepth"
+	stringFoldProp  = "stringFold"
 )
 
 // rangeMaxLengthProp is the largest number of values that
@@ -105,7 +110,7 @@ var sysProps = map[string]sysProp{
 	// lint: sort until '^}' where '^\t"'
 	"banner":               {nil, dynamicProp},
 	"colorScheme":          {nil, stringProp},
-	"directory":            {nil, dynamicProp},
+	"directory":            {nil, fileProp},
 	"excludeStructures":    {text("^Test$"), stringProp},
 	"hybrid":               {text("false"), boolProp},
 	"inlinePassCount":      {text("5"), intProp},
@@ -121,11 +126,35 @@ var sysProps = map[string]sysProp{
 	"productVersion":       {nil, dynamicProp},
 	rangeMaxLengthProp:     {text(rangeMaxLengthDefault), bigIntProp},
 	"relationalize":        {text("false"), boolProp},
-	"scriptDirectory":      {nil, dynamicProp},
+	"scriptDirectory":      {nil, fileProp},
 	stringDepthProp:        {nil, intProp},
-	"stringFold":           {nil, stringProp},
+	stringFoldProp:         {nil, intProp},
 	"terminalBackground":   {nil, stringProp},
 	"timeZone":             {nil, stringProp},
+}
+
+// upperNames maps each property's UPPER_CASE name to its
+// camelCase name; for example, "PRINT_LENGTH" to "printLength".
+// A property answers to either.
+var upperNames = func() map[string]string {
+	m := make(map[string]string, len(sysProps))
+	for name := range sysProps {
+		m[upperName(name)] = name
+	}
+	return m
+}()
+
+// upperName converts a property's camelCase name to its
+// UPPER_CASE name; for example, "printLength" to "PRINT_LENGTH".
+func upperName(camelName string) string {
+	var b strings.Builder
+	for _, c := range camelName {
+		if unicode.IsUpper(c) {
+			b.WriteByte('_')
+		}
+		b.WriteRune(unicode.ToUpper(c))
+	}
+	return b.String()
 }
 
 // bigIntValue reads a property value written as a Morel "int" or
@@ -156,6 +185,8 @@ func (c *Config) intPropField(name string) *int {
 		return &c.PrintLength
 	case stringDepthProp:
 		return &c.StringDepth
+	case stringFoldProp:
+		return &c.StringFold
 	default:
 		return nil
 	}
@@ -504,23 +535,67 @@ func forEachVar(t types.Type, action func(ordinal int)) {
 	}
 }
 
+// failf raises Morel's "Fail" exception carrying the given
+// message. The evaluator stamps the call's span on it, so the
+// report says where the property was being set.
+func failf(format string, args ...any) error {
+	message := fmt.Sprintf(format, args...)
+	return &eval.MorelError{
+		Exn:      "Fail",
+		ExnValue: eval.Con{Name: "Fail", Arg: message},
+	}
+}
+
+// unknownProp is the error for a property name that lookupProp
+// does not recognize. It names the function that was called, for
+// the three are otherwise indistinguishable in the message.
+func unknownProp(fnName, name string) error {
+	return failf("%s: unknown property '%s'", fnName, name)
+}
+
+// wrongType is the error for a value whose type a property will
+// not take. It names the property and the Morel type it takes; it
+// names neither the value it rejected nor any Go type.
+func wrongType(name, typeName string) error {
+	return failf("value for property '%s' must have type '%s'",
+		name, typeName)
+}
+
+// lookupProp finds a property by name.
+//
+// A property has two names, the camelCase name (for example
+// "printLength") and the UPPER_CASE name ("PRINT_LENGTH"); both
+// are accepted. The match is case-sensitive, and other spellings
+// (for example "printlength") are not recognized.
+func lookupProp(name string) (string, sysProp, bool) {
+	if prop, ok := sysProps[name]; ok {
+		return name, prop, true
+	}
+	if camelName, ok := upperNames[name]; ok {
+		return camelName, sysProps[camelName], true
+	}
+	return "", sysProp{}, false
+}
+
 // sysSet is "Sys.set (name, value)". An unknown property, or a
-// value of the wrong type, panics, so the statement produces
-// no output.
+// value the property will not take, raises "Fail".
 func (k *Kernel) sysSet(arg eval.Val) (eval.Val, error) {
 	vals, _ := arg.([]eval.Val)
-	name, _ := vals[0].(string)
-	prop, ok := sysProps[name]
+	rawName, _ := vals[0].(string)
+	name, prop, ok := lookupProp(rawName)
 	if !ok {
-		panic("unknown property: " + name)
+		return nil, unknownProp("set", rawName)
 	}
 	value := vals[1]
 	// lint: sort until '^	}' where '^	case '
 	switch prop.kind {
 	case bigIntProp:
+		// The value is an "IntInf.int", so it may be larger than
+		// an "int" can hold; such a value is written as a
+		// numeral in a string.
 		n, isBig := bigIntValue(value)
 		if !isBig {
-			panic("property " + name + " requires an integer")
+			return nil, wrongType(name, "IntInf.int")
 		}
 		k.config.props[name] = n.String()
 		if name == rangeMaxLengthProp {
@@ -529,15 +604,23 @@ func (k *Kernel) sysSet(arg eval.Val) (eval.Val, error) {
 	case boolProp:
 		b, isBool := value.(bool)
 		if !isBool {
-			panic("property " + name + " requires a bool")
+			return nil, wrongType(name, "bool")
 		}
 		k.config.props[name] = strconv.FormatBool(b)
 	case dynamicProp:
-		panic("cannot set property: " + name)
+		return nil, failf("cannot set property '%s'", name)
+	case fileProp:
+		// A file name is written as a string, but the property's
+		// type is "file".
+		s, isString := value.(string)
+		if !isString {
+			return nil, wrongType(name, "file")
+		}
+		k.config.props[name] = s
 	case intProp:
 		i, isInt := value.(int32)
 		if !isInt {
-			panic("property " + name + " requires an int")
+			return nil, wrongType(name, "int")
 		}
 		if field := k.config.intPropField(name); field != nil {
 			*field = int(i)
@@ -549,13 +632,15 @@ func (k *Kernel) sysSet(arg eval.Val) (eval.Val, error) {
 		mode := strings.ToUpper(s)
 		if !isString ||
 			mode != "CLASSIC" && mode != "TABULAR" {
-			panic("bad output mode")
+			return nil, failf(
+				"value for property '%s' must be one of: "+
+					"'CLASSIC', 'TABULAR'", name)
 		}
 		k.config.props[name] = mode
 	case stringProp:
 		s, isString := value.(string)
 		if !isString {
-			panic("property " + name + " requires a string")
+			return nil, wrongType(name, "string")
 		}
 		k.config.props[name] = s
 	}
@@ -565,9 +650,10 @@ func (k *Kernel) sysSet(arg eval.Val) (eval.Val, error) {
 // sysShow is "Sys.show name": SOME of the property's current
 // value rendered as a string, or NONE if it has no value.
 func (k *Kernel) sysShow(arg eval.Val) (eval.Val, error) {
-	name, _ := arg.(string)
-	if _, ok := sysProps[name]; !ok {
-		panic("unknown property: " + name)
+	rawName, _ := arg.(string)
+	name, _, ok := lookupProp(rawName)
+	if !ok {
+		return nil, unknownProp("show", rawName)
 	}
 	if s, ok := k.showProp(name); ok {
 		return eval.SomeVal(s), nil
@@ -581,6 +667,9 @@ func (k *Kernel) showProp(name string) (string, bool) {
 	if field := k.config.intPropField(name); field != nil {
 		return strconv.Itoa(*field), true
 	}
+	if s, ok := k.config.props[name]; ok {
+		return s, true
+	}
 	// lint: sort until '^	}' where '^	case '
 	switch name {
 	case "banner":
@@ -591,9 +680,6 @@ func (k *Kernel) showProp(name string) (string, bool) {
 		return productName, true
 	case "productVersion":
 		return productVersion, true
-	}
-	if s, ok := k.config.props[name]; ok {
-		return s, true
 	}
 	if d := sysProps[name].dflt; d != nil {
 		return *d, true
@@ -649,9 +735,10 @@ func (k *Kernel) sysShowAll(eval.Val) (eval.Val, error) {
 // sysUnset is "Sys.unset name": restores the property's
 // default.
 func (k *Kernel) sysUnset(arg eval.Val) (eval.Val, error) {
-	name, _ := arg.(string)
-	if _, ok := sysProps[name]; !ok {
-		panic("unknown property: " + name)
+	rawName, _ := arg.(string)
+	name, _, ok := lookupProp(rawName)
+	if !ok {
+		return nil, unknownProp("unset", rawName)
 	}
 	if field := k.config.intPropField(name); field != nil {
 		*field = intPropDefault(name)

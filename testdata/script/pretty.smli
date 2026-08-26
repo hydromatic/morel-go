@@ -397,7 +397,73 @@ Sys.set ("printLength", 3);
 Sys.unset "printLength";
 > val it = () : unit
 
+(* -------------------------------------------------------------------
+ * Tabular mode: stringFold folds long strings to multiple lines,
+ * preferring word boundaries when possible.
+ *)
+
+Sys.set ("stringFold", 10);
+> val it = () : unit
+
+(* Word-boundary folding: spaces are the preferred break points,
+ * with the space itself consumed in the break. *)
+[{id=1, name="The Avocado Tofu Salad"},
+ {id=2, name="Cheese Omelette"},
+ {id=3, name="A"}];
+> id name
+> -- ----------
+>  1 The
+>    Avocado
+>    Tofu Salad
+>  2 Cheese
+>    Omelette
+>  3 A
+>
+> val it : {id:int, name:string} list
+
+(* Hard-break: no whitespace available, split at the fold width. *)
+Sys.set ("stringFold", 5);
+> val it = () : unit
+
+[{id=1, name="verylongwordhere"}];
+> id name
+> -- -----
+>  1 veryl
+>    ongwo
+>    rdher
+>    e
+>
+> val it : {id:int, name:string} list
+
+(* stringFold combined with a nested record list: each row's height is
+ * max(folded-string lines, nested record count). The folded cell and
+ * the nested cell advance independently within one logical row. *)
+Sys.set ("stringFold", 10);
+> val it = () : unit
+
+[{id=1,
+  description="The quick brown fox jumps over the lazy dog",
+  items=[{name="a"}, {name="b"}, {name="c"}]},
+ {id=2,
+  description="Short text",
+  items=[{name="d"}]}];
+> description id items
+>                name
+> ----------- -- -----
+> The quick    1 a
+> brown fox      b
+> jumps over     c
+> the lazy
+> dog
+> Short text   2 d
+>
+> val it : {description:string, id:int, items:{name:string} list} list
+
 Sys.unset "stringFold";
+> val it = () : unit
+
+(* A negative stringFold is treated as if unset: no folding. *)
+Sys.set ("stringFold", ~3);
 > val it = () : unit
 
 [{id=1, name="The Avocado Tofu Salad"}];

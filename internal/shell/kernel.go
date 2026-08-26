@@ -68,6 +68,9 @@ type Config struct {
 	PrintLength int
 	PrintDepth  int
 	StringDepth int
+	// StringFold is the column width at which a long string folded
+	// across lines in tabular mode; zero disables folding.
+	StringFold int
 
 	// Directory is the working directory, as the "directory"
 	// property reports it.

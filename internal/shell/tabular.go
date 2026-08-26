@@ -444,6 +444,17 @@ func (c *recordListCell) iter(s *section) lineIter {
 	}
 }
 
+// foldWidth is the width at which a section's cells fold, or 0
+// where they do not. Only a string column folds: "stringFold" is
+// the width at which long strings break, and a number that
+// happens to be long is not a string.
+func (c *Config) foldWidth(s *section) int {
+	if s.prim != nil && s.prim.String() == stringType {
+		return c.StringFold
+	}
+	return 0
+}
+
 // buildCell builds a cell from a value, updating leaf widths.
 func (c *Config) buildCell(s *section, value eval.Val) cell {
 	switch s.kind {
@@ -463,7 +474,7 @@ func (c *Config) buildCell(s *section, value eval.Val) cell {
 		} else {
 			str = c.scalarString(s.prim, value)
 		}
-		lines := foldString(str)
+		lines := foldString(str, c.foldWidth(s))
 		for _, ln := range lines {
 			s.width = max(s.width, len(ln))
 		}
@@ -476,7 +487,8 @@ func (c *Config) buildCell(s *section, value eval.Val) cell {
 				s.width = max(s.width, len(tabularEllipsis))
 				break
 			}
-			for _, ln := range foldString(c.scalarString(s.prim, item)) {
+			item := c.scalarString(s.prim, item)
+			for _, ln := range foldString(item, c.foldWidth(s)) {
 				s.width = max(s.width, len(ln))
 				items = append(items, ln)
 			}
@@ -753,6 +765,22 @@ func (c *Config) scalarString(prim types.Type, v eval.Val) string {
 
 // foldString folds a string into lines. String folding is not a
 // configured property yet, so it returns the string unchanged.
-func foldString(s string) []string {
-	return []string{s}
+func foldString(s string, width int) []string {
+	if width <= 0 || len(s) <= width {
+		return []string{s}
+	}
+	var lines []string
+	for len(s) > width {
+		// Prefer the last space that leaves the line within the
+		// width; the space itself is consumed by the break.
+		if i := strings.LastIndex(s[:width+1], " "); i > 0 {
+			lines = append(lines, s[:i])
+			s = s[i+1:]
+			continue
+		}
+		// No break point: split at the width.
+		lines = append(lines, s[:width])
+		s = s[width:]
+	}
+	return append(lines, s)
 }
