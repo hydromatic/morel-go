@@ -127,6 +127,13 @@ Bag.map (fn e => (#empno e))
   (Bag.filter (fn e => (#deptno e) = 30) (#emps scott));
 > val it = [7499,7521,7654,7698,7844,7900] : int bag
 
+(*) Union followed by group
+from e in scott.emps
+  yield {x = e.deptno}
+  union (from d in scott.depts yield {x = d.deptno})
+group x compute {c = count over ()};
+> val it = [{c=6,x=20},{c=1,x=40},{c=4,x=10},{c=7,x=30}] : {c:int, x:int} bag
+
 (*) Three-way intersect
 from i in [1, 2, 3] intersect [1, 2, 3], [99];
 > val it = [] : int list
