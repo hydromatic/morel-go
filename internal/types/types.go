@@ -193,6 +193,31 @@ func namedDesc(name string, args []Type) string {
 	}
 }
 
+// varOrdinal is the inverse of varName: the ordinal whose name is
+// the given one, or -1 if no ordinal has that name. "'a" is 0,
+// "'z" is 25, "'ba" is 26; a descriptive name such as "'left",
+// which a signature may use, is none of them.
+func varOrdinal(name string) int {
+	const letters = 26
+	bare := strings.TrimPrefix(name, "'")
+	if bare == "" {
+		return -1
+	}
+	ordinal := 0
+	for _, c := range bare {
+		if c < 'a' || c > 'z' {
+			return -1
+		}
+		ordinal = ordinal*letters + int(c-'a')
+	}
+	// Only a name that renders back is one of ours: varName emits
+	// no leading "a", so "aa" is not the name of any ordinal.
+	if varName(ordinal) != "'"+bare {
+		return -1
+	}
+	return ordinal
+}
+
 // varName returns the description of the type variable with the
 // given ordinal: 'a, 'b, ..., 'z, 'ba, 'bb, ..., 'zz, 'baa, ...
 // It is a base-26 number with 'a' as 0 and 'z' as 25.

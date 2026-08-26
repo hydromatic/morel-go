@@ -97,7 +97,7 @@ var topBuiltins = map[string]topBuiltin{
 	opTimes:       {numPair, intName},
 	opPlus:        {numPair, intName},
 	opMinus:       {numPair, intName},
-	"op /":        {numPair, realName},
+	"op /":        {"real * real -> real", ""},
 	opCons:        {"'a * 'a list -> 'a list", ""},
 	opLt:          {comparison, ""},
 	opLe:          {comparison, ""},

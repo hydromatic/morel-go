@@ -274,27 +274,83 @@ func (k *Kernel) sysEnv(eval.Val) (eval.Val, error) {
 	slices.Sort(names)
 	out := make([]eval.Val, len(names))
 	for i, name := range names {
-		out[i] = []eval.Val{name, envTypeString(k.sys,
-			byName[name])}
+		out[i] = []eval.Val{
+			name,
+			k.envTypeString(name, byName[name]),
+		}
 	}
 	return out, nil
 }
 
 // envTypeString renders a binding's type as Sys.env shows it:
 // "forall 'a 'b. " precedes a polymorphic type.
-func envTypeString(sys *types.System, t types.Type) string {
+//
+// A nullary datatype constructor is not quantified: NONE is one
+// value of the option datatype, not a family of them, so it shows
+// as "'a option". "nil" is not one of these -- the empty list is a
+// value of the built-in list type, not a constructor of a declared
+// datatype -- so it keeps its "forall".
+func (k *Kernel) envTypeString(name string, t types.Type) string {
+	t = userFacing(k.sys, t)
 	n := 0
 	countTypeVars(t, &n)
-	if n == 0 {
+	if n == 0 || k.isDatatypeCon(name) {
 		return t.String()
 	}
 	var b strings.Builder
 	b.WriteString("forall")
 	for i := range n {
-		b.WriteString(" " + sys.Var(i).String())
+		b.WriteString(" " + k.sys.Var(i).String())
 	}
 	b.WriteString(". " + t.String())
 	return b.String()
+}
+
+// isDatatypeCon reports whether a name is a nullary constructor
+// of a declared datatype, such as NONE or ALL.
+func (k *Kernel) isDatatypeCon(name string) bool {
+	tc, ok := k.sys.LookupTyCon(name)
+	if !ok || tc.Arg != nil {
+		return false
+	}
+	named, ok := tc.Result.(*types.Named)
+	if !ok {
+		return false
+	}
+	_, isDatatype := k.sys.DatatypeArity(named.Name)
+	return isDatatype
+}
+
+// userFacing rewrites a type for display, replacing the internal
+// collection type — a list or a bag with its orderedness still
+// free, which is what an aggregate such as "count" accepts — with
+// a bag, the spelling a user can write. "$collection" is internal
+// and its "$" says so; it must not reach the user.
+func userFacing(sys *types.System, t types.Type) types.Type {
+	// lint: sort until '^	}' where '^	case '
+	switch t := t.(type) {
+	case *types.Collection:
+		return sys.Named(bagType, userFacing(sys, t.Elem))
+	case *types.Fn:
+		return sys.Fn(userFacing(sys, t.Param),
+			userFacing(sys, t.Result))
+	case *types.List:
+		return sys.List(userFacing(sys, t.Elem))
+	case *types.Named:
+		args := make([]types.Type, len(t.Args))
+		for i, arg := range t.Args {
+			args[i] = userFacing(sys, arg)
+		}
+		return sys.Named(t.Name, args...)
+	case *types.Tuple:
+		args := make([]types.Type, len(t.Args))
+		for i, arg := range t.Args {
+			args[i] = userFacing(sys, arg)
+		}
+		return sys.Tuple(args...)
+	default:
+		return t
+	}
 }
 
 // countTypeVars sets n to one more than the highest type-variable

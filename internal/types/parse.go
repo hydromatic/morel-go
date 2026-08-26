@@ -27,12 +27,20 @@ import (
 // Parse converts Morel type syntax (e.g. "'a list -> int") to a
 // type. Type variables are numbered by first occurrence,
 // left to right. This bootstraps built-in signatures from text.
+// Parse converts a type written as source, such as a built-in's
+// declared type. It keeps the type-variable names the source used
+// -- "op o" stays "('b -> 'c) * ('a -> 'b) -> 'a -> 'c" -- because
+// that declaration is what Sys.env reports. A type deduced for an
+// expression is numbered as it is printed, in both morel-go and
+// morel-java, so a use of the binding renders canonically either
+// way.
 func (s *System) Parse(src string) (Type, error) {
 	t, err := parse.TypeString("type", src)
 	if err != nil {
 		return nil, err
 	}
-	return s.FromAST(t, map[string]int{})
+	c := &converter{sys: s, vars: map[string]int{}, byName: true}
+	return c.convert(t)
 }
 
 // FromAST converts a type AST to a type. tyVars gives the
@@ -57,8 +65,11 @@ func (s *System) SurfaceFromAST(t ast.Type, tyVars map[string]int) (
 }
 
 type converter struct {
-	sys         *System
-	vars        map[string]int
+	sys  *System
+	vars map[string]int
+	// byName gives a type variable the ordinal its name denotes,
+	// rather than one counted off as variables are met.
+	byName      bool
 	keepAliases bool
 }
 
@@ -80,7 +91,16 @@ func (c *converter) convert(t ast.Type) (Type, error) {
 	case *ast.TyVar:
 		ord, ok := c.vars[n.Name]
 		if !ok {
-			ord = len(c.vars)
+			// A declared type keeps the variable names it was
+			// written with, when they are names an ordinal has;
+			// otherwise variables are numbered as they are met.
+			ord = -1
+			if c.byName {
+				ord = varOrdinal(n.Name)
+			}
+			if ord < 0 {
+				ord = len(c.vars)
+			}
 			c.vars[n.Name] = ord
 		}
 		return c.sys.Var(ord), nil
