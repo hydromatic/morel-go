@@ -413,7 +413,7 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 				nil
 		}
 		if pat := env.get(e.Name); pat != nil {
-			return &core.ID{Pat: pat}, nil
+			return &core.ID{Pat: pat, Span: e.Span()}, nil
 		}
 		if con, ok := r.toCon(e.Name, t); ok {
 			return con, nil
@@ -422,7 +422,8 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 		// (e.g. a built-in value), so make a declaration site
 		// for it.
 		return &core.ID{
-			Pat: &core.IDPat{T: t, Name: e.Name},
+			Pat:  &core.IDPat{T: t, Name: e.Name},
+			Span: e.Span(),
 		}, nil
 	case *ast.If:
 		return r.toIf(env, e, t)
@@ -1200,7 +1201,9 @@ func (r *resolver) toQueryStep(env, cur *coreEnv,
 		return []core.FromStep{&core.Into{Fn: fn}}, cur, true, err
 	case *ast.OrderStep:
 		exp, err := r.toExp(cur, s.Exp)
-		return []core.FromStep{&core.Order{Exp: exp}}, cur, false, err
+		return []core.FromStep{
+			&core.Order{Exp: exp, Span: s.Exp.Span()},
+		}, cur, false, err
 	case *ast.RequireStep:
 		// "require p" in a "forall" reduces to yielding p, whose
 		// truth for every row the quantifier then checks.
@@ -2127,7 +2130,7 @@ func (r *resolver) toPat(pat ast.Pat) (core.Pat, error) {
 		tc, ok := r.typeMap.sys.LookupTyCon(p.Name)
 		if !ok || tc.Arg == nil {
 			return nil, &Error{
-				Span: pat.Span(),
+				Span: p.NameSpan,
 				Msg:  "unbound constructor: " + p.Name,
 			}
 		}

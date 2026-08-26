@@ -71,6 +71,10 @@ func (*Literal) exp() {}
 // declared the variable, so its type is the pattern's type.
 type ID struct {
 	Pat *IDPat
+	// Span is where the name was written, or the zero span for a
+	// reference the compiler synthesized. An error about the name
+	// stands there.
+	Span token.Span
 }
 
 // Op implements Exp.

@@ -220,7 +220,7 @@ func cloneStep(s core.FromStep, fresh map[*core.IDPat]*core.IDPat,
 	case *core.Into:
 		return &core.Into{Fn: cloneExp(s.Fn, fresh)}
 	case *core.Order:
-		return &core.Order{Exp: cloneExp(s.Exp, fresh)}
+		return &core.Order{Exp: cloneExp(s.Exp, fresh), Span: s.Span}
 	case *core.Scan:
 		exp := cloneExp(s.Exp, fresh)
 		return &core.Scan{Pat: clonePat(s.Pat, fresh), Exp: exp}

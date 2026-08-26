@@ -213,7 +213,7 @@ func (r *rewriter) rewriteStep(s core.FromStep) core.FromStep {
 		if exp == s.Exp {
 			return s
 		}
-		return &core.Order{Exp: exp}
+		return &core.Order{Exp: exp, Span: s.Span}
 	case *core.Scan:
 		exp := r.rewriteExp(s.Exp)
 		if exp == s.Exp {

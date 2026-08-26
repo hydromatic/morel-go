@@ -1154,7 +1154,7 @@ func (r *typeResolver) deduceConPat(env typeEnv,
 	tc, ok := r.sys.LookupTyCon(pat.Name)
 	if !ok || tc.Arg == nil {
 		return &Error{
-			Span: pat.Span(),
+			Span: pat.NameSpan,
 			Msg: "unbound constructor: " +
 				pat.Name,
 		}
@@ -1201,6 +1201,13 @@ func (r *typeResolver) deduceDatatypeDecl(decl *ast.DatatypeDecl,
 						Msg: "unbound type variable in type " +
 							"declaration: " + tv.Name,
 					}
+				}
+				// The datatypes of the group are registered above, so
+				// a constructor may name its own datatype, or a
+				// sibling's, recursively.
+				err := r.checkTypeNames(c.Of)
+				if err != nil {
+					return nil, err
 				}
 				t, err := r.sys.FromAST(c.Of, tyVars)
 				if err != nil {
@@ -1316,31 +1323,87 @@ func (r *typeResolver) resolveNamedType(n *ast.NamedType) (ast.Type,
 		}
 		return ast.SubstituteType(alias.Body, subst), nil
 	}
-	known := false
-	if arity, ok := r.sys.DatatypeArity(n.Name); ok && arity == len(args) {
-		known = true
-	} else if (n.Name == listTyCon || n.Name == bagTyCon) &&
-		len(args) == 1 {
-		known = true
-	} else if len(args) == 0 && r.sys.Lookup(n.Name) != nil {
-		known = true
+	if !r.knownTypeName(n.Name, len(args)) {
+		return nil, r.typeNameError(n)
 	}
-	if known {
-		return ast.NewNamedType(n.Span(), n.Name, args), nil
+	return ast.NewNamedType(n.Span(), n.Name, args), nil
+}
+
+// knownTypeName reports whether name, given nArgs arguments, is a
+// type constructor of the current environment: an alias, a
+// datatype, "list" or "bag", or a nullary type.
+func (r *typeResolver) knownTypeName(name string, nArgs int) bool {
+	if alias, ok := r.sys.LookupAlias(name); ok &&
+		len(alias.TyVars) == nArgs {
+		return true
 	}
+	if arity, ok := r.sys.DatatypeArity(name); ok && arity == nArgs {
+		return true
+	}
+	if (name == listTyCon || name == bagTyCon) && nArgs == 1 {
+		return true
+	}
+	return nArgs == 0 && r.sys.Lookup(name) != nil
+}
+
+// typeNameError is the error for a named type that
+// knownTypeName rejects: a wrong arity if the name is a type
+// constructor of some other arity, and an unbound name otherwise.
+func (r *typeResolver) typeNameError(n *ast.NamedType) error {
 	if expected, ok := r.typeConstructorArity(n.Name); ok {
-		return nil, &Error{
+		return &Error{
 			Span: n.Span(),
 			Msg: "type constructor " + n.Name + " given " +
-				strconv.Itoa(len(args)) + " argument" +
-				plural(len(args)) + ", wants " +
+				strconv.Itoa(len(n.Args)) + " argument" +
+				plural(len(n.Args)) + ", wants " +
 				strconv.Itoa(expected),
 		}
 	}
-	return nil, &Error{
+	return &Error{
 		Span: n.Span(),
 		Msg:  "unbound type constructor: " + n.Name,
 	}
+}
+
+// checkTypeNames rejects a named type within t that is not a type
+// constructor of the current environment, or that is given the
+// wrong number of arguments. Unlike resolveTypeBody it leaves t
+// alone; the declaration that holds it converts it itself.
+func (r *typeResolver) checkTypeNames(t ast.Type) error {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch n := t.(type) {
+	case *ast.FnType:
+		err := r.checkTypeNames(n.Param)
+		if err != nil {
+			return err
+		}
+		return r.checkTypeNames(n.Result)
+	case *ast.NamedType:
+		for _, a := range n.Args {
+			err := r.checkTypeNames(a)
+			if err != nil {
+				return err
+			}
+		}
+		if !r.knownTypeName(n.Name, len(n.Args)) {
+			return r.typeNameError(n)
+		}
+	case *ast.RecordType:
+		for _, f := range n.Fields {
+			err := r.checkTypeNames(f.Type)
+			if err != nil {
+				return err
+			}
+		}
+	case *ast.TupleType:
+		for _, a := range n.Args {
+			err := r.checkTypeNames(a)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // resolveTypeArgs resolves each type argument of a named or

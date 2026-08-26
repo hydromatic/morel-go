@@ -130,6 +130,9 @@ func (*Yield) fromStep() {}
 // ascending.
 type Order struct {
 	Exp Exp
+	// Span is where the sort key was written, for an error if its
+	// type has no order.
+	Span token.Span
 }
 
 // Op implements FromStep.

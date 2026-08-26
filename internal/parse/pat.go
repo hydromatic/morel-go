@@ -38,22 +38,9 @@ func (p *Parser) pat() (ast.Pat, error) {
 	if err != nil {
 		return nil, err
 	}
-	// A type annotation, "pat : t".
-	for p.tok.Kind == token.Colon {
-		err = p.next()
-		if err != nil {
-			return nil, err
-		}
-		var t ast.Type
-		t, err = p.typeExpr()
-		if err != nil {
-			return nil, err
-		}
-		span := token.Span{
-			Start: pat.Span().Start,
-			End:   t.Span().End,
-		}
-		pat = ast.NewAnnotatedPat(span, pat, t)
+	pat, err = p.annotatedPat(pat)
+	if err != nil {
+		return nil, err
 	}
 	if p.tok.Kind != token.As {
 		return pat, nil
@@ -75,6 +62,28 @@ func (p *Parser) pat() (ast.Pat, error) {
 		End:   rhs.Span().End,
 	}
 	return ast.NewAsPat(span, id.Name, rhs), nil
+}
+
+// annotatedPat wraps pat in the type annotations, "pat : t", that
+// follow it.
+func (p *Parser) annotatedPat(pat ast.Pat) (ast.Pat, error) {
+	for p.tok.Kind == token.Colon {
+		err := p.next()
+		if err != nil {
+			return nil, err
+		}
+		var t ast.Type
+		t, err = p.typeExpr()
+		if err != nil {
+			return nil, err
+		}
+		span := token.Span{
+			Start: pat.Span().Start,
+			End:   t.Span().End,
+		}
+		pat = ast.NewAnnotatedPat(span, pat, t)
+	}
+	return pat, nil
 }
 
 // consPat parses "appPat [:: consPat]"; "::" is
@@ -121,7 +130,7 @@ func (p *Parser) appPat() (ast.Pat, error) {
 		Start: id.Span().Start,
 		End:   arg.Span().End,
 	}
-	return ast.NewConPat(span, id.Name, arg), nil
+	return ast.NewConPat(span, id.Span(), id.Name, arg), nil
 }
 
 // isPatStart reports whether a token can begin an atomic pattern.
@@ -340,15 +349,20 @@ func (p *Parser) recordPatField() (ast.PatField, error) {
 	if err != nil {
 		return ast.PatField{}, err
 	}
-	if p.tok.Kind != token.Eq {
-		pat := ast.NewIDPat(label.Span, label.Text)
-		return ast.PatField{Label: label.Text, Pat: pat}, nil
+	var pat ast.Pat
+	if p.tok.Kind == token.Eq {
+		err = p.next()
+		if err != nil {
+			return ast.PatField{}, err
+		}
+		pat, err = p.pat()
+	} else {
+		// "{b}" is short for "{b = b}", and "{b: t}" for
+		// "{b = b: t}": the label names the variable, and any
+		// annotation is on that variable.
+		pat, err = p.annotatedPat(
+			ast.NewIDPat(label.Span, label.Text))
 	}
-	err = p.next()
-	if err != nil {
-		return ast.PatField{}, err
-	}
-	pat, err := p.pat()
 	if err != nil {
 		return ast.PatField{}, err
 	}

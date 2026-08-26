@@ -26,6 +26,7 @@ import (
 	"github.com/hydromatic/morel-go/internal/ast"
 	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/eval"
+	"github.com/hydromatic/morel-go/internal/token"
 	"github.com/hydromatic/morel-go/internal/types"
 )
 
@@ -180,6 +181,16 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 		if slot, ok := c.resolveSlot(e.Pat); ok {
 			return eval.GetSlot(slot, e.Pat.Name), nil
 		}
+		if sumType, ok := sumRef(e); ok {
+			// A bare "sum", as in "group i compute sum", is a
+			// reference to the aggregate, not a call of it, and
+			// needs the same implementation an application gets.
+			zero, err := sumEmptyZero(sumType, e.Span)
+			if err != nil {
+				return nil, err
+			}
+			return eval.Constant(eval.SumFn(zero)), nil
+		}
 		if v, ok := c.values[e.Pat.Name]; ok {
 			return eval.Constant(v), nil
 		}
@@ -271,29 +282,40 @@ func (c *compiler) builtinFnInfo(fnExp core.Exp,
 	}
 }
 
-// sumEmptyZero reports the additive zero a "sum" aggregate returns
-// for an empty collection, so its result carries the static element
-// type (real 0.0, word 0w0) rather than the int 0 that a value-
-// inspecting sum defaults to when no element reveals the type. It
-// returns nil, false for any function that is not "sum".
-func sumEmptyZero(fnExp core.Exp) (eval.Val, bool) {
-	switch builtinRefName(fnExp) {
+// sumRef returns the type of a reference to the "sum" aggregate,
+// written bare or as a member of "Relational", and false for any
+// other expression.
+func sumRef(exp core.Exp) (*types.Fn, bool) {
+	switch builtinRefName(exp) {
 	case "Relational." + sumName, sumName:
 	default:
 		return nil, false
 	}
-	fn, ok := fnExp.Type().(*types.Fn)
-	if !ok {
-		return nil, false
-	}
+	fn, ok := exp.Type().(*types.Fn)
+	return fn, ok
+}
+
+// sumEmptyZero is the additive zero a "sum" aggregate returns for
+// an empty collection, so that its result carries the static
+// element type (real 0.0, word 0w0) rather than the int 0 that a
+// value-inspecting sum defaults to when no element reveals the
+// type. There is no implementation of "sum" for an element type
+// that is not a number, nor for one that nothing has settled, so
+// a reference of such a type is an error.
+func sumEmptyZero(fn *types.Fn, span token.Span) (eval.Val, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch fn.Result.String() {
+	case intName:
+		return int32(0), nil
 	case realName:
-		return float32(0), true
+		return float32(0), nil
 	case wordName:
-		return uint64(0), true
-	default:
-		return int32(0), true
+		return uint64(0), nil
+	}
+	return nil, &Error{
+		Span: span,
+		Msg: "operator '" + sumName + "' not defined for type '" +
+			fn.Param.String() + "'",
 	}
 }
 
@@ -599,7 +621,12 @@ func (c *compiler) compileGroup(g *core.Group) (eval.FromStage,
 		if err != nil {
 			return nil, nil, err
 		}
-		if zero, ok := sumEmptyZero(a.Fn); ok {
+		if sumType, ok := sumRef(a.Fn); ok {
+			var zero eval.Val
+			zero, err = sumEmptyZero(sumType, a.Span)
+			if err != nil {
+				return nil, nil, err
+			}
 			fn = eval.Constant(eval.SumFn(zero))
 		}
 		var arg eval.Code
@@ -653,6 +680,10 @@ func (c *compiler) compileStep(step core.FromStep,
 		}
 		return &eval.DistinctStage{Slots: slots}, nil
 	case *core.Order:
+		err := c.checkComparable(s.Exp.Type(), s.Span)
+		if err != nil {
+			return nil, err
+		}
 		key, err := c.compileExp(s.Exp)
 		if err != nil {
 			return nil, err
@@ -751,6 +782,71 @@ func (c *compiler) compileSetOp(s *core.SetOp, scanPats []core.Pat,
 		Slots:    slots,
 		Atom:     atom,
 	}, nil
+}
+
+// checkComparable rejects a type that has no order. Values are
+// compared part by part, so every part must have one, and a
+// function has none. Span is where the value to be compared was
+// written.
+func (c *compiler) checkComparable(t types.Type,
+	span token.Span,
+) error {
+	return c.checkComparable1(t, span, map[string]bool{})
+}
+
+// checkComparable1 is checkComparable, carrying the datatypes it
+// has already descended into; a datatype may be recursive.
+func (c *compiler) checkComparable1(t types.Type, span token.Span,
+	seen map[string]bool,
+) error {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch t := t.(type) {
+	case *types.Collection:
+		return c.checkComparable1(t.Elem, span, seen)
+	case *types.Fn:
+		return &Error{
+			Span: span,
+			Msg: "comparison not defined for type '" + t.String() +
+				"'",
+		}
+	case *types.List:
+		return c.checkComparable1(t.Elem, span, seen)
+	case *types.Named:
+		for _, arg := range t.Args {
+			err := c.checkComparable1(arg, span, seen)
+			if err != nil {
+				return err
+			}
+		}
+		if seen[t.Name] {
+			return nil
+		}
+		seen[t.Name] = true
+		for _, con := range c.sys.Constructors(t.Name) {
+			if con.Arg == nil {
+				continue
+			}
+			err := c.checkComparable1(con.Arg, span, seen)
+			if err != nil {
+				return err
+			}
+		}
+	case *types.Record:
+		for _, f := range t.Fields {
+			err := c.checkComparable1(f.Type, span, seen)
+			if err != nil {
+				return err
+			}
+		}
+	case *types.Tuple:
+		for _, arg := range t.Args {
+			err := c.checkComparable1(arg, span, seen)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // setOpKinds maps a set-operation Op to its evaluator kind.
@@ -860,7 +956,12 @@ func (c *compiler) compileApply(e *core.Apply, tail bool) (eval.Code,
 	if err != nil {
 		return nil, err
 	}
-	if zero, ok := sumEmptyZero(e.Fn); ok {
+	if sumType, ok := sumRef(e.Fn); ok {
+		var zero eval.Val
+		zero, err = sumEmptyZero(sumType, e.Span)
+		if err != nil {
+			return nil, err
+		}
 		fn = eval.Constant(eval.SumFn(zero))
 	}
 	arg, err := c.compileExp(e.Arg)

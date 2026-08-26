@@ -172,12 +172,20 @@ type ConPat struct {
 	patBase
 
 	Name string
-	Arg  Pat
+	// NameSpan is the span of the constructor's name alone; an
+	// error about the constructor stands there rather than over
+	// the argument too.
+	NameSpan token.Span
+	Arg      Pat
 }
 
 // NewConPat returns a constructor-application pattern.
-func NewConPat(span token.Span, name string, arg Pat) *ConPat {
-	return &ConPat{patBase: pb(span), Name: name, Arg: arg}
+func NewConPat(span, nameSpan token.Span, name string,
+	arg Pat,
+) *ConPat {
+	return &ConPat{
+		patBase: pb(span), Name: name, NameSpan: nameSpan, Arg: arg,
+	}
 }
 
 // Op implements Node.
