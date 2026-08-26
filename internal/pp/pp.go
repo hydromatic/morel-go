@@ -240,101 +240,75 @@ type item struct {
 // layout for the given line width.
 func Render(width int, d Doc) string {
 	var b strings.Builder
-	k := 0 // current column
-	it := &item{d: d}
-	for it != nil {
-		i, flat, next := it.indent, it.flat, it.next
-		// lint: sort until '^		}' where '^		case '
-		switch d := it.d.(type) {
-		case catDoc:
-			it = &item{
-				d:      d.a,
-				indent: i,
-				flat:   flat,
-				next: &item{
-					d:      d.b,
-					indent: i,
-					flat:   flat,
-					next:   next,
-				},
-			}
-		case columnDoc:
-			it = &item{
-				d: d.f(k), indent: i, flat: flat,
-				next: next,
-			}
-		case emptyDoc:
-			it = next
-		case flatAltDoc:
-			d2 := d.primary
-			if flat {
-				d2 = d.flat
-			}
-			it = &item{d: d2, indent: i, flat: flat, next: next}
-		case groupDoc:
-			flatItem := &item{
-				d:      d.d,
-				indent: i,
-				flat:   true,
-				next:   next,
-			}
-			if fits(width, k, flatItem) {
-				it = flatItem
-			} else {
-				it = &item{d: d.d, indent: i, next: next}
-			}
-		case hardLineDoc:
+	l := &layout{width: width, memo: map[key]*out{}}
+	for o := l.best(0, &item{d: d}); o != nil; o = o.rest() {
+		if o.line {
 			b.WriteString("\n")
-			writeSpaces(&b, i)
-			k = i
-			it = next
-		case nestDoc:
-			it = &item{
-				d:      d.d,
-				indent: i + d.indent,
-				flat:   flat,
-				next:   next,
-			}
-		case nestingDoc:
-			it = &item{
-				d: d.f(i), indent: i, flat: flat,
-				next: next,
-			}
-		case textDoc:
-			b.WriteString(d.text)
-			k += len([]rune(d.text))
-			it = next
-		case unionDoc:
-			wideItem := &item{
-				d:      d.wide,
-				indent: i,
-				flat:   true,
-				next:   next,
-			}
-			if fits(width, k, wideItem) {
-				it = wideItem
-			} else {
-				it = &item{d: d.narrow, indent: i, next: next}
-			}
+			writeSpaces(&b, o.indent)
+		} else {
+			b.WriteString(o.text)
 		}
 	}
 	return b.String()
 }
 
-// fits reports whether the work list fits in the remaining space
-// on the current line. It scans forward until the first line
-// break (which ends the current line, so what precedes it fits)
-// or until the width is exceeded.
-func fits(width, col int, it *item) bool {
-	for {
-		if col > width {
-			return false
-		}
-		if it == nil {
-			return true
-		}
+// out is a document laid out: a stream of chunks, each of them
+// text or a line break, produced as they are asked for.
+type out struct {
+	rest   func() *out
+	text   string
+	indent int
+	line   bool
+	// flat marks a line break in a flat layout, which cannot
+	// happen: a hard line reaching one rejects that layout.
+	flat bool
+}
+
+// key identifies a layout: the work list, and the column it
+// starts at. The list carries its own indent and flatness, and
+// the width is the layout's, so these two settle what the chunks
+// are.
+type key struct {
+	it  *item
+	col int
+}
+
+// layout lays a document out within a width, remembering the
+// chunks it produces.
+//
+// The remembering is what keeps the cost linear. Deciding a break
+// means laying out what follows it, far enough to see whether the
+// line fills; what follows holds decision points of its own, and
+// each is reached at the same column however many lookaheads pass
+// over it, so it is decided once and the answer is shared. Without
+// that, a document with n decision points in a row -- which is
+// what packing a list of n elements is -- costs 2^n.
+type layout struct {
+	memo  map[key]*out
+	width int
+}
+
+// best lays out the work list, choosing at each decision point
+// the wider layout when what it would put on this line fits. It
+// returns the first chunk, and the rest on demand.
+func (l *layout) best(col int, it *item) *out {
+	if it == nil {
+		return nil
+	}
+	k := key{it: it, col: col}
+	if o, ok := l.memo[k]; ok {
+		return o
+	}
+	o := l.best1(col, it)
+	l.memo[k] = o
+	return o
+}
+
+// best1 is best, without the remembering.
+func (l *layout) best1(col int, it *item) *out {
+	for it != nil {
 		i, flat, next := it.indent, it.flat, it.next
-		// lint: sort until '^		}' where '^		case '
+		// lint: sort until '^\t\t}' where '^\t\tcase '
 		switch d := it.d.(type) {
 		case catDoc:
 			it = &item{
@@ -350,8 +324,7 @@ func fits(width, col int, it *item) bool {
 			}
 		case columnDoc:
 			it = &item{
-				d: d.f(col), indent: i, flat: flat,
-				next: next,
+				d: d.f(col), indent: i, flat: flat, next: next,
 			}
 		case emptyDoc:
 			it = next
@@ -362,21 +335,22 @@ func fits(width, col int, it *item) bool {
 			}
 			it = &item{d: d2, indent: i, flat: flat, next: next}
 		case groupDoc:
-			flatItem := &item{
-				d:      d.d,
-				indent: i,
-				flat:   true,
-				next:   next,
+			if flat {
+				it = &item{
+					d: d.d, indent: i, flat: true, next: next,
+				}
+				continue
 			}
-			if !flat && !fits(width, col, flatItem) {
-				return true
+			if o, ok := l.decide(col, i, d.d, next); ok {
+				return o
 			}
-			it = flatItem
+			it = &item{d: d.d, indent: i, next: next}
 		case hardLineDoc:
-			// In a broken layout a line break ends the current
-			// line, so what precedes it fits; a hard line cannot
-			// be flattened, so a flat layout does not fit.
-			return !flat
+			n, indent := next, i
+			return &out{
+				line: true, indent: indent, flat: flat,
+				rest: func() *out { return l.best(indent, n) },
+			}
 		case nestDoc:
 			it = &item{
 				d:      d.d,
@@ -386,22 +360,68 @@ func fits(width, col int, it *item) bool {
 			}
 		case nestingDoc:
 			it = &item{
-				d: d.f(i), indent: i, flat: flat,
-				next: next,
+				d: d.f(i), indent: i, flat: flat, next: next,
 			}
 		case textDoc:
-			col += len([]rune(d.text))
-			it = next
+			n, text := next, d.text
+			c := col + len([]rune(text))
+			return &out{
+				text: text,
+				rest: func() *out { return l.best(c, n) },
+			}
 		case unionDoc:
-			// A union marks a break opportunity: the current line
-			// may end here, so whatever precedes it fits (col is
-			// within width, guaranteed at the top of the loop).
-			// This is what the old recursive form always concluded
-			// too, but a fill nests one union per element, so
-			// measuring into each union's wide branch — which
-			// itself contains the next union — was exponential.
+			// A union decides for itself even inside a flat
+			// layout, so the gaps of a pack break independently;
+			// a group in a flat layout is simply flat.
+			if o, ok := l.decide(col, i, d.wide, next); ok {
+				return o
+			}
+			it = &item{d: d.narrow, indent: i, next: next}
+		}
+	}
+	return nil
+}
+
+// decide measures a decision point's wide layout: it lays that
+// layout out and reports whether what it puts on this line fits.
+// What is measured is the text that will actually be emitted,
+// through the rest of the work list, so that a following group's
+// text on this line counts too; that is what makes the choice
+// exact.
+//
+// The stream it returns is the one it measured, and the caller
+// emits it, so the lookahead is not work thrown away. That is
+// what keeps the cost linear: every decision inside the stream
+// was made while measuring it, and is not made again.
+func (l *layout) decide(col, indent int, wide Doc,
+	next *item,
+) (*out, bool) {
+	wideItem := &item{
+		d: wide, indent: indent, flat: true, next: next,
+	}
+	o := l.best(col, wideItem)
+	return o, l.fits(col, o)
+}
+
+// fits reports whether a laid-out stream fits in the remaining
+// space on the current line: it scans until the first line break,
+// which ends the line, or until the width is exceeded.
+func (l *layout) fits(col int, o *out) bool {
+	for {
+		if col > l.width {
+			return false
+		}
+		if o == nil {
 			return true
 		}
+		if o.line {
+			// A line break ends the current line, so what precedes
+			// it fits -- unless the layout is flat, where a break
+			// cannot happen, and a hard line rejects it.
+			return !o.flat
+		}
+		col += len([]rune(o.text))
+		o = o.rest()
 	}
 }
 

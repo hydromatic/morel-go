@@ -18,7 +18,7 @@
  *
  * The derived members of the PP pretty-printer, over its native
  * primitives (empty, line, lineBreak, hardLine, text, beside, nest,
- * group, align, fillSep, fillCat, render), which are in scope here.
+ * group, align, pack, render), which are in scope here.
  * interpose is a private helper.
  *)
 val softLine = `group` line;
@@ -36,6 +36,8 @@ fun interpose (_, []) = empty
 fun hsep ds = interpose (text " ", ds);
 fun vsep ds = interpose (line, ds);
 fun vcat ds = interpose (lineBreak, ds);
+fun fillSep ds = interpose (softLine, ds);
+fun fillCat ds = interpose (softBreak, ds);
 fun sep ds = `group` (vsep ds);
 fun cat ds = `group` (vcat ds);
 
