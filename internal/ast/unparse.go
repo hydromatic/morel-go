@@ -565,14 +565,12 @@ func unparseExpr(b *strings.Builder, e Expr, prec int) {
 		})
 	case *Record:
 		b.WriteString("{")
-		for i, f := range n.Fields {
-			if i > 0 {
-				b.WriteString(", ")
-			}
-			if f.Label != "" {
-				b.WriteString(f.Label + " = ")
-			}
-			unparseExpr(b, f.Exp, 0)
+		if n.Base != nil {
+			unparseExpr(b, n.Base, 0)
+		}
+		unparseFields(b, n.Fields)
+		for _, m := range n.Modifiers {
+			unparseModifier(b, m)
 		}
 		b.WriteString("}")
 	case *RecordSelector:
@@ -581,6 +579,47 @@ func unparseExpr(b *strings.Builder, e Expr, prec int) {
 		unparseExprList(b, "(", n.Args, ")")
 	default:
 		panic("unparse: unknown expression")
+	}
+}
+
+// unparseFields renders "a = e1, b = e2, ..."; a field with no
+// label renders as its expression alone.
+func unparseFields(b *strings.Builder, fields []Field) {
+	for i, f := range fields {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		if f.Label != "" {
+			b.WriteString(f.Label + " = ")
+		}
+		unparseExpr(b, f.Exp, 0)
+	}
+}
+
+// unparseModifier renders a record modifier, including the space
+// that separates it from what precedes it.
+func unparseModifier(b *strings.Builder, m Modifier) {
+	b.WriteString(" " + m.Verbs() + " ")
+	// lint: sort until '^	}' where '^	case '
+	switch m := m.(type) {
+	case *AllModifier:
+		unparseExpr(b, m.Exp, 0)
+	case *AssignModifier:
+		unparseFields(b, m.Fields)
+	case *RemoveModifier:
+		for i, label := range m.Labels {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(label.Name)
+		}
+	case *RenameModifier:
+		for i, pair := range m.Pairs {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(pair.To.Name + " = " + pair.From.Name)
+		}
 	}
 }
 

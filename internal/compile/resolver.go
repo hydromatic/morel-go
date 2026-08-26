@@ -991,11 +991,11 @@ func (r *resolver) toFrom(env *coreEnv, from *ast.From,
 		// variables to the fields the yielded value exposes.
 		if y, ok := step.(*ast.YieldStep); ok &&
 			i < len(from.Steps)-1 {
-			yieldStep, newCur, newVars, err := r.toYieldStep(cur, y)
+			yieldSteps, newCur, newVars, err := r.toYieldStep(cur, y)
 			if err != nil {
 				return nil, err
 			}
-			steps = append(steps, yieldStep)
+			steps = append(steps, yieldSteps...)
 			cur = newCur
 			rowVars = newVars
 			continue
@@ -1353,7 +1353,7 @@ func groupRowIsAtom(group *ast.GroupStep, compute *ast.ComputeStep,
 // literal with exactly one field.
 func isSingletonRecord(exp ast.Expr) bool {
 	rec, ok := exp.(*ast.Record)
-	return ok && rec.With == nil && len(rec.Fields) == 1
+	return ok && rec.Base == nil && len(rec.Fields) == 1
 }
 
 // recordExp builds a record of the given variables, sorted by name
@@ -1377,7 +1377,7 @@ func (r *resolver) recordExp(pats []*core.IDPat) core.Exp {
 // later steps see, computed from the input row. A binder exposes a
 // single variable of that name, bound to the whole yielded value.
 func (r *resolver) toYieldStep(cur *coreEnv, s *ast.YieldStep) (
-	core.FromStep, *coreEnv, []*core.IDPat, error,
+	[]core.FromStep, *coreEnv, []*core.IDPat, error,
 ) {
 	if s.Binder != "" {
 		exp, err := r.toExp(cur, s.Exp)
@@ -1386,8 +1386,16 @@ func (r *resolver) toYieldStep(cur *coreEnv, s *ast.YieldStep) (
 		}
 		pat := &core.IDPat{T: exp.Type(), Name: s.Binder}
 		field := core.YieldField{Pat: pat, Exp: exp}
-		return &core.Yield{Fields: []core.YieldField{field}},
-			cur.bind(pat), []*core.IDPat{pat}, nil
+		step := &core.Yield{Fields: []core.YieldField{field}}
+		return []core.FromStep{step}, cur.bind(pat),
+			[]*core.IDPat{pat}, nil
+	}
+	// A record wrapped in "let"s — the record is not the yielded
+	// expression itself — cannot be split into its fields here; it
+	// becomes a step of its own.
+	rec := yieldRecord(s.Exp, r.typeMap.desugared)
+	if rec != nil && ast.Expr(rec) != s.Exp {
+		return r.toWrappedYieldStep(cur, s.Exp)
 	}
 	var fields []core.YieldField
 	newCur := cur
@@ -1402,7 +1410,55 @@ func (r *resolver) toYieldStep(cur *coreEnv, s *ast.YieldStep) (
 		newCur = newCur.bind(pat)
 		rowVars = append(rowVars, pat)
 	}
-	return &core.Yield{Fields: fields}, newCur, rowVars, nil
+	step := &core.Yield{Fields: fields}
+	return []core.FromStep{step}, newCur, rowVars, nil
+}
+
+// rowName is the variable that holds a yielded row while its
+// fields are projected out of it. No source label can collide
+// with it: "$" cannot appear in a Morel label.
+const rowName = "$row"
+
+// toWrappedYieldStep converts a "yield" whose value is a record
+// wrapped in "let"s — those the user wrote, and those a record's
+// modifiers desugar to. It becomes two steps: one that binds the
+// whole row, and one that projects its fields, because the rest of
+// the pipeline reads a step's fields off a tuple. Splitting also
+// keeps the expression to one evaluation per row.
+func (r *resolver) toWrappedYieldStep(cur *coreEnv, e ast.Expr) (
+	[]core.FromStep, *coreEnv, []*core.IDPat, error,
+) {
+	exp, err := r.toExp(cur, e)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	rowPat := &core.IDPat{T: exp.Type(), Name: rowName}
+	rowID := &core.ID{Pat: rowPat}
+	bind := &core.Yield{
+		Fields: []core.YieldField{{Pat: rowPat, Exp: exp}},
+	}
+	var fields []core.YieldField
+	newCur := cur
+	var rowVars []*core.IDPat
+	for i, f := range recordLikeFields(exp.Type()) {
+		pat := &core.IDPat{T: f.Type, Name: f.Label}
+		fields = append(fields, core.YieldField{
+			Pat: pat,
+			Exp: &core.Apply{
+				T: f.Type,
+				Fn: &core.Selector{
+					T:     r.typeMap.sys.Fn(exp.Type(), f.Type),
+					Name:  f.Label,
+					Index: i,
+				},
+				Arg: rowID,
+			},
+		})
+		newCur = newCur.bind(pat)
+		rowVars = append(rowVars, pat)
+	}
+	project := &core.Yield{Fields: fields}
+	return []core.FromStep{bind, project}, newCur, rowVars, nil
 }
 
 // stepField is a labelled expression in a group's keys or a
@@ -1416,7 +1472,7 @@ type stepField struct {
 // labelled fields: a record's fields (by their labels or implicit
 // labels), or a single field labelled by its implicit label.
 func (r *resolver) stepFields(exp ast.Expr) []stepField {
-	if rec, ok := exp.(*ast.Record); ok && rec.With == nil {
+	if rec, ok := exp.(*ast.Record); ok && rec.Base == nil {
 		fields := make([]stepField, len(rec.Fields))
 		for i, f := range rec.Fields {
 			label := f.Label
@@ -1805,12 +1861,23 @@ func boolCase(sys *types.System, cond, ifTrue,
 const cannotDeriveLabel = "cannot derive label for expression"
 
 // toRecord converts a record expression to a tuple whose
-// elements are the fields in canonical order.
+// elements are the fields in canonical order. A record with
+// modifiers converts as the nested "let"s that the type resolver
+// replaced it with.
 func (r *resolver) toRecord(env *coreEnv, record *ast.Record,
 	t types.Type,
 ) (core.Exp, error) {
-	if record.With != nil {
-		return r.toRecordUpdate(env, record, t)
+	if record.Base != nil {
+		exp, ok := r.typeMap.desugared[record]
+		if !ok {
+			// checkRecordModifiers rejects a record the type
+			// resolver could not desugar, so this cannot happen.
+			return nil, &Error{
+				Span: record.Span(),
+				Msg:  "record modifiers were not resolved",
+			}
+		}
+		return r.toExp(env, exp)
 	}
 	// The empty record is unit, the same value as "()".
 	if len(record.Fields) == 0 {
@@ -1875,74 +1942,6 @@ func (r *resolver) toRangeList(env *coreEnv, rl *ast.RangeList,
 		items[i] = ci
 	}
 	return &core.RangeList{T: t, Items: items}, nil
-}
-
-// toRecordUpdate converts "{base with lab = e, ...}" to a let that
-// binds the base record once and builds a new record, taking the
-// named fields from the update expressions and every other field
-// from the base by selection. The result has the base's field set
-// (typing has already unified each update with its base field).
-func (r *resolver) toRecordUpdate(env *coreEnv, record *ast.Record,
-	t types.Type,
-) (core.Exp, error) {
-	rec, ok := t.(*types.Record)
-	if !ok {
-		return nil, &Error{
-			Span: record.Span(),
-			Msg:  "record update requires a record type",
-		}
-	}
-	updates := map[string]ast.Expr{}
-	for _, f := range record.Fields {
-		label := f.Label
-		if label == "" {
-			id, isID := f.Exp.(*ast.ID)
-			if !isID {
-				return nil, &Error{
-					Span: record.Span(),
-					Msg:  cannotDeriveLabel,
-				}
-			}
-			label = id.Name
-		}
-		updates[label] = f.Exp
-	}
-	baseExp, err := r.toExp(env, record.With)
-	if err != nil {
-		return nil, err
-	}
-	// Bind the base to a fresh name so unchanged fields can be
-	// selected from it without re-evaluating the base expression.
-	// The name uses a character no source identifier can, so it
-	// cannot capture a user variable.
-	basePat := &core.IDPat{T: baseExp.Type(), Name: "$with"}
-	baseID := &core.ID{Pat: basePat}
-	args := make([]core.Exp, len(rec.Fields))
-	for i, field := range rec.Fields {
-		if upd, isUpd := updates[field.Label]; isUpd {
-			arg, err := r.toExp(env, upd)
-			if err != nil {
-				return nil, err
-			}
-			args[i] = arg
-			continue
-		}
-		args[i] = &core.Apply{
-			T: field.Type,
-			Fn: &core.Selector{
-				T:     r.typeMap.sys.Fn(rec, field.Type),
-				Name:  field.Label,
-				Index: i,
-			},
-			Arg: baseID,
-		}
-	}
-	return &core.Let{
-		Decl: &core.NonRecValDecl{
-			Pat: basePat, Exp: baseExp, Span: record.Span(),
-		},
-		Exp: &core.Tuple{T: t, Args: args},
-	}, nil
 }
 
 // toCon converts a reference to a datatype constructor. The
@@ -2239,16 +2238,18 @@ func (r *resolver) toConsPat(p *ast.ConsPat,
 func (r *resolver) toRecordPat(p *ast.RecordPat,
 	t types.Type,
 ) (core.Pat, error) {
-	rec, ok := t.(*types.Record)
-	if !ok {
+	// The target may be a tuple type; a tuple is a record whose
+	// labels are the ordinals, so "{1 = x, 2 = y}" matches it.
+	fields := recordLikeFields(t)
+	if fields == nil {
 		return &core.WildcardPat{T: t}, nil
 	}
 	byLabel := make(map[string]ast.Pat, len(p.Fields))
 	for _, f := range p.Fields {
 		byLabel[f.Label] = f.Pat
 	}
-	args := make([]core.Pat, len(rec.Fields))
-	for i, f := range rec.Fields {
+	args := make([]core.Pat, len(fields))
+	for i, f := range fields {
 		fp, named := byLabel[f.Label]
 		if !named {
 			args[i] = &core.WildcardPat{T: f.Type}
@@ -2261,6 +2262,26 @@ func (r *resolver) toRecordPat(p *ast.RecordPat,
 		args[i] = arg
 	}
 	return &core.TuplePat{T: t, Args: args}, nil
+}
+
+// recordLikeFields is the labelled fields of a record or tuple
+// type, in the order of the values of a tuple of that type, or
+// nil if the type is neither.
+func recordLikeFields(t types.Type) []types.Field {
+	switch t := t.(type) {
+	case *types.Record:
+		return t.Fields
+	case *types.Tuple:
+		fields := make([]types.Field, len(t.Args))
+		for i, arg := range t.Args {
+			fields[i] = types.Field{
+				Label: strconv.Itoa(i + 1), Type: arg,
+			}
+		}
+		return fields
+	default:
+		return nil
+	}
 }
 
 func (r *resolver) toListPat(p *ast.ListPat,

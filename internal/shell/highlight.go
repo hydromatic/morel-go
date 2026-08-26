@@ -116,7 +116,8 @@ func Scan(src string) []Span {
 // reference, a constant, or a plain identifier.
 func wordCategory(word, rest string) Category {
 	switch {
-	case token.Lookup(word) != token.Ident:
+	case token.Lookup(word) != token.Ident,
+		token.NonReserved[word]:
 		return CatKeyword
 	case strings.HasPrefix(rest, "."):
 		return CatTypeVar

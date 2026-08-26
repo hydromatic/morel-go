@@ -40,6 +40,10 @@ type TypeMap struct {
 	// use of a qualified-typed binding declared in an earlier statement
 	// (dictionary passing, hydromatic/morel#426). It may be nil.
 	bindings map[string]*Binding
+	// desugared maps a record with modifiers to the nested "let"s
+	// that the type resolver replaced it with. The core resolver
+	// converts those, never the record.
+	desugared map[*ast.Record]ast.Expr
 }
 
 // TypeOf returns the type deduced for a node. Unification

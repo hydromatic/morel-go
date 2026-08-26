@@ -648,19 +648,27 @@ func (st *fromState) yieldStep(s *ast.YieldStep) error {
 // "current" when it has none.
 func (r *typeResolver) deduceYield(env typeEnv, exp ast.Expr,
 ) ([]labelTerm, unify.Term, error) {
-	if rec, ok := exp.(*ast.Record); ok && rec.With == nil {
-		fields, err := r.deduceRecordFields(env, rec)
+	if rec, ok := exp.(*ast.Record); ok && rec.Base == nil {
+		fields, err := r.deduceRecordFields(env, rec.Fields)
 		if err != nil {
 			return nil, nil, err
 		}
 		term := r.recordTerm(fields)
 		r.reg2(rec, term)
+		r.recordFields[rec] = fields
 		return fields, term, nil
 	}
 	vYield := r.u.Variable()
 	err := r.deduceExp(env, exp, vYield)
 	if err != nil {
 		return nil, nil, err
+	}
+	// A record wrapped in "let"s — those the user wrote, and those
+	// a record's modifiers desugar to — still exposes its fields.
+	if rec := yieldRecord(exp, r.desugared); rec != nil {
+		if fields, ok := r.recordFields[rec]; ok && len(fields) > 0 {
+			return fields, vYield, nil
+		}
 	}
 	label := implicitLabel(exp)
 	if label == "" {
@@ -688,6 +696,13 @@ func implicitLabel(exp ast.Expr) string {
 		// An aggregate "fn over e" takes its label from the function.
 		if e.Kind == ast.OverOp {
 			return implicitLabel(e.A0)
+		}
+	case *ast.Record:
+		// A record with modifiers takes the label its base implies,
+		// so "{a = 1, {b remove x}}" labels the second field "b". A
+		// record without them has no implicit label.
+		if e.Base != nil {
+			return implicitLabel(e.Base)
 		}
 	}
 	return ""

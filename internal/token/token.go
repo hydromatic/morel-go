@@ -78,6 +78,7 @@ const (
 	Elements
 	Except
 	Exists
+	Extend
 	Forall
 	From
 	Full
@@ -91,6 +92,9 @@ const (
 	On
 	Order
 	Ordinal
+	Remove
+	Rename
+	Replace
 	Require
 	Right
 	Skip
@@ -101,7 +105,6 @@ const (
 	Union
 	Unorder
 	Where
-	With
 	Yield
 	YieldAll
 
@@ -197,6 +200,7 @@ var kindNames = map[Kind]string{
 	Elements:         "elements",
 	Except:           "except",
 	Exists:           "exists",
+	Extend:           "extend",
 	Forall:           "forall",
 	From:             "from",
 	Full:             "full",
@@ -210,6 +214,9 @@ var kindNames = map[Kind]string{
 	On:               "on",
 	Order:            "order",
 	Ordinal:          "ordinal",
+	Remove:           "remove",
+	Rename:           "rename",
+	Replace:          "replace",
 	Require:          "require",
 	Right:            "right",
 	Skip:             "skip",
@@ -220,7 +227,6 @@ var kindNames = map[Kind]string{
 	Union:            "union",
 	Unorder:          "unorder",
 	Where:            "where",
-	With:             "with",
 	Yield:            "yield",
 	YieldAll:         "yieldAll",
 	Inst:             "inst",
@@ -275,6 +281,17 @@ var keywords = func() map[string]Kind {
 	}
 	return m
 }()
+
+// NonReserved holds the keywords that are recognized only in
+// context: they follow a record-modifier verb, where no
+// identifier can occur, so "List.all" and "fn all => all" need
+// no quoting. The lexer returns them as Ident; the parser and
+// the highlighter match their text.
+var NonReserved = map[string]bool{
+	"all":     true,
+	"lenient": true,
+	"or":      true,
+}
 
 // Lookup returns the keyword kind for an identifier, or Ident if
 // it is not a keyword.

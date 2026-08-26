@@ -94,7 +94,7 @@ func (r *typeResolver) deduceCompute(stepEnv typeEnv,
 	defer func() {
 		r.computeFrames = r.computeFrames[:len(r.computeFrames)-1]
 	}()
-	if rec, ok := computeExp.(*ast.Record); ok && rec.With == nil {
+	if rec, ok := computeExp.(*ast.Record); ok && rec.Base == nil {
 		fields := make([]labelTerm, len(rec.Fields))
 		seen := map[string]bool{}
 		for i, f := range rec.Fields {
@@ -305,7 +305,7 @@ func isRecordExpr(exp ast.Expr) bool {
 // expression contributes: a record's field count, or 1 for a bare
 // expression.
 func stepFieldCount(exp ast.Expr) int {
-	if rec, ok := exp.(*ast.Record); ok && rec.With == nil {
+	if rec, ok := exp.(*ast.Record); ok && rec.Base == nil {
 		return len(rec.Fields)
 	}
 	return 1
@@ -322,7 +322,7 @@ type groupLabel struct {
 // groupFieldLabels returns the label and blame-span of each field of
 // a group-key or compute expression.
 func groupFieldLabels(exp ast.Expr) []groupLabel {
-	if rec, ok := exp.(*ast.Record); ok && rec.With == nil {
+	if rec, ok := exp.(*ast.Record); ok && rec.Base == nil {
 		out := make([]groupLabel, 0, len(rec.Fields))
 		for _, f := range rec.Fields {
 			label, span := f.Label, f.LabelSpan

@@ -125,11 +125,14 @@ func (w *independenceWalker) exp(e ast.Expr, depth int) {
 	case *ast.Raise:
 		w.exp(e.E, depth)
 	case *ast.Record:
-		if e.With != nil {
-			w.exp(e.With, depth)
+		if e.Base != nil {
+			w.exp(e.Base, depth)
 		}
 		for _, f := range e.Fields {
 			w.exp(f.Exp, depth)
+		}
+		for _, m := range e.Modifiers {
+			m.ForEachExp(func(x ast.Expr) { w.exp(x, depth) })
 		}
 	case *ast.Tuple:
 		for _, a := range e.Args {

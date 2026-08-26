@@ -188,8 +188,14 @@ func (reg *MethodRegistry) rewriteExpr(e ast.Expr) ast.Expr {
 	case *ast.Raise:
 		x.E = reg.rewriteExpr(x.E)
 	case *ast.Record:
+		if x.Base != nil {
+			x.Base = reg.rewriteExpr(x.Base)
+		}
 		for i := range x.Fields {
 			x.Fields[i].Exp = reg.rewriteExpr(x.Fields[i].Exp)
+		}
+		for _, m := range x.Modifiers {
+			reg.rewriteModifier(m)
 		}
 	case *ast.Tuple:
 		for i := range x.Args {
@@ -202,6 +208,19 @@ func (reg *MethodRegistry) rewriteExpr(e ast.Expr) ast.Expr {
 func (reg *MethodRegistry) rewriteMatches(matches []*ast.Match) {
 	for _, m := range matches {
 		m.Exp = reg.rewriteExpr(m.Exp)
+	}
+}
+
+// rewriteModifier rewrites the expressions a record modifier
+// contains, in place.
+func (reg *MethodRegistry) rewriteModifier(m ast.Modifier) {
+	switch m := m.(type) {
+	case *ast.AllModifier:
+		m.Exp = reg.rewriteExpr(m.Exp)
+	case *ast.AssignModifier:
+		for i := range m.Fields {
+			m.Fields[i].Exp = reg.rewriteExpr(m.Fields[i].Exp)
+		}
 	}
 }
 

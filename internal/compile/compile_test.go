@@ -137,7 +137,38 @@ func TestDeduce(t *testing.T) {
 		{"fn {f, g} => true", "{f:'a, g:'b} -> bool"},
 		{"fn (x, y) => x", "'a * 'b -> 'a"},
 		{"(fn {f, ...} => f) {f=1, g=true}", "int"},
-		{"{{a=1,b=true} with b=false}", "{a:int, b:bool}"},
+		{"{{a=1,b=true} replace b=false}", "{a:int, b:bool}"},
+		// Every record modifier, and the chain of them.
+		{"{{a=1} extend b=true}", "{a:int, b:bool}"},
+		{"{{a=1,b=2} remove b}", "{a:int}"},
+		{"{{a=1,b=2} rename c = b}", "{a:int, c:int}"},
+		{"{{a=1} replace lenient a=true}", "{a:bool}"},
+		{"{{a=1} extend all {b=true}}", "{a:int, b:bool}"},
+		{"{{a=1,b=2} replace a=3 remove b}", "{a:int}"},
+		// The fields of a base become known only when the call
+		// below settles the lambda's parameter type.
+		{
+			"let val g = fn s => {s remove b} in g {a=1,b=2} end",
+			"{a:int}",
+		},
+		// A "yield" of a record binds its fields, and the "let"s
+		// the modifiers desugar to do not change that.
+		{
+			"from e in [{a=1,b=2}] yield {e remove b} where a > 0",
+			"{a:int} list",
+		},
+		{
+			"from e in [{a=1,b=2}] yield {e extend c = a + b}" +
+				" yield c",
+			"int list",
+		},
+		// The same goes for a "let" the user wrote.
+		{
+			"from e in [{a=1,b=2}]" +
+				" yield (let val d = e.a in {p = d, q = d} end)" +
+				" where p > 0 yield q",
+			"int list",
+		},
 		{"let val x = {a=1, b=true} in #b x end", "bool"},
 		{"fun id x = x", "'a -> 'a"},
 		{"fun first x y = x", "'a -> 'b -> 'a"},
@@ -327,6 +358,24 @@ func TestDeduceError(t *testing.T) {
 		{
 			"(true + true) + (false + false)",
 			"operator '+' is not defined for type 'bool'",
+		},
+		// A modifier rejects a label that falls in the case its
+		// verb does not name.
+		{"{{a=1} extend a=2}", "field 'a' already exists"},
+		{"{{a=1} replace b=2}", "field 'b' does not exist"},
+		{"{{a=1} remove b}", "field 'b' does not exist"},
+		{"{{a=1} rename b = c}", "field 'c' does not exist"},
+		{"{{a=1,b=2} rename b = a}", "field 'b' already exists"},
+		{"{{a=1} extend all {a=2}}", "field 'a' already exists"},
+		{"{{a=1} remove a, a}", "duplicate field 'a' in record"},
+		// Assignment does not change a field's type, unless the
+		// modifier is lenient.
+		{"{{a=1} replace a=true}", "Cannot deduce type: conflict"},
+		// A base whose fields never become known is a flex record.
+		{
+			"fn s => {s remove b}",
+			"unresolved flex record (can't tell what fields" +
+				" there are besides #b)",
 		},
 	} {
 		t.Run(tc.src, func(t *testing.T) {

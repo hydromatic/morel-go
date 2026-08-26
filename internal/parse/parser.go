@@ -927,34 +927,23 @@ func (p *Parser) exprList(closer token.Kind) ([]ast.Expr,
 	return args, end, nil
 }
 
-// recordExpr parses "{a = e1, b = e2, ...}"; a field without
-// "label =" has an implicit label, filled in during resolution.
+// recordExpr parses "{a = e1, b = e2, ...}", or a base
+// expression followed by the modifiers applied to it,
+// "{e replace a = e1 remove b}". A field without "label =" has
+// an implicit label, filled in during resolution.
 func (p *Parser) recordExpr() (ast.Expr, error) {
 	start := p.tok.Span.Start
 	err := p.next()
 	if err != nil {
 		return nil, err
 	}
-	var with ast.Expr
 	var fields []ast.Field
-	first := true
-	for p.tok.Kind != token.RBrace {
+	for p.tok.Kind != token.RBrace && !isModifierStart(p.tok.Kind) {
 		var f ast.Field
 		f, err = p.recordField()
 		if err != nil {
 			return nil, err
 		}
-		if first && f.Label == "" &&
-			p.tok.Kind == token.With {
-			with = f.Exp
-			err = p.next()
-			if err != nil {
-				return nil, err
-			}
-			first = false
-			continue
-		}
-		first = false
 		fields = append(fields, f)
 		if p.tok.Kind != token.Comma {
 			break
@@ -963,6 +952,15 @@ func (p *Parser) recordExpr() (ast.Expr, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+	var modifiers []ast.Modifier
+	for isModifierStart(p.tok.Kind) {
+		var m ast.Modifier
+		m, err = p.recordModifier()
+		if err != nil {
+			return nil, err
+		}
+		modifiers = append(modifiers, m)
 	}
 	err = p.expect(token.RBrace)
 	if err != nil {
@@ -973,9 +971,300 @@ func (p *Parser) recordExpr() (ast.Expr, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := ast.NewRecord(span, fields)
-	r.With = with
-	return r, nil
+	if len(modifiers) == 0 {
+		return ast.NewRecord(span, fields), nil
+	}
+	return ast.NewRecordModify(span, fields, modifiers), nil
+}
+
+// isModifierStart reports whether kind is the first verb of a
+// record modifier.
+func isModifierStart(kind token.Kind) bool {
+	// lint: sort until '^	}' where '^	case '
+	switch kind {
+	case token.Extend, token.Remove, token.Rename,
+		token.Replace:
+		return true
+	default:
+		return false
+	}
+}
+
+// atWord reports whether the current token is the given
+// non-reserved keyword. Such a keyword is an ordinary identifier
+// to the lexer, and is a keyword only here, after a modifier
+// verb, where no identifier can occur.
+func (p *Parser) atWord(word string) bool {
+	return p.tok.Kind == token.Ident && p.tok.Text == word
+}
+
+// recordModifier parses one modifier of a record expression,
+// such as "replace a = 1, b = 2", "extend or replace all r",
+// "remove or skip a" or "rename b = a".
+//
+// A modifier is one or two verbs -- the second joined by "or",
+// naming the case the first does not -- an optional "lenient",
+// an optional "all", and an operand.
+func (p *Parser) recordModifier() (ast.Modifier, error) {
+	start := p.tok.Span.Start
+	kind := p.tok.Kind
+	err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	// lint: sort until '^	}' where '^	case '
+	switch kind {
+	case token.Extend:
+		return p.extendModifier(start)
+	case token.Remove:
+		return p.removeModifier(start)
+	case token.Replace:
+		return p.replaceModifier(start)
+	default:
+		return p.renameModifier(start)
+	}
+}
+
+// extendModifier parses an "extend" modifier, after its verb:
+// an optional "or skip" or "or replace [lenient]", then an
+// operand.
+func (p *Parser) extendModifier(start token.Pos) (ast.Modifier,
+	error,
+) {
+	verb := ast.ExtendVerb
+	lenient := false
+	if p.atWord("or") {
+		var err error
+		verb, lenient, err = p.extendOr()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return p.modifierOperand(start, verb, lenient)
+}
+
+// extendOr parses the "or skip" or "or replace [lenient]" that
+// may follow "extend", at the "or", and returns the verb the
+// pair names.
+func (p *Parser) extendOr() (ast.ModifierVerb, bool, error) {
+	err := p.next()
+	if err != nil {
+		return 0, false, err
+	}
+	var verb ast.ModifierVerb
+	// lint: sort until '^	}' where '^	case '
+	switch p.tok.Kind {
+	case token.Replace:
+		verb = ast.ExtendOrReplaceVerb
+	case token.Skip:
+		verb = ast.ExtendOrSkipVerb
+	default:
+		return 0, false, p.errorf("expected skip or replace, " +
+			"found " + p.tok.Kind.String())
+	}
+	err = p.next()
+	if err != nil {
+		return 0, false, err
+	}
+	if verb != ast.ExtendOrReplaceVerb || !p.atWord("lenient") {
+		return verb, false, nil
+	}
+	err = p.next()
+	if err != nil {
+		return 0, false, err
+	}
+	return verb, true, nil
+}
+
+// orSkip parses the "or skip" that may follow "replace" or
+// "remove", and reports whether it was there.
+func (p *Parser) orSkip() (bool, error) {
+	if !p.atWord("or") {
+		return false, nil
+	}
+	err := p.next()
+	if err != nil {
+		return false, err
+	}
+	err = p.expect(token.Skip)
+	if err != nil {
+		return false, err
+	}
+	return true, p.next()
+}
+
+// replaceModifier parses a "replace" modifier, after its verb:
+// an optional "lenient", an optional "or skip", then an operand.
+func (p *Parser) replaceModifier(start token.Pos) (ast.Modifier,
+	error,
+) {
+	verb := ast.ReplaceVerb
+	lenient := p.atWord("lenient")
+	if lenient {
+		err := p.next()
+		if err != nil {
+			return nil, err
+		}
+	}
+	skip, err := p.orSkip()
+	if err != nil {
+		return nil, err
+	}
+	if skip {
+		verb = ast.ReplaceOrSkipVerb
+	}
+	return p.modifierOperand(start, verb, lenient)
+}
+
+// removeModifier parses a "remove" modifier, after its verb: an
+// optional "or skip", then the labels to remove.
+func (p *Parser) removeModifier(start token.Pos) (ast.Modifier,
+	error,
+) {
+	verb := ast.RemoveVerb
+	skip, err := p.orSkip()
+	if err != nil {
+		return nil, err
+	}
+	if skip {
+		verb = ast.RemoveOrSkipVerb
+	}
+	var labels []ast.Label
+	for {
+		label, err := p.recordLabel()
+		if err != nil {
+			return nil, err
+		}
+		labels = append(labels, label)
+		if p.tok.Kind != token.Comma {
+			break
+		}
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
+	}
+	span := token.Span{
+		Start: start, End: labels[len(labels)-1].Span.End,
+	}
+	return ast.NewRemoveModifier(span, verb, labels), nil
+}
+
+// renameModifier parses a "rename" modifier, after its verb: a
+// list of "newLabel = oldLabel" pairs.
+func (p *Parser) renameModifier(start token.Pos) (ast.Modifier,
+	error,
+) {
+	var pairs []ast.RenamePair
+	for {
+		to, err := p.recordLabel()
+		if err != nil {
+			return nil, err
+		}
+		err = p.expect(token.Eq)
+		if err != nil {
+			return nil, err
+		}
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
+		from, err := p.recordLabel()
+		if err != nil {
+			return nil, err
+		}
+		pairs = append(pairs, ast.RenamePair{To: to, From: from})
+		if p.tok.Kind != token.Comma {
+			break
+		}
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
+	}
+	span := token.Span{
+		Start: start, End: pairs[len(pairs)-1].From.Span.End,
+	}
+	return ast.NewRenameModifier(span, pairs), nil
+}
+
+// atAll reports whether the current token is the "all" keyword
+// of a modifier operand. "all" followed by "=" is a label.
+func (p *Parser) atAll() (bool, error) {
+	if !p.atWord("all") {
+		return false, nil
+	}
+	kind, err := p.peek()
+	if err != nil {
+		return false, err
+	}
+	return kind != token.Eq, nil
+}
+
+// modifierOperand parses the operand of an "extend" or
+// "replace" modifier: "all" and a record-valued expression, or
+// a list of assignments.
+func (p *Parser) modifierOperand(start token.Pos,
+	verb ast.ModifierVerb, lenient bool,
+) (ast.Modifier, error) {
+	all, err := p.atAll()
+	if err != nil {
+		return nil, err
+	}
+	if all {
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
+		var exp ast.Expr
+		exp, err = p.expr()
+		if err != nil {
+			return nil, err
+		}
+		span := token.Span{Start: start, End: exp.Span().End}
+		return ast.NewAllModifier(span, verb, lenient, exp), nil
+	}
+	var fields []ast.Field
+	for {
+		f, err := p.recordField()
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, f)
+		if p.tok.Kind != token.Comma {
+			break
+		}
+		err = p.next()
+		if err != nil {
+			return nil, err
+		}
+	}
+	span := token.Span{
+		Start: start,
+		End:   fields[len(fields)-1].Exp.Span().End,
+	}
+	return ast.NewAssignModifier(span, verb, lenient, fields), nil
+}
+
+// recordLabel parses the label of a "remove" or "rename"
+// modifier: a name, a backtick-quoted identifier, or a positive
+// integer.
+func (p *Parser) recordLabel() (ast.Label, error) {
+	name := p.tok.Text
+	switch p.tok.Kind {
+	case token.Ident, token.IntLit:
+	case token.QuotedIdent:
+		name = unquoteIdent(name)
+	default:
+		return ast.Label{}, p.errorf("expected label, found " +
+			p.tok.Kind.String())
+	}
+	label := ast.Label{Name: name, Span: p.tok.Span}
+	err := p.next()
+	if err != nil {
+		return ast.Label{}, err
+	}
+	return label, nil
 }
 
 func (p *Parser) recordField() (ast.Field, error) {

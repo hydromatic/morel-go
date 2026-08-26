@@ -63,7 +63,7 @@ func (r *typeResolver) recordTerm(fields []labelTerm) unify.Term {
 // tupleTerm builds the term for a tuple; an empty tuple is unit.
 func (r *typeResolver) tupleTerm(terms []unify.Term) unify.Term {
 	if len(terms) == 0 {
-		return r.primTerm("unit")
+		return r.primTerm(unitName)
 	}
 	return unify.Apply(tupleTyCon, terms...)
 }

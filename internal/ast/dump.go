@@ -183,6 +183,37 @@ func dumpRecord(b *strings.Builder, n *Record) {
 		dump(b, f.Exp)
 		b.WriteString(")")
 	}
+	for _, m := range n.Modifiers {
+		dumpModifier(b, m)
+	}
+	b.WriteString(")")
+}
+
+// dumpModifier renders "(verbs arg ...)"; like the base it
+// applies to, the labels a modifier names are text, not nodes.
+func dumpModifier(b *strings.Builder, m Modifier) {
+	b.WriteString(" (" + m.Verbs())
+	// lint: sort until '^	}' where '^	case '
+	switch m := m.(type) {
+	case *AllModifier:
+		b.WriteString(" ")
+		dump(b, m.Exp)
+	case *AssignModifier:
+		for _, f := range m.Fields {
+			b.WriteString(" (" + f.Label + " ")
+			dump(b, f.Exp)
+			b.WriteString(")")
+		}
+	case *RemoveModifier:
+		for _, label := range m.Labels {
+			b.WriteString(" " + label.Name)
+		}
+	case *RenameModifier:
+		for _, pair := range m.Pairs {
+			b.WriteString(" (" + pair.To.Name + " " +
+				pair.From.Name + ")")
+		}
+	}
 	b.WriteString(")")
 }
 

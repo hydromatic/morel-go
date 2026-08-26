@@ -200,7 +200,7 @@ func (c *coverageChecker) complete(t types.Type,
 			_, hasT := present["lit:bool:true"]
 			_, hasF := present["lit:bool:false"]
 			return hasT && hasF
-		case "unit":
+		case unitName:
 			_, ok := present["lit:unit:()"]
 			return ok
 		default:

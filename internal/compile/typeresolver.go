@@ -68,11 +68,12 @@ func Deduce(sys *types.System, bindings []Binding,
 	return DeduceFiles(sys, bindings, overloads, decl, nil)
 }
 
-// maxFileRetries bounds the passes that DeduceFiles makes. Each
-// retry follows a discovery, and a discovery strictly widens the
-// file system's types, so the passes cannot go on for ever; the
-// bound is a backstop, not a limit we expect to reach.
-const maxFileRetries = 16
+// maxRetries bounds the passes that DeduceFiles makes. Each retry
+// follows a discovery — a field of a file, or the fields of the
+// base of a record modifier — and a discovery is monotonic, so the
+// passes cannot go on for ever; the bound is a backstop, not a
+// limit we expect to reach.
+const maxRetries = 16
 
 // DeduceFiles is Deduce, over an environment that also contains
 // the progressive file system that "file" browses.
@@ -82,34 +83,44 @@ const maxFileRetries = 16
 // undiscovered field discovers it and starts again, against the
 // now-wider type. Discovery is monotonic — a file never loses a
 // field — so a program that has been typed stays typed.
+//
+// The fields of the base of a record modifier are discovered the
+// same way, and fieldNames carries them from one pass to the next.
 func DeduceFiles(sys *types.System, bindings []Binding,
 	overloads *OverloadEnv, decl ast.Decl, files *Files,
 ) (*Resolved, error) {
-	for range maxFileRetries {
-		resolved, widened, err := deduceOnce(sys, bindings,
-			overloads, decl, files)
-		if !widened {
+	fieldNames := map[ast.Expr][]string{}
+	for range maxRetries {
+		resolved, learned, err := deduceOnce(sys, bindings,
+			overloads, decl, files, fieldNames, false)
+		if !learned {
 			return resolved, err
 		}
 	}
 	// The bound was reached. Make a last pass, and report whatever
 	// it says rather than looping for ever.
 	resolved, _, err := deduceOnce(sys, bindings, overloads, decl,
-		files)
+		files, fieldNames, true)
 	return resolved, err
 }
 
 // deduceOnce makes one pass of type deduction. It reports whether
-// the pass discovered a file field, in which case its result is
-// stale and the caller should make another pass.
+// the pass discovered a file field or the fields of the base of a
+// record modifier, in which case its result is stale and the
+// caller should make another pass. The last pass reports no
+// discovery, so that it always returns a result or an error.
 func deduceOnce(sys *types.System, bindings []Binding,
 	overloads *OverloadEnv, decl ast.Decl, files *Files,
+	fieldNames map[ast.Expr][]string, final bool,
 ) (*Resolved, bool, error) {
 	r := &typeResolver{
-		sys:      sys,
-		u:        unify.New(),
-		nodeTerm: map[ast.Node]unify.Term{},
-		files:    files,
+		sys:          sys,
+		u:            unify.New(),
+		nodeTerm:     map[ast.Node]unify.Term{},
+		files:        files,
+		fieldNames:   fieldNames,
+		desugared:    map[*ast.Record]ast.Expr{},
+		recordFields: map[*ast.Record][]labelTerm{},
 	}
 	var env typeEnv = emptyTypeEnv{}
 	if len(bindings) > 0 {
@@ -134,11 +145,20 @@ func deduceOnce(sys *types.System, bindings []Binding,
 	// Browse the file system for the fields this declaration
 	// selects. Deduction has collected the selectors but not yet
 	// unified, so a discovery can be acted on by starting again,
-	// before any type has been reported.
-	if r.discoverFileFields() {
+	// before any type has been reported. The last pass browses too,
+	// because the discovery widens the types it reports against.
+	widened := r.discoverFileFields()
+	if !final && (widened || r.desugarLearned) {
 		return nil, true, nil
 	}
 	resolved, err := r.unify(sys, decl, decl2)
+	if !final && r.desugarLearned {
+		// Unification told a record modifier the fields of its base.
+		// The tree we have just deduced still contains the record,
+		// and the error we may have is a consequence; the caller
+		// deduces the declaration again, and this time it desugars.
+		return nil, true, nil
+	}
 	return resolved, false, err
 }
 
@@ -198,6 +218,11 @@ func (r *typeResolver) unify(sys *types.System, decl ast.Decl,
 			subst:     subst,
 			residuals: subst.Residuals,
 			bindings:  r.bindings,
+			desugared: r.desugared,
+		}
+		err = r.checkRecordModifiers()
+		if err != nil {
+			return nil, err
 		}
 		err = r.checkFieldRefs(typeMap)
 		if err != nil {
@@ -515,6 +540,30 @@ type typeResolver struct {
 	// files is the progressive file system that "file" browses, or
 	// nil in a session that has none.
 	files *Files
+	// fieldNames gives the field names of an expression a record
+	// modifier is applied to, in record-type order. It outlives the
+	// pass, which is how a pass that discovers the fields of a base
+	// hands them to the next one, which can then desugar the record.
+	fieldNames map[ast.Expr][]string
+	// desugared maps a record with modifiers to the nested "let"s
+	// that replace it; the core resolver follows it. Its records are
+	// the ones that had their field names when this pass reached
+	// them.
+	desugared map[*ast.Record]ast.Expr
+	// desugarLearned records that a record's fields became known
+	// during this pass. The tree this pass deduced still contains
+	// the record, so the pass is stale and the caller makes another,
+	// in which the record desugars.
+	desugarLearned bool
+	// recordFields gives the fields, with their terms, of a record
+	// expression that has no modifiers, so that a "yield" of a
+	// record — directly, or through the "let"s that a record's
+	// modifiers desugar to — can bind them.
+	recordFields map[*ast.Record][]labelTerm
+	// undesugared holds the records this pass could not desugar,
+	// checked once unification is done: a record whose base's fields
+	// never became known is an unresolved flex record.
+	undesugared []*ast.Record
 }
 
 // ordinalUse is one reference to "ordinal": the orderedness of the
@@ -789,7 +838,7 @@ func (r *typeResolver) typeTerm(t types.Type,
 			// The mark sorts last, and keeps "{...}" from becoming
 			// the empty record, which is unit.
 			labels = append(labels, progressiveLabel)
-			terms = append(terms, r.primTerm("unit"))
+			terms = append(terms, r.primTerm(unitName))
 		}
 		return unify.Apply(recordLabel(labels), terms...)
 	case *types.Tuple:
@@ -1009,7 +1058,7 @@ func (r *typeResolver) deduceDecl(env typeEnv, decl ast.Decl,
 	case *ast.OverDecl:
 		*termMap = append(*termMap,
 			patTerm{name: d.Pat.Name, kind: ptOver})
-		r.nodeTerm[decl] = r.primTerm("unit")
+		r.nodeTerm[decl] = r.primTerm(unitName)
 		return decl, nil
 	case *ast.TypeDecl:
 		return r.deduceTypeDecl(d)
@@ -1047,7 +1096,7 @@ func (r *typeResolver) deduceValDecl(env typeEnv,
 				name: idPat.Name, term: vPat, kind: ptInst,
 			})
 		}
-		r.nodeTerm[decl] = r.primTerm("unit")
+		r.nodeTerm[decl] = r.primTerm(unitName)
 		return decl, nil
 	}
 	// If recursive, bind each name (presumably a function) to
@@ -1068,7 +1117,7 @@ func (r *typeResolver) deduceValDecl(env typeEnv,
 			return nil, err
 		}
 	}
-	r.nodeTerm[decl] = r.primTerm("unit")
+	r.nodeTerm[decl] = r.primTerm(unitName)
 	return decl, nil
 }
 
@@ -1091,7 +1140,7 @@ func (r *typeResolver) deduceValBind(env typeEnv,
 	if err != nil {
 		return err
 	}
-	r.nodeTerm[bind] = r.primTerm("unit")
+	r.nodeTerm[bind] = r.primTerm(unitName)
 	return nil
 }
 
@@ -1173,7 +1222,7 @@ func (r *typeResolver) deduceDatatypeDecl(decl *ast.DatatypeDecl,
 			})
 		}
 	}
-	r.nodeTerm[decl] = r.primTerm("unit")
+	r.nodeTerm[decl] = r.primTerm(unitName)
 	return decl, nil
 }
 
@@ -1204,7 +1253,7 @@ func (r *typeResolver) deduceTypeDecl(decl *ast.TypeDecl,
 		r.sys.DeclareAlias(decl.Binds[i].Name, decl.Binds[i].TyVars,
 			resolved[i])
 	}
-	r.nodeTerm[decl] = r.primTerm("unit")
+	r.nodeTerm[decl] = r.primTerm(unitName)
 	return decl, nil
 }
 
@@ -1726,12 +1775,21 @@ func rangeListContainsQuery(e *ast.RangeList) bool {
 }
 
 func recordContainsQuery(e *ast.Record) bool {
-	if e.With != nil && containsQuery(e.With) {
+	if e.Base != nil && containsQuery(e.Base) {
 		return true
 	}
-	return slices.ContainsFunc(e.Fields, func(f ast.Field) bool {
+	if slices.ContainsFunc(e.Fields, func(f ast.Field) bool {
 		return containsQuery(f.Exp)
-	})
+	}) {
+		return true
+	}
+	found := false
+	for _, m := range e.Modifiers {
+		m.ForEachExp(func(x ast.Expr) {
+			found = found || containsQuery(x)
+		})
+	}
+	return found
 }
 
 func anyExpQuery(exps []ast.Expr) bool {
@@ -2124,11 +2182,6 @@ func (r *typeResolver) selectorAction(sel *ast.RecordSelector,
 	})
 }
 
-// deduceRecord handles a record expression, e.g. "{a=1, b=2}" or
-// "{e with a=1}".
-// deduceRecordFields types the fields of a record expression,
-// returning them sorted by label with their deduced terms. It
-// does not handle the "with" clause; the caller does.
 // deduceRangeList types a range list: every bound unifies to one
 // element type, and the result is a list of it.
 func (r *typeResolver) deduceRangeList(env typeEnv,
@@ -2150,12 +2203,15 @@ func (r *typeResolver) deduceRangeList(env typeEnv,
 	return nil
 }
 
+// deduceRecordFields types the fields of a record expression or
+// of an assign modifier, returning them sorted by label with
+// their deduced terms.
 func (r *typeResolver) deduceRecordFields(env typeEnv,
-	record *ast.Record,
+	recordFields []ast.Field,
 ) ([]labelTerm, error) {
-	fields := make([]labelTerm, 0, len(record.Fields))
+	fields := make([]labelTerm, 0, len(recordFields))
 	byLabel := map[string]ast.Expr{}
-	for _, f := range record.Fields {
+	for _, f := range recordFields {
 		label := f.Label
 		if label == "" {
 			label = implicitLabel(f.Exp)
@@ -2192,49 +2248,207 @@ func (r *typeResolver) deduceRecordFields(env typeEnv,
 	return fields, nil
 }
 
+// deduceRecord handles a record expression, e.g. "{a=1, b=2}" or
+// "{e replace a=1}".
 func (r *typeResolver) deduceRecord(env typeEnv,
 	record *ast.Record, v *unify.Var,
 ) error {
-	fields, err := r.deduceRecordFields(env, record)
-	if err != nil {
-		return err
-	}
-	labelTypes := map[string]unify.Term{}
-	for _, f := range fields {
-		labelTypes[f.label] = f.term
-	}
-	if record.With == nil {
+	if record.Base == nil {
+		if len(record.Modifiers) > 0 {
+			// The parser moves the field the modifiers apply to into
+			// the base, so if there still are fields here, there was
+			// not exactly one, or it had a label of its own.
+			return &Error{Span: record.Span(), Msg: modifierNeedsBase}
+		}
+		fields, err := r.deduceRecordFields(env, record.Fields)
+		if err != nil {
+			return err
+		}
+		r.recordFields[record] = fields
 		r.regEquiv(record, v, r.recordTerm(fields))
 		return nil
 	}
-	v2 := r.u.Variable()
-	err = r.deduceExp(env, record.With, v2)
+	// A record with modifiers becomes nested "let"s, but only once
+	// we know which fields there are to destructure.
+	names, known, err := r.modifierFieldNames(env, record)
 	if err != nil {
 		return err
 	}
-	// When we know the type of the expression before 'with', we
-	// can unify the types of the fields it has in common with
-	// the explicit fields.
+	if !known {
+		return r.deduceUnresolvedRecord(env, record, v)
+	}
+	exp, err := desugarModifiers(record, names)
+	if err != nil {
+		return err
+	}
+	r.desugared[record] = exp
+	err = r.deduceExp(env, exp, v)
+	if err != nil {
+		return err
+	}
+	r.reg(record, v)
+	return nil
+}
+
+// deduceUnresolvedRecord types a record whose modifiers cannot be
+// desugared yet, because the fields of the base (or of the
+// argument of an "all" modifier) are not known.
+//
+// It types the modifiers' expressions — in the enclosing
+// environment, because without the field names there is nothing to
+// shadow them — so that the checks that run after unification see
+// a tree in which every expression has a type. The record's own
+// type is left unconstrained: if a later pass does not desugar it,
+// checkRecordModifiers reports an unresolved flex record.
+func (r *typeResolver) deduceUnresolvedRecord(env typeEnv,
+	record *ast.Record, v *unify.Var,
+) error {
+	for _, m := range record.Modifiers {
+		var err error
+		m.ForEachExp(func(exp ast.Expr) {
+			if err == nil {
+				err = r.deduceExp(env, exp, r.u.Variable())
+			}
+		})
+		if err != nil {
+			return err
+		}
+	}
+	r.undesugared = append(r.undesugared, record)
+	r.reg(record, v)
+	return nil
+}
+
+// checkRecordModifiers checks that every record with modifiers has
+// been desugared. One that has not is a record whose base's fields
+// never became known, for the same reason that the argument of
+// "#f" must be known.
+func (r *typeResolver) checkRecordModifiers() error {
+	for _, record := range r.undesugared {
+		if _, done := r.desugared[record]; done {
+			continue
+		}
+		var labels []string
+		for _, m := range record.Modifiers {
+			m.ForEachLabel(func(label string) {
+				labels = append(labels, label)
+			})
+		}
+		slices.Sort(labels)
+		labels = slices.Compact(labels)
+		besides := ""
+		if len(labels) > 0 {
+			for i, label := range labels {
+				labels[i] = "#" + label
+			}
+			besides = " besides " + strings.Join(labels, ", ")
+		}
+		return &Error{
+			Span: record.Base.Span(),
+			Msg: "unresolved flex record (can't tell what fields" +
+				" there are" + besides + ")",
+		}
+	}
+	return nil
+}
+
+// modifierFieldNames returns the field names of the base of a
+// record, and of the argument of each of its "all" modifiers; or
+// nil if any of them is unknown.
+//
+// A name that is unknown now may become known when the type of the
+// expression is unified with something concrete — as when a
+// lambda's parameter type is settled by a call further down the
+// declaration. An action then records the names, and the
+// declaration is deduced again.
+func (r *typeResolver) modifierFieldNames(env typeEnv,
+	record *ast.Record,
+) (map[ast.Expr][]string, bool, error) {
+	exps := []ast.Expr{record.Base}
+	for _, m := range record.Modifiers {
+		if all, ok := m.(*ast.AllModifier); ok {
+			exps = append(exps, all.Exp)
+		}
+	}
+	type pending struct {
+		exp ast.Expr
+		v   *unify.Var
+	}
+	names := map[ast.Expr][]string{}
+	var unknown []pending
+	for _, exp := range exps {
+		if known, ok := r.fieldNames[exp]; ok {
+			names[exp] = known
+			continue
+		}
+		vExp := r.u.Variable()
+		err := r.deduceExp(env, exp, vExp)
+		if err != nil {
+			return nil, false, err
+		}
+		unknown = append(unknown, pending{exp, vExp})
+	}
+	if len(unknown) > 0 {
+		// Solve the constraints accumulated so far. As in
+		// bindDeclGeneralized, the solve is local and side-effect
+		// free, so we can run it as often as we like.
+		subst, err := r.u.Unify(r.pairs, r.actions, r.constraints)
+		for _, p := range unknown {
+			var known []string
+			if err == nil {
+				known = termFieldNames(subst.Resolve(p.v))
+			}
+			if known != nil {
+				r.fieldNames[p.exp] = known
+				names[p.exp] = known
+				continue
+			}
+			r.rememberFieldsLater(p.exp, p.v)
+		}
+	}
+	return names, len(names) == len(exps), nil
+}
+
+// rememberFieldsLater asks for the field names of an expression to
+// be recorded when its type becomes known, and for the declaration
+// to be deduced again, so that the record that needs them can be
+// desugared.
+func (r *typeResolver) rememberFieldsLater(exp ast.Expr,
+	v *unify.Var,
+) {
 	r.actions = append(r.actions, unify.VarAction{
-		Var: v2,
+		Var: v,
 		Action: func(_ *unify.Var, t unify.Term,
-			s *unify.Substitution, add func(l, r unify.Term),
+			_ *unify.Substitution, _ func(l, r unify.Term),
 		) {
-			seq, ok := t.(*unify.Sequence)
-			if !ok {
+			names := termFieldNames(t)
+			if names == nil {
 				return
 			}
-			for i, fieldName := range fieldList(seq) {
-				if labelType, common := labelTypes[fieldName]; common {
-					add(s.Resolve(labelType),
-						s.Resolve(seq.Terms[i]))
-				}
+			if _, known := r.fieldNames[exp]; !known {
+				r.fieldNames[exp] = names
+				r.desugarLearned = true
 			}
 		},
 	})
-	r.equiv(v, v2)
-	r.reg(record, v)
-	return nil
+}
+
+// termFieldNames returns the field names of a record or tuple
+// term, otherwise nil.
+//
+// "unit" is the record with no fields — recordTerm maps "{}" onto
+// it — so its field names are the empty list, not nil. Were they
+// nil, "{{} extend i = 1}" would never be desugared, and would end
+// as an unresolved flex record.
+func termFieldNames(t unify.Term) []string {
+	seq, ok := t.(*unify.Sequence)
+	if !ok {
+		return nil
+	}
+	if seq.Op == unitName {
+		return []string{}
+	}
+	return fieldList(seq)
 }
 
 // deduceRecordPat handles a record pattern, e.g. "{a, b = p}" or

@@ -307,8 +307,12 @@ Sys.parseTree "(from)";
 > val it = "(from from)" : string
 Sys.parseTree "not exists";
 > val it = "(apply (id not) (exists exists))" : string
-Sys.parseTree "{e with deptno = 10}";
-> val it = "(record (deptno (int_literal 10)))" : string
+Sys.parseTree "{e replace deptno = 10}";
+> val it = "(record (replace (deptno (int_literal 10))))" : string
+Sys.parseTree "{e extend or skip a = 1, b = 2 remove or skip c}";
+> val it = "(record (extend or skip (a (int_literal 1)) (b (int_literal 2))) (remove or skip c))" : string
+Sys.parseTree "{e replace lenient all f rename b = a}";
+> val it = "(record (replace lenient all (id f)) (rename (b a)))" : string
 Sys.parseTree "x : typeof y";
 > val it = "(annotatedExp (id x) (expression_type typeof y))" : string
 
