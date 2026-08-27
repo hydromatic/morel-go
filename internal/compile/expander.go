@@ -80,7 +80,7 @@ func expandFrom(sys *types.System, recFns map[string]*core.Fn,
 			}
 			g := x.cache.best(pat)
 			if g == nil || g.card == infinite {
-				return nil, x.notGrounded(pat)
+				return nil, x.notGrounded(from, pat)
 			}
 		}
 	}
@@ -88,12 +88,28 @@ func expandFrom(sys *types.System, recFns map[string]*core.Fn,
 }
 
 // notGrounded is the error for a variable no generator grounds.
-func (x *expander) notGrounded(pat *core.IDPat) error {
-	return &Error{
-		Span: x.extentPats[pat],
-		Msg: fmt.Sprintf("pattern '%s' is not grounded",
-			pat.Name),
+//
+// Where the query is a single step binding a single variable it
+// has simplified to that variable's extent alone, and there is no
+// pattern left to name, so the message names the type instead --
+// as morel-java's does. Any other query -- a second scan, a
+// pattern binding more than one variable, or a filter that
+// survives -- still has a scan whose pattern can be named.
+func (x *expander) notGrounded(from *core.From,
+	pat *core.IDPat,
+) error {
+	vars := 0
+	for _, step := range from.Steps {
+		if scan, ok := step.(*core.Scan); ok {
+			vars += len(core.PatIDs(scan.Pat))
+		}
 	}
+	msg := fmt.Sprintf("pattern '%s' is not grounded", pat.Name)
+	if len(from.Steps) == 1 && vars == 1 {
+		msg = fmt.Sprintf(
+			"cannot enumerate all values of type '%s'", pat.T)
+	}
+	return &Error{Span: x.extentPats[pat], Msg: msg}
 }
 
 // deduce walks the steps accumulating constraints and deducing
@@ -628,7 +644,7 @@ func (x *expander) checkAllGrounded(from *core.From,
 		}
 		for _, pat := range core.PatIDs(scan.Pat) {
 			if x.used[pat] && state[pat] != done {
-				return x.notGrounded(pat)
+				return x.notGrounded(from, pat)
 			}
 		}
 	}

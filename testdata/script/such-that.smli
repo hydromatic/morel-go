@@ -891,9 +891,27 @@ from x in [1, 2] join SOME 1;
 > val it = [1,2] : int list
 exists SOME 1;
 > val it = true : bool
+
+(* A variable that cannot be enumerated is an error whatever pattern it sits
+ * in. *)
+from SOME (i: int);
+> stdIn:1.6-1.19 Error: cannot enumerate all values of type 'int'
+>   raised at: stdIn:1.6-1.19
 from i :: t;
 > stdIn:1.6-1.12 Error: pattern 'i' is not grounded
 >   raised at: stdIn:1.6-1.12
+from (i: int, ());
+> stdIn:1.6-1.18 Error: cannot enumerate all values of type 'int'
+>   raised at: stdIn:1.6-1.18
+
+(* A variable whose values cannot be enumerated is an error. Where the query
+ * still has a scan, the expander names the pattern; where the query has one
+ * step and has simplified to the extent alone, there is no pattern left to
+ * name, so the message names the type. Either way it is an error, not a
+ * crash. *)
+from i;
+> stdIn:1.6 Error: cannot enumerate all values of type ''a'
+>   raised at: stdIn:1.6
 from i, j;
 > stdIn:1.6 Error: pattern 'i' is not grounded
 >   raised at: stdIn:1.6
