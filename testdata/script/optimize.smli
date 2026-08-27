@@ -413,10 +413,17 @@ from x in [1..] where x < 5;
 > val it = [1,2,3,4] : int list
 List.length (from x in [1..], y in [1..] where x * (y + 3) < 30);
 > val it = 51 : int
+Sys.planEx "3";
+> val it =
+>   "val it = #length List (from x in #flatten Range ([CLOSED (1, 7)]) join y in #flatten Range ([CLOSED_OPEN (1, 27)]) where #* Int (x, y + 3) < 30)"
+>   : string
 
 (* RangePushdown also handles char-typed infinite range scans. *)
 from c in [#"a"..] where c < #"e";
 > val it = [#"a",#"b",#"c",#"d"] : char list
+Sys.planEx "3";
+> val it = "val it = from c in #flatten Range ([CLOSED_OPEN (#\"a\", #\"e\")])"
+>   : string
 from c in [#"a"..] where c <= #"d";
 > val it = [#"a",#"b",#"c",#"d"] : char list
 

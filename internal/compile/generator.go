@@ -686,6 +686,65 @@ func oneSidedElemBounds(c core.Exp, pat *core.IDPat,
 	}
 }
 
+// rangeCtorExp builds one range constructor over two bounds --
+// CLOSED (1, 7), OPEN_CLOSED (0, 10) -- naming the constructor
+// that the bounds' openness calls for.
+func rangeCtorExp(sys *types.System, t types.Type, ctorName string,
+	lo, hi core.Exp,
+) core.Exp {
+	tc, ok := sys.LookupTyCon(ctorName)
+	if !ok {
+		return nil
+	}
+	rangeT := sys.Named("range", t)
+	pairT := sys.Tuple(t, t)
+	return &core.Apply{
+		T: rangeT,
+		Fn: &core.Con{
+			T:        sys.Fn(pairT, rangeT),
+			Datatype: "range",
+			Name:     ctorName,
+			Ordinal:  tc.Ordinal,
+			HasArg:   true,
+		},
+		Arg: &core.Tuple{T: pairT, Args: []core.Exp{lo, hi}},
+	}
+}
+
+// rangeItemScanExp turns a bounded range-list item into the
+// Range.flatten call that enumerates it, so that a scan narrowed
+// by range pushdown reads as what it has become. morel-java
+// rewrites the scan the same way; leaving it as a range list
+// would show `[1 .. 7]`, hiding the pushdown that produced the
+// bound. Returns nil for an item that is still unbounded, or a
+// point, which stay as they are.
+func rangeItemScanExp(sys *types.System, t types.Type,
+	item core.RangeItem,
+) core.Exp {
+	var loStrict, hiStrict bool
+	// lint: sort until '^\t}' where '^\tcase '
+	switch item.Kind {
+	case ast.RangeClosed:
+	case ast.RangeClosedOpen:
+		hiStrict = true
+	case ast.RangeOpen:
+		loStrict, hiStrict = true, true
+	case ast.RangeOpenClosed:
+		loStrict = true
+	default:
+		return nil
+	}
+	if item.Lo == nil || item.Hi == nil {
+		return nil
+	}
+	ctor := rangeCtorExp(sys, t,
+		rangeCtorName(loStrict, hiStrict), item.Lo, item.Hi)
+	if ctor == nil {
+		return nil
+	}
+	return rangeScanExp(sys, t, []core.Exp{ctor})
+}
+
 // rangeCtorName is the range constructor for the bounds'
 // openness.
 func rangeCtorName(loStrict, hiStrict bool) string {
@@ -710,25 +769,10 @@ func rangeGenerator(sys *types.System, pat *core.IDPat,
 	lo, hi *bound,
 ) *generator {
 	t := pat.T
-	ctorName := rangeCtorName(lo.strict, hi.strict)
-	tc, ok := sys.LookupTyCon(ctorName)
-	if !ok {
+	ctorApply := rangeCtorExp(sys, t,
+		rangeCtorName(lo.strict, hi.strict), lo.value, hi.value)
+	if ctorApply == nil {
 		return nil
-	}
-	rangeT := sys.Named("range", t)
-	pairT := sys.Tuple(t, t)
-	ctorApply := &core.Apply{
-		T: rangeT,
-		Fn: &core.Con{
-			T:        sys.Fn(pairT, rangeT),
-			Datatype: "range",
-			Name:     ctorName,
-			Ordinal:  tc.Ordinal,
-			HasArg:   true,
-		},
-		Arg: &core.Tuple{
-			T: pairT, Args: []core.Exp{lo.value, hi.value},
-		},
 	}
 	ctors := []core.Exp{ctorApply}
 	return &generator{

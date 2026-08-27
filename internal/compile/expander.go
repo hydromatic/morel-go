@@ -361,14 +361,15 @@ func rangePushdown(sys *types.System, from *core.From,
 		if consumed == nil {
 			continue
 		}
-		steps[i] = &core.Scan{
-			Pat: scan.Pat,
-			Exp: &core.RangeList{
+		exp := rangeItemScanExp(sys, pat.T, item2)
+		if exp == nil {
+			exp = &core.RangeList{
 				T:     rl.T,
 				Items: []core.RangeItem{item2},
 				Span:  rl.Span,
-			},
+			}
 		}
+		steps[i] = &core.Scan{Pat: scan.Pat, Exp: exp}
 		removeConjunct(sys, steps[i+1:], consumed)
 		changed = true
 	}
