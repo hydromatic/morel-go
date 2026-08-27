@@ -370,6 +370,8 @@ from n where isSmall n orelse isLarge n;
  * Invert 'from x where x elem list' to 'from x in list'. *)
 from x where x elem [1, 2, 4];
 > val it = [1,2,4] : int list
+Sys.planEx "999";
+> val it = "val it = from x in [1, 2, 4] group x order x" : string
 
 (* In the following case, we solve for x given a value of y. This
  * requires predicate-inversion because it cannot be solved using
@@ -2025,6 +2027,8 @@ Sys.planEx "0";
 > val it =
 >   "val it = let val xs = [1, 2, 3] in let val f = fn x => op elem (x, xs) in from x_1 : int where f x_1 end end"
 >   : string
+Sys.planEx "999";
+> val it = "val it = from x in [1, 2, 3] group x order x" : string
 
 (* testProvenanceThroughFunctionWithFilter - Same as above but
  * with an additional filter. Provenance removes 'f x'
@@ -2040,6 +2044,8 @@ Sys.planEx "0";
 > val it =
 >   "val it = let val xs = [1, 2, 3] in let val f = fn x => op elem (x, xs) in from x_1 : int where f x_1 andalso x_1 > 1 end end"
 >   : string
+Sys.planEx "999";
+> val it = "val it = from x in [1, 2, 3] group x order x where x > 1" : string
 
 (* testFromSuchThat3 - Smaller version of testFromSuchThat *)
 let

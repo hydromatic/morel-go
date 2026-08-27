@@ -702,13 +702,10 @@ func (r *rebuilder) addGeneratorScan(pat *core.IDPat) {
 		r.subsume(g)
 		r.changed = true
 	default:
-		exp := g.exp
-		if !g.unique {
-			// A non-unique generator may repeat values (several
-			// branches can produce one); scan it distinct.
-			exp = distinctScan(r.x.sys, g.pat, exp)
-		}
+		exp, distinct := distinctGeneratorScan(r.x.sys, g,
+			len(r.steps) == 0)
 		r.steps = append(r.steps, &core.Scan{Pat: g.pat, Exp: exp})
+		r.steps = append(r.steps, distinct...)
 		r.subsume(g)
 		if len(g.conds) > 0 {
 			r.steps = append(r.steps, &core.Where{
@@ -762,6 +759,39 @@ func (r *rebuilder) projectedScan(g *generator,
 		Kind:  ast.FromOp,
 	}
 	return &core.Scan{Pat: outerPat, Exp: sub}
+}
+
+// distinctGeneratorScan returns the collection a generator
+// scans, and the steps that take its values distinct. A unique
+// generator needs neither.
+//
+// A non-unique generator may repeat values, because several
+// branches of a disjunction can produce one. Where its scan is
+// the query's first step and it binds a single variable, the
+// query takes the values distinct itself -- "from x in e group x
+// order x" -- as morel-java's plan does: nothing precedes the
+// scan, so deduplicating the row deduplicates exactly this
+// variable's values, and the steps that follow see the rows they
+// saw before.
+//
+// Otherwise the subquery of distinctScan is still needed. A
+// later step would have the distinct span every variable bound
+// so far, not this one; and a pattern with parts that bind
+// nothing has no single name to order by.
+func distinctGeneratorScan(sys *types.System, g *generator,
+	first bool,
+) (core.Exp, []core.FromStep) {
+	if g.unique {
+		return g.exp, nil
+	}
+	id, ok := g.pat.(*core.IDPat)
+	if !ok || !first {
+		return distinctScan(sys, g.pat, g.exp), nil
+	}
+	return g.exp, []core.FromStep{
+		&core.Distinct{},
+		&core.Order{Exp: &core.ID{Pat: id}},
+	}
 }
 
 // distinctScan wraps a collection in a subquery that takes its
