@@ -812,6 +812,9 @@ func distinctGeneratorScan(sys *types.System, g *generator,
 
 // distinctScan wraps a collection in a subquery that takes its
 // distinct values in order, "from v in exp distinct order v".
+// The subquery scans into the generator's own variable where it
+// has one, as morel-java's plan does -- "join e in (from e in
+// ... group e order e)".
 //
 // An unbounded variable stands for the values that its predicate
 // allows, which is a set; and a set that the query reads back has
@@ -825,7 +828,10 @@ func distinctGeneratorScan(sys *types.System, g *generator,
 func distinctScan(sys *types.System, pat core.Pat,
 	exp core.Exp,
 ) core.Exp {
-	elem := &core.IDPat{T: pat.Type(), Name: "$elem"}
+	elem, ok := pat.(*core.IDPat)
+	if !ok {
+		elem = &core.IDPat{T: pat.Type(), Name: "$elem"}
+	}
 	return &core.From{
 		T: sys.List(pat.Type()),
 		Steps: []core.FromStep{
