@@ -25,8 +25,10 @@ import (
 
 // The Real structure, and the real1/real2 helpers that the Math
 // structure's registry entries reuse (Math has no code of its
-// own). Everything computes in float64 and rounds once to
-// float32, so intermediate rounding never compounds.
+// own). A single operation computes in float64 and rounds once
+// to float32, which for +, -, * and / is exactly the float32
+// result. An accumulation over a collection is different, and
+// rounds at each step: see sum in relational.go.
 
 func asReal(v Val) float32 {
 	f, ok := v.(float32)

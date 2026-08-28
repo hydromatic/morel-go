@@ -1004,6 +1004,43 @@ from (x, x') in western_pairs,
 >    {x="NV",x'="UT",y="ID",y'="CO",z="OR",z'="NM"}]
 >   : {x:string, x':string, y:string, y':string, z:string, z':string} list
 
+(* 6. PageRank -------------------------------------------------------
+ * In Datalog:
+ *   PageRank  N(; w: int) :- Edge(x, y); w=<<COUNT(x)>>.
+ *   PageRank(x; y: float) :- Edge(x, z); y = 1 / N.
+ *   PageRank(x; y: float)*[i=5] :- Edge(x, z), PageRank(z), InvDeg(z);
+ *       y = 0.15 + 0.85 * << SUM(z)>>.
+ *)
+
+(* Applied to western states (9 nodes, 34 directed edges), 10
+ * iterations, damping factor d=0.85. *)
+let
+  val n = real (List.length western_states)
+  val d = 0.85
+  val out_deg =
+    from (x, y) in western_pairs
+      group x compute {deg = count over ()}
+  fun step pr =
+      from p in pr,
+          q in out_deg,
+          (a, v) in western_pairs
+        where q.x = p.state andalso a = p.state
+        group {state = v}
+          compute {rank = (1.0 - d) / n
+                          + d * sum over (p.rank / real q.deg : real)}
+  fun loop 0 pr = pr
+    | loop k pr = loop (k - 1) (step pr)
+  val init = from s in western_states yield {state = s, rank = 1.0 / n}
+in
+  from r in loop 10 init order r.state
+end;
+> val it =
+>   [{rank=0.14123239,state="AZ"},{rank=0.09016462,state="CA"},
+>    {rank=0.09019309,state="CO"},{rank=0.11877356,state="ID"},
+>    {rank=0.09019309,state="NM"},{rank=0.14095598,state="NV"},
+>    {rank=0.12006924,state="OR"},{rank=0.14098151,state="UT"},
+>    {rank=0.06743651,state="WA"}] : {rank:real, state:string} list
+
 (* 7. Single-Source Shortest Paths (SSSP) ----------------------------
  * In Datalog:
  *   SSSP(x; y: int) :- Edge("start", x); y = 1.

@@ -123,11 +123,17 @@ func sum(arg, zero Val) (Val, error) {
 	}
 	switch list[0].(type) {
 	case float32:
-		var sum float64
+		// Accumulate in float32, rounding at each step, as
+		// morel-java's Z_SUM_REAL does. Summing in float64 and
+		// rounding once is more accurate, but it gives a different
+		// answer, and an iterative query -- a fixed point over a
+		// real-valued rank -- carries the difference into digits
+		// its results print.
+		var sum float32
 		for _, v := range list {
-			sum += float64(asReal(v))
+			sum += asReal(v)
 		}
-		return float32(sum), nil
+		return sum, nil
 	case uint64:
 		var sum uint64
 		for _, v := range list {
