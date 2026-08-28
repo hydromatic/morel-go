@@ -162,4 +162,5 @@ var reservedWords = map[string]bool{
 	"val":       true,
 	"where":     true,
 	"yield":     true,
+	"yieldAll":  true,
 }
