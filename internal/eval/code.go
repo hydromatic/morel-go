@@ -49,8 +49,17 @@ func Constant(v Val) Code {
 	return &constantCode{v: v}
 }
 
+// ConstantChar returns code that yields a fixed character. An
+// int and a char are the same at run time, so a plan cannot tell
+// them apart from the value; the compiler knows, and says so
+// here, and the plan writes the character rather than its code.
+func ConstantChar(c rune) Code {
+	return &constantCode{v: c, isChar: true}
+}
+
 type constantCode struct {
-	v Val
+	v      Val
+	isChar bool
 }
 
 func (c *constantCode) Eval(*Frame) (Val, error) {
@@ -58,6 +67,11 @@ func (c *constantCode) Eval(*Frame) (Val, error) {
 }
 
 func (c *constantCode) Describe() string {
+	if c.isChar {
+		if r, ok := c.v.(rune); ok {
+			return "constant(" + string(r) + ")"
+		}
+	}
 	return "constant(" + PlanString(c.v) + ")"
 }
 
@@ -310,19 +324,29 @@ func (c *applyCode) Describe() string {
 	if name, args := c.curriedSpine(); name != "" {
 		return applyN(name, args)
 	}
-	// A built-in whose argument is a tuple of the arity it expects
-	// is described the same way, with the tuple's elements spread.
-	// (apply2/apply3 have no tail variant.)
 	if c.fnName != "" {
-		if tup, ok := c.arg.(*tupleCode); ok &&
-			len(tup.args) == c.fnArity &&
-			(c.fnArity == 2 || c.fnArity == 3) {
-			return applyN(c.fnName, tup.args)
-		}
-		return c.applyWord() + "(fnValue " + c.fnName +
-			", argCode " + c.arg.Describe() + ")"
+		return c.describeBuiltin()
 	}
 	return c.applyWord() + "(fnCode " + c.fn.Describe() +
+		", argCode " + c.arg.Describe() + ")"
+}
+
+// describeBuiltin describes an application of a named built-in.
+//
+// One whose argument is a tuple of the arity it expects is spread
+// as applyN, like a fully applied curried one. (apply2 and apply3
+// have no tail variant.) A curried one applied to the first of
+// the arguments it expects is an apply1.
+func (c *applyCode) describeBuiltin() string {
+	if tup, ok := c.arg.(*tupleCode); ok &&
+		len(tup.args) == c.fnArity &&
+		(c.fnArity == 2 || c.fnArity == 3) {
+		return applyN(c.fnName, tup.args)
+	}
+	if c.fnCurried > 1 && !c.tail {
+		return applyN(c.fnName, []Code{c.arg})
+	}
+	return c.applyWord() + "(fnValue " + c.fnName +
 		", argCode " + c.arg.Describe() + ")"
 }
 

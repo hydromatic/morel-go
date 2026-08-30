@@ -148,6 +148,18 @@ func (c *compiler) resolveSlot(pat *core.IDPat) (int, bool) {
 	return slot, true
 }
 
+// literalCode is the code of a literal. A char is told apart from
+// an int, which it shares a representation with, so that a plan
+// writes the character rather than its code.
+func literalCode(e *core.Literal) eval.Code {
+	if e.Kind == ast.CharLiteralOp {
+		if r, ok := e.Value.(rune); ok {
+			return eval.ConstantChar(r)
+		}
+	}
+	return eval.Constant(e.Value)
+}
+
 func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch e := exp.(type) {
@@ -208,7 +220,7 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 		}
 		return eval.Tuple(args), nil
 	case *core.Literal:
-		return eval.Constant(e.Value), nil
+		return literalCode(e), nil
 	case *core.Ordinal:
 		// The counter is an ordinary hidden variable of the query
 		// that maintains it, so a use inside a function captures it

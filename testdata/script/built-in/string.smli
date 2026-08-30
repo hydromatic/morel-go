@@ -199,6 +199,8 @@ String.str;
 > val it = fn : char -> string
 String.str #"a";
 > val it = "a" : string
+Sys.plan ();
+> val it = "apply(fnValue String.str, argCode constant(a))" : string
 
 (*) val implode : char list -> string
 String.implode;
@@ -227,6 +229,10 @@ String.map (fn c => if c = #"a" then #"A" else if c = #"c" then #"C" else c) "ab
 > val it = "AbC" : string
 String.map (fn c => if c = #"a" then #"A" else if c = #"c" then #"C" else c) "";
 > val it = "" : string
+Sys.plan ();
+> val it =
+>   "apply2(fnValue String.map, match(c, tailApply(fnCode match(true, constant(A), _, tailApply(fnCode match(true, constant(C), _, stack(offset 1, name c)), argCode apply2(fnValue =, stack(offset 1, name c), constant(c)))), argCode apply2(fnValue =, stack(offset 1, name c), constant(a)))), constant())"
+>   : string
 
 (*) val translate : (char -> string) -> string -> string
 String.translate;
@@ -235,6 +241,10 @@ String.translate (fn c => if c = #"a" then "AA" else if c = #"c" then "CCC" else
 > val it = "AA-CCC" : string
 String.translate (fn c => if c = #"a" then "AA" else if c = #"c" then "CCC" else "-") "";
 > val it = "" : string
+Sys.plan ();
+> val it =
+>   "apply2(fnValue String.translate, match(c, tailApply(fnCode match(true, constant(AA), _, tailApply(fnCode match(true, constant(CCC), _, constant(-)), argCode apply2(fnValue =, stack(offset 1, name c), constant(c)))), argCode apply2(fnValue =, stack(offset 1, name c), constant(a)))), constant())"
+>   : string
 
 (*) val tokens : (char -> bool) -> string -> string list
 String.tokens;
@@ -279,6 +289,8 @@ Sys.plan ();
 (*) Partial evaluation
 val p = String.isPrefix "he";
 > val p = fn : string -> bool
+Sys.plan ();
+> val it = "apply1(fnValue String.isPrefix, constant(he))" : string
 p "hello";
 > val it = true : bool
 p "goodbye";
