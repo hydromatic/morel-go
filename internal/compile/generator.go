@@ -757,7 +757,7 @@ func rangeScanExp(sys *types.System, t types.Type,
 		T: listT,
 		Fn: &core.ID{Pat: &core.IDPat{
 			T:    sys.Fn(sys.List(rangeT), listT),
-			Name: "Range.flatten",
+			Name: rangeFlattenName,
 		}},
 		Arg: &core.List{T: sys.List(rangeT), Args: ctors},
 	}

@@ -282,12 +282,62 @@ func (c *compiler) builtinFnInfo(fnExp core.Exp,
 	}
 }
 
-// flattenElem returns the element type of a reference to
-// "Range.flatten", and false for any other expression. The
-// evaluator has no types, so the domain that an unbounded
-// endpoint stands for has to be settled here.
-func (c *compiler) flattenElem(exp core.Exp) (types.Type, bool) {
-	if BuiltinName(exp) != "Range.flatten" {
+// rangeFlattenName is "Range.flatten", the one enumerator whose
+// argument is a list of ranges rather than a discrete set.
+const rangeFlattenName = "Range.flatten"
+
+// checkDiscreteSetOf refuses "Range.discreteSetOf" over an element
+// type that is not discrete. A discrete set is one whose values can
+// be enumerated and whose ranges merge when they are adjacent, and
+// both need a successor function; "CLOSED ("a", "z")" has neither,
+// so it is a continuous set or nothing.
+//
+// It is checked here, where the element type is known, rather than
+// in the evaluator, which has no types.
+func (c *compiler) checkDiscreteSetOf(e *core.Apply) error {
+	if BuiltinName(e.Fn) != "Range.discreteSetOf" {
+		return nil
+	}
+	fn, isFn := e.Fn.Type().(*types.Fn)
+	if !isFn {
+		return nil
+	}
+	named, isNamed := fn.Result.(*types.Named)
+	if !isNamed || len(named.Args) != 1 {
+		return nil
+	}
+	fault := eval.DiscreteFault(c.sys, named.Args[0])
+	if fault == nil {
+		return nil
+	}
+	return &Error{
+		Span: e.Span,
+		Msg:  "not a discrete type: " + fault.String(),
+	}
+}
+
+// enumeratorElem returns the element type of a reference to a
+// "Range" member that enumerates a domain -- "flatten", "toList",
+// "toBag" -- and false for any other expression. The evaluator has
+// no types, so the domain that an unbounded endpoint stands for,
+// and the counting that decides whether a range is too long to
+// expand, have to be settled here.
+func (c *compiler) enumeratorElem(exp core.Exp) (types.Type, bool) {
+	switch BuiltinName(exp) {
+	case rangeFlattenName, "Range.toList", "Range.toBag":
+	case DsComplementName:
+		// The complement of a discrete set is a discrete set, so its
+		// element is the set's argument rather than a collection's.
+		fn, isFn := exp.Type().(*types.Fn)
+		if !isFn {
+			return nil, false
+		}
+		named, isNamed := fn.Result.(*types.Named)
+		if !isNamed || len(named.Args) != 1 {
+			return nil, false
+		}
+		return named.Args[0], true
+	default:
 		return nil, false
 	}
 	fn, ok := exp.Type().(*types.Fn)
@@ -968,15 +1018,26 @@ func (c *compiler) compileApply(e *core.Apply, tail bool) (eval.Code,
 	if ok || err != nil {
 		return code, err
 	}
+	err = c.checkDiscreteSetOf(e)
+	if err != nil {
+		return nil, err
+	}
 	fn, err := c.compileExp(e.Fn)
 	if err != nil {
 		return nil, err
 	}
-	if elem, ok := c.flattenElem(e.Fn); ok {
-		// "Range.flatten" over a known element type: an endpoint
-		// left unbounded is the end of that type's domain.
-		fn = eval.Constant(eval.RangeFlatten(
-			eval.DiscreteFor(c.sys, elem)))
+	if elem, ok := c.enumeratorElem(e.Fn); ok {
+		// Enumeration over a known element type: an endpoint left
+		// unbounded is the end of that type's domain.
+		d := eval.DiscreteFor(c.sys, elem)
+		switch BuiltinName(e.Fn) {
+		case rangeFlattenName:
+			fn = eval.Constant(eval.RangeFlatten(d))
+		case DsComplementName:
+			fn = eval.Constant(eval.RangeDiscreteComplement(d))
+		default:
+			fn = eval.Constant(eval.RangeToList(d))
+		}
 	}
 	if sumType, ok := sumRef(e.Fn); ok {
 		var zero eval.Val

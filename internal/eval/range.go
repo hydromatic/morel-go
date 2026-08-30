@@ -283,20 +283,24 @@ func predVal(v Val) (Val, bool) {
 }
 
 // firstVal is the least value included by a finite lower bound.
-func firstVal(lo bound) Val {
+// An open bound excludes its own value, so the least included one
+// is the next in the element type's domain -- which is a step the
+// type must make: a bound open on a tuple has no successor that
+// the value alone can give.
+func firstVal(lo bound, d *Discrete) Val {
 	if lo.closed {
 		return lo.val
 	}
-	v, _ := succVal(lo.val)
+	v, _ := stepUp(lo.val, d)
 	return v
 }
 
 // lastVal is the greatest value included by a finite upper bound.
-func lastVal(hi bound) Val {
+func lastVal(hi bound, d *Discrete) Val {
 	if hi.closed {
 		return hi.val
 	}
-	v, _ := predVal(hi.val)
+	v, _ := stepDown(hi.val, d)
 	return v
 }
 
@@ -333,7 +337,7 @@ func connected(a, b interval, discrete bool) bool {
 	if !discrete {
 		return false
 	}
-	last, first := lastVal(a.hi), firstVal(b.lo)
+	last, first := lastVal(a.hi, nil), firstVal(b.lo, nil)
 	if last == nil || first == nil {
 		return false
 	}
@@ -440,20 +444,37 @@ func enumerateInterval(iv interval, d *Discrete) ([]Val, error) {
 	}
 	if d != nil && d.Bounded() {
 		// The domain numbers the values, so the ones between the
-		// endpoints are read off by position; a product has no
-		// successor function of its own.
+		// endpoints are read off by position rather than stepped to.
 		return valuesBetween(first, last, d), nil
 	}
 	out := []Val{first}
 	for cur := first; compareVals(cur, last) != 0; {
-		s, ok := succVal(cur)
+		s, ok := stepUp(cur, d)
 		if !ok {
 			return nil, &MorelError{Exn: ExnDomain}
 		}
 		cur = s
 		out = append(out, cur)
+		if len(out) > 1 && big.NewInt(int64(len(out))).
+			Cmp(RangeMaxLength()) > 0 {
+			// An uncounted domain -- a product with an unbounded
+			// component, say -- cannot say in advance how many values
+			// lie between the endpoints, so the walk is what finds
+			// out that there are too many.
+			return nil, &MorelError{Exn: ExnSize}
+		}
 	}
 	return out, nil
+}
+
+// stepUp is the successor of a value: the element type's, where
+// the type is known, and otherwise the one that a value alone can
+// give, which serves int, char and bool.
+func stepUp(v Val, d *Discrete) (Val, bool) {
+	if d != nil {
+		return d.Succ(v)
+	}
+	return succVal(v)
 }
 
 // valuesBetween lists the values from first to last inclusive, by
@@ -477,21 +498,37 @@ func intervalEnds(iv interval, d *Discrete) (Val, Val, error) {
 	var first, last Val
 	switch {
 	case !iv.lo.inf:
-		first = firstVal(iv.lo)
-	case d != nil && d.Bounded():
-		first = d.Least()
+		first = firstVal(iv.lo, d)
 	default:
-		return nil, nil, &MorelError{Exn: ExnSize}
+		v, ok := domainEnd(d, false)
+		if !ok {
+			return nil, nil, &MorelError{Exn: ExnSize}
+		}
+		first = v
 	}
 	switch {
 	case !iv.hi.inf:
-		last = lastVal(iv.hi)
-	case d != nil && d.Bounded():
-		last = d.Greatest()
+		last = lastVal(iv.hi, d)
 	default:
-		return nil, nil, &MorelError{Exn: ExnSize}
+		v, ok := domainEnd(d, true)
+		if !ok {
+			return nil, nil, &MorelError{Exn: ExnSize}
+		}
+		last = v
 	}
 	return first, last, nil
+}
+
+// domainEnd is the value an unbounded endpoint stands for: the
+// last value of the element type's domain, or its first.
+func domainEnd(d *Discrete, top bool) (Val, bool) {
+	if d == nil {
+		return nil, false
+	}
+	if top {
+		return d.Greatest()
+	}
+	return d.Least()
 }
 
 // checkRangeLength refuses a range with more values than the
@@ -567,7 +604,9 @@ func rangeRangesFn(arg Val) (Val, error) {
 }
 
 // rangeToListFn is "Range.toList ds": the values of a discrete set,
-// in ascending order.
+// in ascending order. As rangeFlattenFn, it knows nothing of the
+// element type; RangeToList is the form the compiler builds where
+// the type is at hand.
 func rangeToListFn(arg Val) (Val, error) {
 	return enumerateRanges(setRangeList(arg), nil)
 }
@@ -576,6 +615,15 @@ func rangeToListFn(arg Val) (Val, error) {
 // a bag.
 func rangeToBagFn(arg Val) (Val, error) {
 	return enumerateRanges(setRangeList(arg), nil)
+}
+
+// RangeToList is "Range.toList" over a known element type, and
+// serves "Range.toBag" too: the two differ in the type of what
+// they return, not in the values.
+func RangeToList(d *Discrete) Fn {
+	return func(arg Val) (Val, error) {
+		return enumerateRanges(setRangeList(arg), d)
+	}
 }
 
 // rangeComplementFn is "Range.complement cs": the continuous set of
@@ -592,6 +640,72 @@ func rangeComplementFn(arg Val) (Val, error) {
 		out[i] = intervalToRange(iv)
 	}
 	return continuousSetVal(out), nil
+}
+
+// RangeDiscreteComplement is "Range.complement ds" over a known
+// element type: the discrete set of everything not in ds.
+//
+// It is the continuous complement with each bound closed. The
+// complement of a closed bound is an open one -- everything
+// outside [1, 3] starts above 3 -- and over a discrete domain
+// "above 3" is "4 or more", so complementing {1..3} ∪ {7..9}
+// gives AT_MOST 0, CLOSED (4, 6), AT_LEAST 10 where a continuous
+// set would keep the open forms. Closing the bounds is what makes
+// the result normalized, so that complementing twice returns the
+// set it started from.
+func RangeDiscreteComplement(d *Discrete) Fn {
+	return func(arg Val) (Val, error) {
+		ranges := setRangeList(arg)
+		ivs := make([]interval, len(ranges))
+		for i, r := range ranges {
+			ivs[i] = rangeToInterval(r)
+		}
+		comp := complementIntervals(ivs)
+		out := make([]Val, 0, len(comp))
+		for _, iv := range comp {
+			closed, empty := closeInterval(iv, d)
+			if empty {
+				// Nothing lies between the bounds: the complement of
+				// {3} within a domain that has no value on one side
+				// of it, say.
+				continue
+			}
+			out = append(out, intervalToRange(closed))
+		}
+		return discreteSetVal(out), nil
+	}
+}
+
+// closeInterval moves each open bound of an interval in to the
+// adjacent value, which a discrete domain has and a continuous one
+// does not. It reports true if the interval turns out to hold no
+// values at all: an open bound at the end of the domain has no
+// value beyond it.
+func closeInterval(iv interval, d *Discrete) (interval, bool) {
+	if !iv.lo.inf && !iv.lo.closed {
+		v, ok := stepUp(iv.lo.val, d)
+		if !ok {
+			return iv, true
+		}
+		iv.lo = closedBound(v)
+	}
+	if !iv.hi.inf && !iv.hi.closed {
+		v, ok := stepDown(iv.hi.val, d)
+		if !ok {
+			return iv, true
+		}
+		iv.hi = closedBound(v)
+	}
+	return iv, emptyInterval(iv)
+}
+
+// stepDown is the predecessor of a value, as stepUp is its
+// successor.
+func stepDown(v Val, d *Discrete) (Val, bool) {
+	if d != nil {
+		return d.Pred(v)
+	}
+	return predVal(v)
 }
 
 // RangeSetContainsFn is "contains s x" on a continuous or

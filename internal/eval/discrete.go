@@ -64,16 +64,6 @@ func (d *Discrete) Counted() bool {
 // when the domain is bounded.
 func (d *Discrete) Size() *big.Int { return d.size }
 
-// Least is the first value of the domain, and Greatest the last;
-// they are the ends that an unbounded endpoint of a range stands
-// for. Both need the domain to be bounded.
-func (d *Discrete) Least() Val { return d.valueAt(big.NewInt(0)) }
-
-// Greatest is the last value of the domain.
-func (d *Discrete) Greatest() Val {
-	return d.valueAt(new(big.Int).Sub(d.size, big.NewInt(1)))
-}
-
 // Ordinal is the position of a value in the domain, counting from
 // zero.
 func (d *Discrete) Ordinal(v Val) *big.Int {
@@ -85,6 +75,93 @@ func (d *Discrete) valueAt(n *big.Int) Val {
 	return valueAt(d.sys, d.t, n)
 }
 
+// constructors are a datatype's constructors in the order that
+// compareVals puts their values in, which is the order they were
+// declared in. types.System.Constructors sorts by name, and a
+// domain that numbered "order" alphabetically -- EQUAL, GREATER,
+// LESS -- would disagree with every comparison made of it.
+//
+// Each argument type is the instance's, not the datatype's: the
+// constructors of "(order, bool) either" take an "order" and a
+// "bool", where the declaration says "'a" and "'b". A domain
+// cannot count a type variable.
+func constructors(sys *types.System, t *types.Named,
+) []types.Constructor {
+	cons := sys.Constructors(t.Name)
+	slices.SortFunc(cons, func(a, b types.Constructor) int {
+		return a.Ordinal - b.Ordinal
+	})
+	if len(t.Args) > 0 {
+		for i := range cons {
+			if cons[i].Arg != nil {
+				cons[i].Arg = sys.Substitute(cons[i].Arg, t.Args)
+			}
+		}
+	}
+	return cons
+}
+
+// DiscreteFault is the type that stops t from being a discrete
+// type — one whose values have a successor, so that a range over
+// it can be enumerated — and nil if t is discrete. int, char, bool
+// and unit are discrete; real, string and word are not.
+//
+// A product is discrete only if every component is, and the fault
+// is the component, which is the one at fault. A datatype is
+// discrete only if every constructor is nullary or wraps a
+// discrete type, and the fault is the datatype, whose constructors
+// are its own affair — unless the fault lies within a product,
+// which names itself either way.
+func DiscreteFault(sys *types.System, t types.Type) types.Type {
+	fault, _ := discreteFault(sys, t)
+	return fault
+}
+
+// discreteFault also reports whether the fault was found inside a
+// product, in which case a datatype that contains it reports the
+// fault rather than itself.
+func discreteFault(sys *types.System, t types.Type) (types.Type, bool) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch t := t.(type) {
+	case *types.Named:
+		for _, con := range constructors(sys, t) {
+			if con.Arg == nil {
+				continue
+			}
+			fault, inProduct := discreteFault(sys, con.Arg)
+			if fault == nil {
+				continue
+			}
+			if inProduct {
+				return fault, true
+			}
+			return t, false
+		}
+		return nil, false
+	case *types.Primitive:
+		switch t {
+		case sys.Bool, sys.Char, sys.Int, sys.Unit:
+			return nil, false
+		}
+		return t, false
+	case *types.Record:
+		for _, f := range t.Fields {
+			if fault, _ := discreteFault(sys, f.Type); fault != nil {
+				return fault, true
+			}
+		}
+		return nil, false
+	case *types.Tuple:
+		for _, arg := range t.Args {
+			if fault, _ := discreteFault(sys, arg); fault != nil {
+				return fault, true
+			}
+		}
+		return nil, false
+	}
+	return t, false
+}
+
 // domainSize is the number of values of a type, or nil where they
 // have no end. A product is the product of its parts, and a
 // datatype the sum of its constructors; either is unbounded as
@@ -94,7 +171,7 @@ func domainSize(sys *types.System, t types.Type) *big.Int {
 	switch t := t.(type) {
 	case *types.Named:
 		total := big.NewInt(0)
-		for _, con := range sys.Constructors(t.Name) {
+		for _, con := range constructors(sys, t) {
 			if con.Arg == nil {
 				total.Add(total, big.NewInt(1))
 				continue
@@ -163,7 +240,7 @@ func ordinalOf(sys *types.System, t types.Type, v Val) *big.Int {
 			return big.NewInt(0)
 		}
 		total := big.NewInt(0)
-		for _, c := range sys.Constructors(t.Name) {
+		for _, c := range constructors(sys, t) {
 			if c.Ordinal == con.Ordinal {
 				if c.Arg == nil {
 					return total
@@ -239,7 +316,7 @@ func valueAt(sys *types.System, t types.Type, n *big.Int) Val {
 	switch t := t.(type) {
 	case *types.Named:
 		rest := new(big.Int).Set(n)
-		for _, c := range sys.Constructors(t.Name) {
+		for _, c := range constructors(sys, t) {
 			block := big.NewInt(1)
 			if c.Arg != nil {
 				block = domainSize(sys, c.Arg)

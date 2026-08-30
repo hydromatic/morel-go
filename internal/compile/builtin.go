@@ -264,28 +264,44 @@ func OverloadMethods(sys *types.System) ([]MethodInfo, []Binding) {
 	if err != nil {
 		panic(err)
 	}
+	dsComplementT, err := sys.Parse("'a discrete_set -> 'a discrete_set")
+	if err != nil {
+		panic(err)
+	}
 	methods := []MethodInfo{
 		{
-			Type: csT, Structure: "Range", Name: "contains",
+			Type: csT, Structure: rangeStructure, Name: "contains",
 			Target: CsContainsName,
 		},
 		{
-			Type: dsT, Structure: "Range", Name: "contains",
+			Type: dsT, Structure: rangeStructure, Name: "contains",
 			Target: DsContainsName,
+		},
+		{
+			Type: dsComplementT, Structure: rangeStructure,
+			Name: "complement", Target: DsComplementName,
 		},
 	}
 	bindings := []Binding{
 		{Name: CsContainsName, Type: csT},
 		{Name: DsContainsName, Type: dsT},
+		{Name: DsComplementName, Type: dsComplementT},
 	}
 	return methods, bindings
 }
 
-// The hidden bindings behind Range.contains on a continuous and a
-// discrete set; the kernel registers their implementations.
+// rangeStructure is the structure the set methods belong to.
+const rangeStructure = "Range"
+
+// The hidden bindings behind the Range members that a signature
+// can only declare once -- "contains" over a continuous and a
+// discrete set, and "complement", whose declared form is the
+// continuous one. morel-java hides the same members the same way.
+// The kernel registers their implementations.
 const (
-	CsContainsName = "Range.$csContains"
-	DsContainsName = "Range.$dsContains"
+	CsContainsName   = "Range.$csContains"
+	DsContainsName   = "Range.$dsContains"
+	DsComplementName = "Range.$dsComplement"
 )
 
 // bagsToCollections replaces each bag in a type with a collection

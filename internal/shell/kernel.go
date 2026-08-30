@@ -246,6 +246,9 @@ func NewKernel(name string) *Kernel {
 	// The Range.contains overloads on sets (OverloadMethods).
 	values[compile.CsContainsName] = eval.RangeSetContainsFn
 	values[compile.DsContainsName] = eval.RangeSetContainsFn
+	// A placeholder: the compiler replaces it with the form that
+	// knows the element type, since a complement needs to step.
+	values[compile.DsComplementName] = eval.RangeDiscreteComplement(nil)
 	// Build the structure records first, so that a structure defined
 	// in embedded Morel source can reference any other structure;
 	// then evaluate those sources and rebuild, wiring in the
