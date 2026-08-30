@@ -202,7 +202,7 @@ Sys.parseTree "f : int -> int -> int";
 Sys.parseTree "x : int * bool * int";
 > val it = "(annotatedExp (id x) (tupleType (named int) (named bool) (named int)))" : string
 Sys.parseTree "x : {a: int, b: string}";
-> val it = "(annotatedExp (id x) (record_type {a: int, b: string}))" : string
+> val it = "(annotatedExp (id x) (record_type {a:int, b:string}))" : string
 Sys.parseTree "x : ('a, 'b) pair";
 > val it = "(annotatedExp (id x) (named pair (tyVar 'a) (tyVar 'b)))" : string
 Sys.parseTree "x : (int -> int) list";

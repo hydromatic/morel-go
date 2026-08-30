@@ -188,7 +188,7 @@ func unparseType(b *strings.Builder, t Type, comma string) {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString(f.Label + ": ")
+			b.WriteString(f.Label + ":")
 			unparseType(b, f.Type, comma)
 		}
 		b.WriteString("}")

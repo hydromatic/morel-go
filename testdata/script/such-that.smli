@@ -774,6 +774,28 @@ yield {dno = #deptno v, name = #dname v};
 >
 > val it : {dno:int, name:string} list
 
+(* An unbounded scan may bear a type annotation, which is often what makes
+ * the extent known: 'from a: t' behaves as 'from a' where a has type t. *)
+type pair = {b: bool, u: unit};
+> type pair = {b:bool, u:unit}
+from p: pair;
+> b     u
+> ----- --
+> false ()
+> true  ()
+>
+> val it : {b:bool, u:unit} list
+from i in [1, 2], p: pair where p.b;
+> i p
+>   b    u
+> - ---- --
+> 1 true ()
+> 2 true ()
+>
+> val it : {i:int, p:{b:bool, u:unit}} list
+exists p: pair where p.b;
+> val it = true : bool
+
 (* The pattern of an unbounded scan may be a tuple or a record, and then means
  * the same as one unbounded scan per component: the extent of a product type
  * is the product of its components' extents. Each component is grounded by

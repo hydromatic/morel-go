@@ -415,7 +415,7 @@ func TestParseTypeAnnotations(t *testing.T) {
 		"(annotatedExp (id x) (tupleType (named int) "+
 			"(named bool) (named int)))")
 	checkExpr(t, "x : {a: int, b: string}",
-		"(annotatedExp (id x) (record_type {a: int, b: string}))")
+		"(annotatedExp (id x) (record_type {a:int, b:string}))")
 	checkExpr(t, "x : 'a",
 		"(annotatedExp (id x) (tyVar 'a))")
 	checkExpr(t, "x : ('a, 'b) pair",

@@ -414,6 +414,20 @@ SOME 1 = NONE;
 LESS = EQUAL;
 > val it = false : bool
 
+(*) Datatype with a record member.
+datatype foo = Foo of {a: int, b: string} | Bar of int;
+> datatype foo = Foo of {a:int, b:string} | Bar of int
+fun baz (Foo r) = #a r
+  | baz (Bar i) = i * 2;
+> val baz = fn : foo -> int
+fun baz (Foo r) = r.a
+  | baz (Bar i) = i * 2;
+> val baz = fn : foo -> int
+baz (Bar 3);
+> val it = 6 : int
+baz (Foo {b = "a", a = 4});
+> val it = 4 : int
+
 (* Printing a constructed value: a compound argument is
  * parenthesized, an atom is not. *)
 SOME (SOME 4);
