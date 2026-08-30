@@ -44,6 +44,10 @@ type TypeMap struct {
 	// that the type resolver replaced it with. The core resolver
 	// converts those, never the record.
 	desugared map[*ast.Record]ast.Expr
+	// methodCalls maps a postfix method call — one whose receiver
+	// only inference typed — to the structure call it desugars to.
+	// The core resolver converts that, never the call.
+	methodCalls map[*ast.Apply]ast.Expr
 }
 
 // TypeOf returns the type deduced for a node. Unification

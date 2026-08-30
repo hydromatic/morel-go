@@ -393,12 +393,34 @@ func (p *Parser) applyChain() (ast.Expr, error) {
 			return nil, err
 		}
 	}
-	for isAtomStart(p.tok.Kind) {
-		arg, err := p.atomSuffixed()
+	// Arguments and field selections interleave, so that a selection
+	// that follows an argument applies to the application built so
+	// far: "(CLOSED (3, 7)).contains 5" may be written without the
+	// parentheses, and a postfix method call chains. A bare
+	// identifier is the exception -- "f x.y" is "f (x.y)" -- and
+	// argAtom keeps it.
+	for {
+		if isAtomStart(p.tok.Kind) {
+			arg, err := p.argAtom()
+			if err != nil {
+				return nil, err
+			}
+			e = ast.NewApply(spanOver(e, arg), e, arg)
+			continue
+		}
+		if p.tok.Kind != token.Dot && p.tok.Kind != token.QDot {
+			break
+		}
+		if _, isID := e.(*ast.ID); isID {
+			// "x.f" was already taken by the head atom; a name here
+			// is a module reference, which the head handles.
+			break
+		}
+		var err error
+		e, err = p.selection(e)
 		if err != nil {
 			return nil, err
 		}
-		e = ast.NewApply(spanOver(e, arg), e, arg)
 	}
 	return e, nil
 }
@@ -414,36 +436,67 @@ func (p *Parser) atomSuffixed() (ast.Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+	return p.suffixed(e)
+}
+
+// suffixed applies the field selections that follow an expression.
+func (p *Parser) suffixed(e ast.Expr) (ast.Expr, error) {
 	for p.tok.Kind == token.Dot || p.tok.Kind == token.QDot {
-		safe := p.tok.Kind == token.QDot
-		err := p.next()
+		var err error
+		e, err = p.selection(e)
 		if err != nil {
 			return nil, err
 		}
-		if p.tok.Kind != token.Ident &&
-			p.tok.Kind != token.IntLit &&
-			p.tok.Kind != token.QuotedIdent {
-			return nil, p.errorf("expected identifier, found " +
-				p.tok.Kind.String())
-		}
-		field := p.tok
-		fieldName := field.Text
-		if field.Kind == token.QuotedIdent {
-			fieldName = unquoteIdent(field.Text)
-		}
-		err = p.next()
-		if err != nil {
-			return nil, err
-		}
-		s := ast.NewRecordSelector(field.Span, fieldName)
-		s.Safe = safe
-		span := token.Span{
-			Start: e.Span().Start,
-			End:   field.Span.End,
-		}
-		e = ast.NewApply(span, s, e)
 	}
 	return e, nil
+}
+
+// argAtom parses an atom in argument position. A bare identifier
+// takes its field selections with it, so that "f x.y" is "f (x.y)";
+// any other atom leaves them to the enclosing application, so that
+// "xs.drop(2).drop 1" reads the second ".drop" as applying to
+// "xs.drop(2)" rather than to the "(2)".
+func (p *Parser) argAtom() (ast.Expr, error) {
+	e, err := p.atom()
+	if err != nil {
+		return nil, err
+	}
+	if _, isID := e.(*ast.ID); !isID {
+		return e, nil
+	}
+	return p.suffixed(e)
+}
+
+// selection parses one field selection ".f", or the
+// safe-navigation form "?.f", applied to an expression.
+func (p *Parser) selection(e ast.Expr) (ast.Expr, error) {
+	safe := p.tok.Kind == token.QDot
+	err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	if p.tok.Kind != token.Ident &&
+		p.tok.Kind != token.IntLit &&
+		p.tok.Kind != token.QuotedIdent {
+		return nil, p.errorf("expected identifier, found " +
+			p.tok.Kind.String())
+	}
+	field := p.tok
+	fieldName := field.Text
+	if field.Kind == token.QuotedIdent {
+		fieldName = unquoteIdent(field.Text)
+	}
+	err = p.next()
+	if err != nil {
+		return nil, err
+	}
+	s := ast.NewRecordSelector(field.Span, fieldName)
+	s.Safe = safe
+	span := token.Span{
+		Start: e.Span().Start,
+		End:   field.Span.End,
+	}
+	return ast.NewApply(span, s, e), nil
 }
 
 var literalOps = map[token.Kind]ast.Op{

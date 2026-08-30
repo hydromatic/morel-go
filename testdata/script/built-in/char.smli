@@ -94,6 +94,8 @@ Char.ord;
 > val it = fn : char -> int
 Char.ord #"A";
 > val it = 65 : int
+#"A".ord ();
+> val it = 65 : int
 
 (* A character is a byte, and a "\ddd" escape denotes that byte,
  * whatever its value. *)
@@ -123,6 +125,8 @@ ord #"e";
 Char.succ;
 > val it = fn : char -> char
 Char.succ #"A";
+> val it = #"B" : char
+#"A".succ ();
 > val it = #"B" : char
 Char.succ (chr 254);
 > val it = #"\255" : char
@@ -163,11 +167,15 @@ Char.isAlpha;
 > val it = fn : char -> bool
 Char.isAlpha #"A";
 > val it = true : bool
+#"A".isAlpha ();
+> val it = true : bool
 
 (* [isDigit c] returns true if c is a decimal digit (0 to 9). *)
 Char.isDigit;
 > val it = fn : char -> bool
 Char.isDigit #"A";
+> val it = false : bool
+#"A".isDigit ();
 > val it = false : bool
 
 (* [isHexDigit c] returns true if c is a hexadecimal digit (0 to 9 or
@@ -225,6 +233,8 @@ Char.isAscii;
 Char.toLower;
 > val it = fn : char -> char
 Char.toLower #"A";
+> val it = #"a" : char
+#"A".toLower ();
 > val it = #"a" : char
 Char.toLower #"a";
 > val it = #"a" : char
@@ -330,6 +340,8 @@ Char.fromString "\\009";
 Char.toString;
 > val it = fn : char -> string
 Char.toString #"A";
+> val it = "A" : string
+#"A".toString ();
 > val it = "A" : string
 Char.toString #"\\";
 > val it = "\\\\" : string
@@ -549,6 +561,8 @@ Char.toCString (chr 200);
 > val it = "\\310" : string
 Char.toCString (chr 255);
 > val it = "\\377" : string
+#"A".toCString ();
+> val it = "A" : string
 
 (*) toCString and fromCString are inverses.
 Char.fromCString (Char.toCString (chr 200));
@@ -632,6 +646,8 @@ Char.isOctDigit #"8";
 > val it = false : bool
 Char.isOctDigit #"a";
 > val it = false : bool
+#"7".isOctDigit ();
+> val it = true : bool
 
 (* [scan getc strm] scans a character, or an SML escape sequence denoting a
  * character, from a prefix of a character stream. Unlike the other "scan"

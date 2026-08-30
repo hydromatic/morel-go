@@ -86,6 +86,16 @@ func (e *fileTypeEnv) get(r *typeResolver, name string) (
 	return r.typeTerm(f.Type(e.sys), map[int]*unify.Var{}), true
 }
 
+// peek reports false for a name that denotes a file: its term is
+// built afresh at each lookup, and expanding the file to build one
+// is a side effect.
+func (e *fileTypeEnv) peek(name string) (unify.Term, bool) {
+	if e.files.file(name) != nil {
+		return nil, false
+	}
+	return e.parent.peek(name)
+}
+
 func (e *fileTypeEnv) overloads(name string) []*unify.Var {
 	return e.parent.overloads(name)
 }

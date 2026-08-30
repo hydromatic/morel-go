@@ -52,6 +52,8 @@ Sys.plan ();
 (*) val isSome : 'a option -> bool
 Option.isSome (SOME 1);
 > val it = true : bool
+(SOME 1).isSome ();
+> val it = true : bool
 Option.isSome NONE;
 > val it = false : bool
 Sys.plan ();
@@ -59,6 +61,8 @@ Sys.plan ();
 
 (*) val valOf : 'a option -> 'a
 Option.valOf (SOME 1);
+> val it = 1 : int
+(SOME 1).valOf ();
 > val it = 1 : int
 (*) SML/NJ emits an additional warning:
 (*

@@ -110,6 +110,8 @@ Relational.sum (bag [1.0, 2.5, 3.5]);
 
 Relational.max (bag [1, 2, 3]);
 > val it = 3 : int
+(bag [1, 2, 3]).max ();
+> val it = 3 : int
 Relational.max (bag [1.0, 2.5, 3.5]);
 > val it = 3.5 : real
 Relational.max (bag ["a", "bc", "ab"]);
@@ -129,6 +131,8 @@ Relational.max (bag [false, true]);
 > val it = true : bool
 
 Relational.min (bag [1, 2, 3]);
+> val it = 1 : int
+(bag [1, 2, 3]).min ();
 > val it = 1 : int
 Relational.min (bag [1.0, 2.5, 3.5]);
 > val it = 1 : real

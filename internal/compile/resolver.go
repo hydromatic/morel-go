@@ -522,6 +522,11 @@ func (r *resolver) toLiteral(literal *ast.Literal,
 func (r *resolver) toApply(env *coreEnv, apply *ast.Apply,
 	t types.Type,
 ) (core.Exp, error) {
+	if exp, isMethod := r.typeMap.methodCalls[apply]; isMethod {
+		// A postfix method call: convert the structure call the type
+		// resolver dispatched it to, never the call as parsed.
+		return r.toExp(env, exp)
+	}
 	if sel, ok := apply.Fn.(*ast.RecordSelector); ok && sel.Safe {
 		return r.toSafeNav(env, apply, sel, t)
 	}

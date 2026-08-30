@@ -25,6 +25,12 @@ type typeEnv interface {
 	// get returns the term bound to a name, or false if the name
 	// is not in scope.
 	get(r *typeResolver, name string) (unify.Term, bool)
+	// peek is get without its side effects: it creates no
+	// variables, and instantiates no overload predicates. It is for
+	// inspecting the shape of a type, such as the head constructor
+	// of a postfix method call's receiver, and reports false for a
+	// name whose term can only be had by instantiating it.
+	peek(name string) (unify.Term, bool)
 	// overloads returns the instance variables of an overloaded
 	// name (an "over" name with its "val inst" instances), or nil
 	// if the name is not overloaded.
@@ -37,6 +43,10 @@ type emptyTypeEnv struct{}
 func (emptyTypeEnv) get(*typeResolver, string) (unify.Term,
 	bool,
 ) {
+	return nil, false
+}
+
+func (emptyTypeEnv) peek(string) (unify.Term, bool) {
 	return nil, false
 }
 
@@ -58,6 +68,13 @@ func (e *bindTypeEnv) get(r *typeResolver, name string) (
 	return e.parent.get(r, name)
 }
 
+func (e *bindTypeEnv) peek(name string) (unify.Term, bool) {
+	if name == e.name {
+		return e.term, true
+	}
+	return e.parent.peek(name)
+}
+
 func (e *bindTypeEnv) overloads(name string) []*unify.Var {
 	return e.parent.overloads(name)
 }
@@ -73,6 +90,10 @@ func (e *overTypeEnv) get(r *typeResolver, name string) (
 	unify.Term, bool,
 ) {
 	return e.parent.get(r, name)
+}
+
+func (e *overTypeEnv) peek(name string) (unify.Term, bool) {
+	return e.parent.peek(name)
 }
 
 func (e *overTypeEnv) overloads(name string) []*unify.Var {
@@ -94,6 +115,10 @@ func (e *instTypeEnv) get(r *typeResolver, name string) (
 	unify.Term, bool,
 ) {
 	return e.parent.get(r, name)
+}
+
+func (e *instTypeEnv) peek(name string) (unify.Term, bool) {
+	return e.parent.peek(name)
 }
 
 func (e *instTypeEnv) overloads(name string) []*unify.Var {
@@ -166,6 +191,16 @@ func (e *schemeTypeEnv) get(r *typeResolver, name string) (
 	return e.parent.get(r, name)
 }
 
+// peek returns the scheme's resolved term without refreshing its
+// generalizable variables: the head constructor of a use is the head
+// constructor of the scheme.
+func (e *schemeTypeEnv) peek(name string) (unify.Term, bool) {
+	if name == e.name {
+		return e.resolved, true
+	}
+	return e.parent.peek(name)
+}
+
 func (e *schemeTypeEnv) overloads(name string) []*unify.Var {
 	return e.parent.overloads(name)
 }
@@ -210,6 +245,16 @@ func (e *bindingTypeEnv) get(r *typeResolver, name string) (
 		return r.typeTerm(b.Type, map[int]*unify.Var{}), true
 	}
 	return e.parent.get(r, name)
+}
+
+// peek reports false for a top-level binding: producing its term
+// means instantiating it. A method receiver named by one is typed
+// structurally instead, by MethodRegistry.receiverHead.
+func (e *bindingTypeEnv) peek(name string) (unify.Term, bool) {
+	if _, ok := e.bindings[name]; ok {
+		return nil, false
+	}
+	return e.parent.peek(name)
 }
 
 func (e *bindingTypeEnv) overloads(name string) []*unify.Var {

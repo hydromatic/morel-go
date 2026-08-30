@@ -159,6 +159,22 @@ Word.fromString "0X10";
 Word.fromString "0xG";
 > val it = SOME 0wx0 : word option
 
+(*) Postfix (method) syntax
+(0wxff).andb (0wx0f);
+> val it = 0wxF : word
+(0wxf0).orb (0wx0f);
+> val it = 0wxFF : word
+(0wxff).xorb (0wx0f);
+> val it = 0wxF0 : word
+(0w3).compare (0w7);
+> val it = LESS : order
+(0w3).min (0w7);
+> val it = 0wx3 : word
+(0w3).max (0w7);
+> val it = 0wx7 : word
+(0w255).toString ();
+> val it = "FF" : string
+
 (* "scan" reads a value from a prefix of a character stream, after
  * skipping whitespace. The expected values are those of SML/NJ. *)
 fun reader s i =

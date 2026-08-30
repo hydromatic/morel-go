@@ -64,7 +64,7 @@ type Resolved struct {
 func Deduce(sys *types.System, bindings []Binding,
 	overloads *OverloadEnv, decl ast.Decl,
 ) (*Resolved, error) {
-	return DeduceFiles(sys, bindings, overloads, decl, nil)
+	return DeduceFiles(sys, bindings, overloads, decl, nil, nil)
 }
 
 // maxRetries bounds the passes that DeduceFiles makes. Each retry
@@ -85,13 +85,16 @@ const maxRetries = 16
 //
 // The fields of the base of a record modifier are discovered the
 // same way, and fieldNames carries them from one pass to the next.
+// A postfix method call whose receiver only inference types is
+// dispatched during the pass, against methods (which may be nil).
 func DeduceFiles(sys *types.System, bindings []Binding,
 	overloads *OverloadEnv, decl ast.Decl, files *Files,
+	methods *MethodRegistry,
 ) (*Resolved, error) {
 	fieldNames := map[ast.Expr][]string{}
 	for range maxRetries {
 		resolved, learned, err := deduceOnce(sys, bindings,
-			overloads, decl, files, fieldNames, false)
+			overloads, decl, files, fieldNames, methods, false)
 		if !learned {
 			return resolved, err
 		}
@@ -99,7 +102,7 @@ func DeduceFiles(sys *types.System, bindings []Binding,
 	// The bound was reached. Make a last pass, and report whatever
 	// it says rather than looping for ever.
 	resolved, _, err := deduceOnce(sys, bindings, overloads, decl,
-		files, fieldNames, true)
+		files, fieldNames, methods, true)
 	return resolved, err
 }
 
@@ -110,7 +113,8 @@ func DeduceFiles(sys *types.System, bindings []Binding,
 // discovery, so that it always returns a result or an error.
 func deduceOnce(sys *types.System, bindings []Binding,
 	overloads *OverloadEnv, decl ast.Decl, files *Files,
-	fieldNames map[ast.Expr][]string, final bool,
+	fieldNames map[ast.Expr][]string, methods *MethodRegistry,
+	final bool,
 ) (*Resolved, bool, error) {
 	r := &typeResolver{
 		sys:          sys,
@@ -119,6 +123,9 @@ func deduceOnce(sys *types.System, bindings []Binding,
 		files:        files,
 		fieldNames:   fieldNames,
 		desugared:    map[*ast.Record]ast.Expr{},
+		methods:      methods,
+		methodCalls:  map[*ast.Apply]ast.Expr{},
+		headSubstAt:  -1,
 		recordFields: map[*ast.Record][]labelTerm{},
 	}
 	var env typeEnv = emptyTypeEnv{}
@@ -212,12 +219,13 @@ func (r *typeResolver) unify(sys *types.System, decl ast.Decl,
 			continue
 		}
 		typeMap := &TypeMap{
-			sys:       sys,
-			nodeTerm:  r.nodeTerm,
-			subst:     subst,
-			residuals: subst.Residuals,
-			bindings:  r.bindings,
-			desugared: r.desugared,
+			sys:         sys,
+			nodeTerm:    r.nodeTerm,
+			subst:       subst,
+			residuals:   subst.Residuals,
+			bindings:    r.bindings,
+			desugared:   r.desugared,
+			methodCalls: r.methodCalls,
 		}
 		err = r.checkRecordModifiers()
 		if err != nil {
@@ -549,6 +557,21 @@ type typeResolver struct {
 	// the ones that had their field names when this pass reached
 	// them.
 	desugared map[*ast.Record]ast.Expr
+	// methods dispatches a postfix method call; nil in a session
+	// that has no signature. Only calls whose receiver this pass
+	// types reach it — MethodRegistry.RewriteDecl has rewritten the
+	// rest before the pass began.
+	methods *MethodRegistry
+	// methodCalls maps a postfix method call to the structure call
+	// it desugars to; the core resolver follows it, as it does
+	// desugared.
+	methodCalls map[*ast.Apply]ast.Expr
+	// headSubst is the solve that typed the last method receiver
+	// the constraints did not obviously type, and headSubstAt the
+	// number of constraints it was made from — -1 for no solve yet,
+	// and a nil headSubst for one that failed.
+	headSubst   *unify.Substitution
+	headSubstAt int
 	// desugarLearned records that a record's fields became known
 	// during this pass. The tree this pass deduced still contains
 	// the record, so the pass is stale and the caller makes another,
@@ -2145,6 +2168,19 @@ func checkIntRange(node ast.Node, value string) error {
 func (r *typeResolver) deduceApply(env typeEnv, apply *ast.Apply,
 	v *unify.Var,
 ) error {
+	if exp, isMethod := r.methodApply(env, apply); isMethod {
+		// "receiver.method arg", where only inference knows the
+		// receiver's type. This pass does not rewrite the tree, so
+		// record the structure call and let the core resolver follow
+		// it. The receiver is elaborated once, as part of that call.
+		r.methodCalls[apply] = exp
+		err := r.deduceExp(env, exp, v)
+		if err != nil {
+			return err
+		}
+		r.reg(apply, v)
+		return nil
+	}
 	if id, ok := apply.Fn.(*ast.ID); ok {
 		if insts := env.overloads(id.Name); insts != nil {
 			return r.deduceOverloadApply(env, apply, insts, v)

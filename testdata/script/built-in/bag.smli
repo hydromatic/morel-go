@@ -56,11 +56,17 @@ Bag.null;
 > val it = fn : 'a bag -> bool
 Bag.null (bag []);
 > val it = true : bool
+(bag []).null ();
+> val it = true : bool
 Bag.null (bag [1]);
+> val it = false : bool
+(bag [1]).null ();
 > val it = false : bool
 
 (*) val only : 'a bag -> 'a
 Bag.only (bag [2]);
+> val it = 2 : int
+(bag [2]).only ();
 > val it = 2 : int
 Bag.only (bag [1, 2, 3]);
 > uncaught exception Size [size]
@@ -74,6 +80,8 @@ Bag.nth (bag [1, 2, 3], 0);
 > val it = 1 : int
 Bag.nth (bag [1, 2, 3], 2);
 > val it = 3 : int
+(bag [1, 2, 3]).nth 1;
+> val it = 2 : int
 Bag.nth (bag [1, 2, 3], 3);
 > uncaught exception Subscript [subscript out of bounds]
 >   raised at: stdIn:1.1-1.27
@@ -87,6 +95,8 @@ Bag.length;
 Bag.length (bag []);
 > val it = 0 : int
 Bag.length (bag [1,2]);
+> val it = 2 : int
+(bag [1,2]).length ();
 > val it = 2 : int
 
 (*) val fromList : 'a list -> 'a bag
@@ -119,6 +129,8 @@ Bag.`@` (bag [], bag []);
 Bag.hd;
 > val it = fn : 'a bag -> 'a
 Bag.hd (bag [1,2,3]);
+> val it = 1 : int
+(bag [1,2,3]).hd ();
 > val it = 1 : int
 Bag.hd (bag []);
 > uncaught exception Empty
@@ -163,6 +175,8 @@ Bag.drop;
 Bag.drop (bag [1,2,3], 0);
 > val it = [1,2,3] : int bag
 Bag.drop (bag [1,2,3], 1);
+> val it = [2,3] : int bag
+(bag [1,2,3]).drop 1;
 > val it = [2,3] : int bag
 Bag.drop (bag [1,2,3], 3);
 > val it = [] : int bag
