@@ -35,6 +35,12 @@ type System struct {
 	conCount  map[string]int
 	aliases   map[string]Alias
 
+	// typeofResolver deduces the type of the expression of a
+	// "typeof" written inside a type declaration. The shell sets
+	// it; a system with no evaluator behind it leaves it nil, and
+	// "typeof" there is an error as it was.
+	typeofResolver func(ast.Expr) (Type, error)
+
 	// A datatype has an internal name that is unique to its
 	// declaration, so a later declaration that reuses the name does
 	// not conflate the two: the first "d" is "d", a redefinition is
@@ -173,6 +179,15 @@ func (s *System) DeclareAlias(name string, tyVars []string,
 	body ast.Type,
 ) {
 	s.aliases[name] = Alias{TyVars: tyVars, Body: body}
+}
+
+// SetTypeofResolver supplies the deduction that a "typeof" in a
+// type declaration needs. A type declaration is elaborated before
+// anything in it is deduced, and a name in its body refers to the
+// environment before the declaration, so the expression is closed
+// and its type can be deduced on its own.
+func (s *System) SetTypeofResolver(f func(ast.Expr) (Type, error)) {
+	s.typeofResolver = f
 }
 
 // LookupAlias returns the alias with the given name, if any.

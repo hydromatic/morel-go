@@ -92,6 +92,67 @@ func SubstituteType(t Type, subst map[string]Type) Type {
 	}
 }
 
+// MapTypeofs replaces each "typeof e" in a type with what f
+// returns for e, and leaves the rest of the type as it was. A
+// type declaration echoes the type it means -- "type t = int",
+// not "type t = typeof mi".
+func MapTypeofs(t Type, f func(Expr) (Type, error)) (Type, error) {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch n := t.(type) {
+	case *ExpressionType:
+		return f(n.Exp)
+	case *FnType:
+		param, err := MapTypeofs(n.Param, f)
+		if err != nil {
+			return nil, err
+		}
+		result, err := MapTypeofs(n.Result, f)
+		if err != nil {
+			return nil, err
+		}
+		return NewFnType(n.Span(), param, result), nil
+	case *NamedType:
+		args, err := mapTypeofList(n.Args, f)
+		if err != nil {
+			return nil, err
+		}
+		return NewNamedType(n.Span(), n.Name, args), nil
+	case *RecordType:
+		fields := make([]TypeField, len(n.Fields))
+		for i, fld := range n.Fields {
+			ft, err := MapTypeofs(fld.Type, f)
+			if err != nil {
+				return nil, err
+			}
+			fields[i] = TypeField{Label: fld.Label, Type: ft}
+		}
+		return NewRecordType(n.Span(), fields), nil
+	case *TupleType:
+		args, err := mapTypeofList(n.Args, f)
+		if err != nil {
+			return nil, err
+		}
+		return NewTupleType(n.Span(), args), nil
+	default:
+		return t, nil
+	}
+}
+
+// mapTypeofList maps MapTypeofs over a list of types.
+func mapTypeofList(ts []Type, f func(Expr) (Type, error)) (
+	[]Type, error,
+) {
+	out := make([]Type, len(ts))
+	for i, t := range ts {
+		u, err := MapTypeofs(t, f)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = u
+	}
+	return out, nil
+}
+
 // MapNamedTypeNames returns a copy of t with every named type's name
 // replaced by f(name); f is applied to each NamedType (including
 // "list") and should return the name unchanged when it does not want

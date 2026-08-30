@@ -76,6 +76,14 @@ type converter struct {
 func (c *converter) convert(t ast.Type) (Type, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch n := t.(type) {
+	case *ast.ExpressionType:
+		// "typeof e" in a type declaration: the type is whatever
+		// e has in the environment before the declaration.
+		if c.sys.typeofResolver == nil {
+			return nil, fmt.Errorf("cannot convert type %s",
+				t.Op())
+		}
+		return c.sys.typeofResolver(n.Exp)
 	case *ast.FnType:
 		return c.convert2(n.Param, n.Result, c.sys.Fn)
 	case *ast.NamedType:

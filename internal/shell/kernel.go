@@ -126,6 +126,10 @@ type Kernel struct {
 	// planExDecl is the most recent statement's resolved (not yet
 	// optimized) declaration; Sys.planEx re-plans it.
 	planExDecl core.Decl
+
+	// typeofTypes caches the type deduced for the expression of a
+	// "typeof" in a type declaration; see deduceTypeof.
+	typeofTypes map[ast.Expr]types.Type
 	// bootBindings and bootValues snapshot the environment at the
 	// end of boot; the Datalog built-ins compile their translated
 	// programs against it, so user bindings are not visible to
@@ -268,6 +272,8 @@ func NewKernel(name string) *Kernel {
 	// Snapshot the initialized environment — built-ins plus the
 	// global datasets, no user bindings or overloads — so
 	// Sys.clearEnv can restore exactly it.
+	k.typeofTypes = map[ast.Expr]types.Type{}
+	sys.SetTypeofResolver(k.deduceTypeof)
 	k.initBindings = slices.Clone(k.bindings)
 	k.initValues = maps.Clone(k.values)
 	for _, b := range result.Bindings {
@@ -368,6 +374,94 @@ func (k *Kernel) Execute(stmt string) string {
 		}
 	}
 	return k.executeStatement(n)
+}
+
+// typeofAsType renders the type deduced for a "typeof"'s
+// expression as a type, by reading it back from the text the type
+// prints as.
+func (k *Kernel) typeofAsType(exp ast.Expr) (ast.Type, error) {
+	t, err := k.deduceTypeof(exp)
+	if err != nil {
+		return nil, err
+	}
+	return parse.TypeString(k.name, t.String())
+}
+
+// echoDatatypeDecl echoes a datatype declaration, with any
+// "typeof" in a constructor's argument resolved.
+func (k *Kernel) echoDatatypeDecl(d *ast.DatatypeDecl) string {
+	binds := make([]ast.DatatypeBind, len(d.Binds))
+	for i, b := range d.Binds {
+		binds[i] = b
+		binds[i].Cons = make([]ast.ConBind, len(b.Cons))
+		for j, c := range b.Cons {
+			binds[i].Cons[j] = c
+			if c.Of == nil {
+				continue
+			}
+			of, err := ast.MapTypeofs(c.Of, k.typeofAsType)
+			if err != nil {
+				return k.formatCompileError(err)
+			}
+			binds[i].Cons[j].Of = of
+		}
+	}
+	return ast.UnparseDatatypeDecl(
+		ast.NewDatatypeDecl(d.Span(), binds), k.config.LineWidth)
+}
+
+// echoTypeDecl echoes a type-alias declaration, resolving any
+// "typeof" and mapping a datatype whose name has since been
+// displaced to "?.d". The binds are copied, so the stored alias
+// body is untouched.
+func (k *Kernel) echoTypeDecl(d *ast.TypeDecl) string {
+	binds := make([]ast.TypeBind, len(d.Binds))
+	for i, b := range d.Binds {
+		binds[i] = b
+		bt, err := ast.MapTypeofs(b.Type, k.typeofAsType)
+		if err != nil {
+			return k.formatCompileError(err)
+		}
+		binds[i].Type = ast.MapNamedTypeNames(bt,
+			k.sys.DatatypeDisplay)
+	}
+	return ast.UnparseTypeDecl(ast.NewTypeDecl(d.Span(), binds))
+}
+
+// deduceTypeof is the deduction that a "typeof" written inside a
+// type declaration needs: the type of the expression, in the
+// environment as it stands.
+//
+// A type declaration is elaborated before anything in it is
+// deduced, and a name in its body refers to the environment
+// before the declaration -- which is what lets "type t = t" mean
+// "the previous t". The expression therefore cannot mention what
+// the declaration binds, and its type is deduced on its own, as
+// the binding of a name nothing reads.
+//
+// The result is kept: a datatype constructor's argument is
+// converted more than once, and deducing it again would repeat
+// any warning it produces.
+func (k *Kernel) deduceTypeof(exp ast.Expr) (types.Type, error) {
+	if t, ok := k.typeofTypes[exp]; ok {
+		return t, nil
+	}
+	span := exp.Span()
+	decl := ast.NewValDecl(span, false, false,
+		[]*ast.ValBind{
+			ast.NewValBind(span, ast.NewIDPat(span, "$typeof"), exp),
+		})
+	resolved, err := compile.DeduceFiles(k.sys, k.bindings,
+		k.overloads, decl, k.files(), k.methods)
+	if err != nil {
+		return nil, err
+	}
+	t, err := resolved.TypeMap.TypeOf(exp)
+	if err != nil {
+		return nil, err
+	}
+	k.typeofTypes[exp] = t
+	return t, nil
 }
 
 // clearEnv resets the session to its freshly initialized state:
@@ -824,20 +918,10 @@ func (k *Kernel) runStatement(n ast.Node) string {
 		// built-in binding (a user datatype's Empty must hide
 		// exn's); the shell then echoes the declaration.
 		k.bindDatatypeCons(datatypeDecl)
-		return ast.UnparseDatatypeDecl(datatypeDecl, k.config.LineWidth)
+		return k.echoDatatypeDecl(datatypeDecl)
 	}
 	if typeDecl, isType := resolved.Decl.(*ast.TypeDecl); isType {
-		// The declaration registered its type aliases; echo it,
-		// mapping any datatype whose name has since been displaced to
-		// "?.d". Copy the binds so the stored alias body is untouched.
-		binds := make([]ast.TypeBind, len(typeDecl.Binds))
-		for i, b := range typeDecl.Binds {
-			binds[i] = b
-			binds[i].Type = ast.MapNamedTypeNames(b.Type,
-				k.sys.DatatypeDisplay)
-		}
-		return ast.UnparseTypeDecl(ast.NewTypeDecl(typeDecl.Span(),
-			binds))
+		return k.echoTypeDecl(typeDecl)
 	}
 	coreDecl, err := compile.Resolve(resolved, k.overloads)
 	if err != nil {
