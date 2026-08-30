@@ -217,6 +217,10 @@ String.size "\v";
 String.size "\^@";
 > val it = 1 : int
 
+(* A string with non-printable characters. *)
+String.implode [#"\t", #"a", #"\128", #"b"];
+> val it = "\ta\128b" : string
+
 (* Identifiers ---------------------------------------------------- *)
 
 val x = 1
@@ -1166,6 +1170,19 @@ from r in bag [{x=1, y="a"}, {x=1, y="b"}, {x=2, y="c"}]
 > val it = 0wxFFFFFFFFFFFFFFFF : word
 0wxffffffffffffffff;
 > val it = 0wxFFFFFFFFFFFFFFFF : word
+
+(* Word literals outside the unsigned 64-bit 'word' range (0w0 to
+ * 0w18446744073709551615) are rejected during validation, in both decimal and
+ * hexadecimal forms. *)
+0w18446744073709551616;
+> stdIn:1.1-1.23 Error: literal '0w18446744073709551616' is too large for type word
+>   raised at: stdIn:1.1-1.23
+0wx10000000000000000;
+> stdIn:1.1-1.21 Error: literal '0wx10000000000000000' is too large for type word
+>   raised at: stdIn:1.1-1.21
+0wxffffffffffffffffff;
+> stdIn:1.1-1.22 Error: literal '0wxffffffffffffffffff' is too large for type word
+>   raised at: stdIn:1.1-1.22
 
 0wxFF = 0w255;
 > val it = true : bool

@@ -2251,6 +2251,10 @@ func (r *typeResolver) deduceLiteral(node ast.Node, kind ast.Op,
 	case ast.UnitLiteralOp:
 		name = "unit"
 	case ast.WordLiteralOp, ast.WordLiteralPatOp:
+		err := checkWordRange(node, value)
+		if err != nil {
+			return err
+		}
 		name = "word"
 	default:
 		return &Error{
@@ -2276,6 +2280,26 @@ func checkCharLiteral(node ast.Node, value string) error {
 		return &Error{
 			Span: node.Span(),
 			Msg:  "character constant not length one",
+		}
+	}
+	return nil
+}
+
+// checkWordRange rejects a word literal that does not fit in an
+// unsigned 64-bit integer, saying so the way an int literal that
+// is too large does.
+func checkWordRange(node ast.Node, value string) error {
+	text := value[2:] // after "0w"
+	base := 10
+	if len(text) > 0 && (text[0] == 'x' || text[0] == 'X') {
+		text, base = text[1:], 16
+	}
+	_, err := strconv.ParseUint(text, base, 64)
+	if err != nil {
+		return &Error{
+			Span: node.Span(),
+			Msg: "literal '" + value +
+				"' is too large for type word",
 		}
 	}
 	return nil
