@@ -33,12 +33,20 @@ Sys.set ("stringDepth", ~1);
 
 from i where i > 0 andalso i < 10;
 > val it = [1,2,3,4,5,6,7,8,9] : int list
+Sys.planEx "3";
+> val it = "val it = from i in #flatten Range ([OPEN (0, 10)])" : string
 
 from i where i >= 0 andalso i <= 10;
 > val it = [0,1,2,3,4,5,6,7,8,9,10] : int list
+Sys.planEx "3";
+> val it = "val it = from i in #flatten Range ([CLOSED (0, 10)])" : string
 
 from i where i >= 0 andalso i <= 5 orelse i = 8 orelse i > 20 andalso i < 22;
 > val it = [0,1,2,3,4,5,8,21] : int list
+Sys.planEx "3";
+> val it =
+>   "val it = from i in #flatten Range ([CLOSED (0, 5), POINT 8, OPEN (20, 22)])"
+>   : string
 
 from i where i > 0 andalso i < 4 yield {j = i + 1};
 > j
@@ -72,6 +80,10 @@ from i where i = 0 orelse i = 12;
 
 from i where i > 0 andalso i < 10 orelse i > 12 andalso i <= 15;
 > val it = [1,2,3,4,5,6,7,8,9,13,14,15] : int list
+Sys.planEx "3";
+> val it =
+>   "val it = from i in #flatten Range ([OPEN (0, 10), OPEN_CLOSED (12, 15)])"
+>   : string
 
 (*) Ranges over int * bool: point constraints merged into a single discreteSetOf.
 from t where t = (1, true) orelse t = (3, false);
@@ -81,6 +93,10 @@ from t where t = (1, true) orelse t = (3, false);
 > 3 false
 >
 > val it : (int * bool) list
+Sys.planEx "3";
+> val it =
+>   "val it = from t in #toList Range (#discreteSetOf Range ([POINT (1, true), POINT (3, false)]))"
+>   : string
 
 from i
 where i > 0 andalso i < 10
@@ -379,6 +395,10 @@ from x, y in [0, 2, 9] where x > y andalso x < y + 5;
 (* Similar, but we know the values of x. *)
 from x in [3, 5, 7], y where x > y andalso x < y + 5 yield y;
 > val it = [~1,0,1,2,1,2,3,4,3,4,5,6] : int list
+Sys.planEx "3";
+> val it =
+>   "val it = from x in [3, 5, 7] join y in #flatten Range ([OPEN (#- Int (x, 5), x)]) yield y"
+>   : string
 
 from x in [3, 5, 7], y
   where x > y andalso x < y + 5
@@ -1042,6 +1062,10 @@ end;
  *)
 from p where String.isPrefix p "abcd";
 > val it = ["","a","ab","abc","abcd"] : string list
+Sys.planEx "999";
+> val it =
+>   "val it = from p in #tabulate List (#size String \"abcd\" + 1, fn i => #substring String (\"abcd\", 0, i))"
+>   : string
 
 from s in ["abcd", "ant"], p where String.isPrefix p s;
 > p    s
@@ -1057,6 +1081,10 @@ from s in ["abcd", "ant"], p where String.isPrefix p s;
 > ant  ant
 >
 > val it : {p:string, s:string} list
+Sys.planEx "999";
+> val it =
+>   "val it = from s in [\"abcd\", \"ant\"] join p in #tabulate List (#size String s + 1, fn i => #substring String (s, 0, i))"
+>   : string
 
 from s in ["abcd", "ant"], p where String.isPrefix p s yield p distinct;
 > val it = ["","a","ab","abc","abcd","an","ant"] : string list

@@ -351,10 +351,17 @@ from p where path p;
 (*) Adjacent range branches of orelse are merged into a single discreteSetOf.
 from i where i > 0 andalso i < 10 orelse i > 12 andalso i <= 15;
 > val it = [1,2,3,4,5,6,7,8,9,13,14,15] : int list
+Sys.planEx "1";
+> val it =
+>   "val it = from i in #flatten Range ([OPEN (0, 10), OPEN_CLOSED (12, 15)])"
+>   : string
 
 (*) Point (i = v) and range branches are also merged.
 from i where i = 1 orelse i > 5 andalso i < 8 orelse i = 3;
 > val it = [1,6,7,3] : int list
+Sys.planEx "1";
+> val it = "val it = from i in #flatten Range ([POINT 1, OPEN (5, 8), POINT 3])"
+>   : string
 
 (*) Char is a finite type (256 values), so the plan filters the extent directly.
 from c where c >= #"a" andalso c <= #"e" orelse c >= #"x" andalso c <= #"z";
@@ -392,6 +399,10 @@ from x where abs x > 5;
  * the other (positive quadrant only). *)
 List.length (from x, y where x >= 1 andalso y >= 1 andalso x * (y + 3) < 30);
 > val it = 51 : int
+Sys.planEx "3";
+> val it =
+>   "val it = #length List (from x in #flatten Range ([CLOSED (1, 7)]) join y in #flatten Range ([CLOSED_OPEN (1, 27)]) where #* Int (x, y + 3) < 30)"
+>   : string
 
 (* Same strengthening via the literal range-list syntax. FBBT injects
  * the implied lower bounds from `[1..]`, propagates through the
@@ -418,6 +429,10 @@ from c in [#"a"..] where c <= #"d";
  * (e.g. `x < y`) remain as post-generation filters. *)
 List.length (from x, y where x > 0 andalso x < y andalso y < 10);
 > val it = 36 : int
+Sys.planEx "3";
+> val it =
+>   "val it = #length List (from x in #flatten Range ([OPEN (0, 10)]) join y in #flatten Range ([OPEN (0, 10)]) where x < y)"
+>   : string
 List.length (from x, y where y > 0 andalso y < x andalso x < 10);
 > val it = 36 : int
 List.length (from x, y, z where x > 0 andalso x < y andalso y < z andalso z < 10);
