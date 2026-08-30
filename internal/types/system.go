@@ -275,6 +275,19 @@ func (s *System) LookupTyCon(name string) (TyCon, bool) {
 	return tc, ok
 }
 
+// Alias returns a use of the transparent type alias with the
+// given name, arguments and expansion. It prints as the name it
+// was written as; Unalias reads what it abbreviates.
+func (s *System) Alias(name string, args []Type, base Type) Type {
+	key := "$alias:" + namedDesc(name, args) + "=" + base.String()
+	return s.intern(key, func() Type {
+		return &AliasType{
+			typeBase{namedDesc(name, args)},
+			args, name, base,
+		}
+	})
+}
+
 // Named returns the instance of a datatype with the given type
 // arguments, e.g. Named("option", Int) is "int option".
 func (s *System) Named(name string, args ...Type) Type {

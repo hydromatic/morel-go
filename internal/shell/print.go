@@ -56,7 +56,7 @@ func (c *Config) prettyBinding(name string, v eval.Val,
 		displayT = t
 	}
 	if c.props["output"] == outputTabular {
-		if s, ok := c.tabularBinding(name, v, t); ok {
+		if s, ok := c.tabularBinding(name, v, t, displayT); ok {
 			return s
 		}
 	}

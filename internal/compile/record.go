@@ -133,13 +133,14 @@ func splitQuoted(s string) []string {
 	return append(parts, b.String())
 }
 
-// lookupField returns the resolved type of a field of a record
+// lookupField reads through any type alias -- an alias wrapping
+// a record is a record -- and returns the resolved type of a field of a record
 // or tuple term, or nil if the term is not a record or has no
 // such field.
 func lookupField(t unify.Term, fieldName string,
 	s *unify.Substitution,
 ) unify.Term {
-	seq, ok := t.(*unify.Sequence)
+	seq, ok := unaliasTerm(t).(*unify.Sequence)
 	if !ok {
 		return nil
 	}

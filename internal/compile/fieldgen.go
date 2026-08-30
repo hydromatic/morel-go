@@ -131,9 +131,10 @@ func condsOn(g *generator,
 }
 
 // rowArity is the field count and types of a tuple or record
-// type.
+// type. A type alias is read through: a record reached through
+// one is still a record.
 func rowArity(t types.Type) (int, []types.Type) {
-	switch t := t.(type) {
+	switch t := types.Unalias(t).(type) {
 	case *types.Record:
 		ts := make([]types.Type, len(t.Fields))
 		for i, f := range t.Fields {

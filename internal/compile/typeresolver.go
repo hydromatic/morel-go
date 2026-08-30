@@ -528,6 +528,10 @@ type typeResolver struct {
 	numericCalls  []numericCall
 	selectorCalls []selectorCall
 	tyVarScopes   []map[string]*unify.Var
+
+	// declaringAliases are the names a type declaration is binding,
+	// while its bodies are resolved; see deduceTypeDecl.
+	declaringAliases map[string]bool
 	// pendingSafe holds safe selectors whose result could not be
 	// deduced when their receiver's variable first resolved (an
 	// inner layer was still open); after unification they are
@@ -676,6 +680,52 @@ func (r *typeResolver) reg(node ast.Node, v *unify.Var) {
 	r.nodeTerm[node] = v
 }
 
+// elemTerm is the element term of a list display: the shared
+// variable the elements were deduced into, or the type the first
+// element was annotated with, where that names a type alias.
+//
+// An annotation on the first element declares what the elements
+// are, as the first element decides the element type itself, so
+// "[2: myInt, 3: myInt, 4]" is a "myInt list" and
+// "[5, 6: myInt]" is an "int list". An element that merely has an
+// alias does not declare one: "[n, j]" is an "int list" where n is
+// a "nat" and j an "int", because there the alias meets a
+// different type and is weakened.
+func (r *typeResolver) elemTerm(args []ast.Expr,
+	vElem *unify.Var,
+) unify.Term {
+	if len(args) == 0 {
+		return vElem
+	}
+	if _, annotated := args[0].(*ast.AnnotatedExp); !annotated {
+		return vElem
+	}
+	first, ok := r.nodeTerm[args[0]]
+	if !ok {
+		return vElem
+	}
+	if _, isAlias := aliasTermName(first); !isAlias {
+		return vElem
+	}
+	return first
+}
+
+// regAnnotated registers the type of an annotated node as the
+// annotation's own term, rather than the variable it was equated
+// with.
+//
+// The variable is weakened wherever a type alias in the
+// annotation meets what it abbreviates -- "val x: myInt = 5"
+// unifies it with the literal's "int" -- and an alias nested in
+// the annotation is weakened the same way, so "val ns: nat list =
+// [1, 2]" would read "int list". The annotation is what the
+// binding was declared to have, and is what it displays.
+func (r *typeResolver) regAnnotated(node ast.Node,
+	term unify.Term,
+) {
+	r.reg2(node, term)
+}
+
 // reg2 registers that a node's type is a term.
 func (r *typeResolver) reg2(node ast.Node, t unify.Term) {
 	r.nodeTerm[node] = t
@@ -791,6 +841,10 @@ func (r *typeResolver) typeTerm(t types.Type,
 ) unify.Term {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch t := t.(type) {
+	case *types.AliasType:
+		// A type alias keeps its name through inference; its first
+		// term is what it expands to.
+		return aliasTerm(t.Name, r.typeTerm(t.Base, subst), nil)
 	case *types.Collection:
 		// A collection has free orderedness, so it unifies with a
 		// list or a bag; fresh per instantiation, but shared by
@@ -996,6 +1050,45 @@ func (r *typeResolver) astTypeTerm(env typeEnv, t ast.Type) (
 	}
 }
 
+// aliasTyCon is the operator prefix of a type-alias term.
+const aliasTyCon = "$alias:"
+
+// aliasTerm builds the term of a type alias. The first argument
+// is the expanded body, so that the unifier can head-reduce by
+// taking it; the rest are the alias's own arguments, which the
+// type map needs to rebuild the type.
+func aliasTerm(name string, body unify.Term,
+	args []unify.Term,
+) unify.Term {
+	terms := make([]unify.Term, 0, len(args)+1)
+	terms = append(terms, body)
+	terms = append(terms, args...)
+	return unify.Apply(aliasTyCon+name, terms...)
+}
+
+// aliasTermName returns the name of an alias term, and whether
+// the term is one.
+func aliasTermName(t unify.Term) (string, bool) {
+	s, ok := t.(*unify.Sequence)
+	if !ok || !strings.HasPrefix(s.Op, aliasTyCon) {
+		return "", false
+	}
+	return strings.TrimPrefix(s.Op, aliasTyCon), true
+}
+
+// unaliasTerm expands a term until it is not an alias term. Every
+// read of a term's structure goes through it, so that an alias
+// wrapping a record or a collection reads as what it abbreviates.
+func unaliasTerm(t unify.Term) unify.Term {
+	for {
+		s, ok := t.(*unify.Sequence)
+		if !ok || !strings.HasPrefix(s.Op, aliasTyCon) {
+			return t
+		}
+		t = s.Terms[0]
+	}
+}
+
 // astNamedTerm converts a named type annotation: a primitive, a
 // list, or an instance of a datatype.
 func (r *typeResolver) astNamedTerm(env typeEnv,
@@ -1007,7 +1100,17 @@ func (r *typeResolver) astNamedTerm(env typeEnv,
 		for i, tv := range alias.TyVars {
 			subst[tv] = t.Args[i]
 		}
-		return r.astTypeTerm(env, ast.SubstituteType(alias.Body, subst))
+		body, err := r.astTypeTerm(env,
+			ast.SubstituteType(alias.Body, subst))
+		if err != nil {
+			return nil, err
+		}
+		if len(t.Args) > 0 {
+			// A parameterized alias is a type function: applying it
+			// substitutes and expands, and what is left is the body.
+			return body, nil
+		}
+		return aliasTerm(t.Name, body, nil), nil
 	}
 	terms := make([]unify.Term, len(t.Args))
 	for i, arg := range t.Args {
@@ -1278,6 +1381,17 @@ func (r *typeResolver) deduceDatatypeDecl(decl *ast.DatatypeDecl,
 // shell echoes the expanded form.
 func (r *typeResolver) deduceTypeDecl(decl *ast.TypeDecl,
 ) (ast.Decl, error) {
+	// The names this declaration binds. A body that names one of
+	// them means the alias of that name as it was before -- what
+	// makes "type t = t" the previous t -- so such a name is
+	// expanded here rather than kept, or the alias would refer to
+	// itself.
+	declaring := make(map[string]bool, len(decl.Binds))
+	for _, b := range decl.Binds {
+		declaring[b.Name] = true
+	}
+	r.declaringAliases = declaring
+	defer func() { r.declaringAliases = nil }()
 	resolved := make([]ast.Type, len(decl.Binds))
 	for i, b := range decl.Binds {
 		body, err := r.resolveTypeBody(b.Type)
@@ -1348,6 +1462,14 @@ func (r *typeResolver) resolveNamedType(n *ast.NamedType) (ast.Type,
 	}
 	if alias, ok := r.sys.LookupAlias(n.Name); ok &&
 		len(alias.TyVars) == len(args) {
+		if len(args) == 0 && !r.declaringAliases[n.Name] {
+			// A nullary alias keeps its name in the body of
+			// another, so "type nats = nat2 list" is a list of
+			// "nat2" and not of what nat2 abbreviates. A
+			// parameterized one is a type function, and applying
+			// it substitutes and expands.
+			return n, nil
+		}
 		subst := make(map[string]ast.Type, len(alias.TyVars))
 		for i, tv := range alias.TyVars {
 			subst[tv] = args[i]
@@ -1508,7 +1630,7 @@ func (r *typeResolver) deducePat(env typeEnv, pat ast.Pat,
 		if err != nil {
 			return err
 		}
-		r.reg(pat, v)
+		r.regAnnotated(pat, term)
 		return nil
 	case *ast.AsPat:
 		// "name as p": the name and the sub-pattern both have the
@@ -1911,7 +2033,7 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 		if err != nil {
 			return err
 		}
-		r.reg(exp, v)
+		r.regAnnotated(exp, term)
 		return nil
 	case *ast.Apply:
 		return r.deduceApply(env, e, v)
@@ -1967,7 +2089,7 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 				return err
 			}
 		}
-		r.regEquiv(exp, v, r.listTerm(vElem))
+		r.regEquiv(exp, v, r.listTerm(r.elemTerm(e.Args, vElem)))
 		return nil
 	case *ast.Literal:
 		return r.deduceLiteral(exp, e.Kind, e.Value, v)
@@ -2548,7 +2670,8 @@ func (r *typeResolver) rememberFieldsLater(exp ast.Expr,
 // nil, "{{} extend i = 1}" would never be desugared, and would end
 // as an unresolved flex record.
 func termFieldNames(t unify.Term) []string {
-	seq, ok := t.(*unify.Sequence)
+	// A record reached through a type alias is still a record.
+	seq, ok := unaliasTerm(t).(*unify.Sequence)
 	if !ok {
 		return nil
 	}
@@ -2820,6 +2943,27 @@ func (r *typeResolver) deduceMatch(env typeEnv, match *ast.Match,
 		return err
 	}
 	r.regEquiv(match, argVariable,
-		r.fnTerm(vPat, resultVariable))
+		r.fnTerm(r.patTerm(match.Pat, vPat), resultVariable))
 	return nil
+}
+
+// patTerm is the term of a match's pattern: the variable it was
+// deduced into, or the type it was annotated with, where that
+// names a type alias. An annotation on a parameter declares what
+// the function takes, so "fun f (x: nat) = x" is "nat -> nat"
+// where the variable alone would say "int -> int".
+func (r *typeResolver) patTerm(pat ast.Pat,
+	vPat *unify.Var,
+) unify.Term {
+	if _, annotated := pat.(*ast.AnnotatedPat); !annotated {
+		return vPat
+	}
+	term, ok := r.nodeTerm[pat]
+	if !ok {
+		return vPat
+	}
+	if _, isAlias := aliasTermName(term); !isAlias {
+		return vPat
+	}
+	return term
 }

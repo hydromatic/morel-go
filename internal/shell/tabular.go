@@ -44,7 +44,7 @@ const tabularEllipsis = "..."
 // the type is not tabular-printable, so the caller falls back to
 // classic rendering.
 func (c *Config) tabularBinding(name string, v eval.Val,
-	t types.Type,
+	t, displayT types.Type,
 ) (string, bool) {
 	elem := collectionElemType(t)
 	if elem == nil || !c.canPrintRecordLike(elem) {
@@ -71,8 +71,11 @@ func (c *Config) tabularBinding(name string, v eval.Val,
 	b.WriteString(emitSeparatorRow(root.children))
 	b.WriteByte('\n')
 	c.emitDataRows(&b, root, rootCell)
+	// The rows are laid out by the real type; the type printed
+	// under them is the one the binding displays, which keeps a
+	// type alias.
 	b.WriteString("\nval " + parse.QuoteIdent(name) + " : " +
-		pp.Render(math.MaxInt32, c.typeDoc(t)))
+		pp.Render(math.MaxInt32, c.typeDoc(displayT)))
 	return b.String(), true
 }
 
@@ -179,7 +182,8 @@ func isRecordLike(t types.Type) bool {
 // recordLikeFields returns the label/type pairs of a record or tuple,
 // tuple fields being named "1", "2", ...; nil for any other type.
 func recordLikeFields(t types.Type) []types.Field {
-	switch t := t.(type) {
+	// A record reached through a type alias is still a record.
+	switch t := types.Unalias(t).(type) {
 	case *types.Record:
 		return t.Fields
 	case *types.Tuple:

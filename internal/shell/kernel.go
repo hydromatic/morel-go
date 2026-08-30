@@ -869,11 +869,17 @@ func (k *Kernel) executeStatement(n ast.Node) string {
 	return out
 }
 
-// qualifiedOrPlain returns surfaceT when it is a qualified type (so
-// a later use of the binding re-emits its overload constraints),
-// otherwise plainT.
+// qualifiedOrPlain returns the type a later use of the binding
+// reads: the surface type where there is one, and otherwise the
+// plain type.
+//
+// A surface type is set only where it says something the plain
+// type does not -- a qualified type, so that a use re-emits its
+// overload constraints, or a type alias, so that a use reads the
+// alias. An alias may be nested, as in "nat list", so this cannot
+// look at the head alone.
 func qualifiedOrPlain(plainT, surfaceT types.Type) types.Type {
-	if _, ok := surfaceT.(*types.Qualified); ok {
+	if surfaceT != nil {
 		return surfaceT
 	}
 	return plainT

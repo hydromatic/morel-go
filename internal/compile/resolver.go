@@ -215,19 +215,33 @@ func (r *resolver) toDecl(env *coreEnv, decl ast.Decl) (core.Decl,
 		if qerr != nil {
 			return nil, nil, qerr
 		}
-		if qual, ok := q.(*types.Qualified); ok {
-			// The bound value uses overloaded names at an abstract type,
-			// so it has a qualified type. Compile it with one dictionary
-			// parameter per predicate (Wadler-Blott dictionary passing):
-			// inside the body an overloaded name at an abstract type
-			// refers to its dictionary parameter, and the value becomes a
-			// curried function that each use site supplies the selected
-			// instances to.
+		if qual, isQual := q.(*types.Qualified); isQual {
+			// The bound value uses overloaded names at an abstract
+			// type, so it has a qualified type. Compile it with one
+			// dictionary parameter per predicate (Wadler-Blott
+			// dictionary passing): inside the body an overloaded
+			// name at an abstract type refers to its dictionary
+			// parameter, and the value becomes a curried function
+			// that each use site supplies the selected instances to.
 			idPat.SurfaceT = qual
 			exp, err = r.toCoreWithDictionaries(env, qual.Predicates,
 				bind.Exp)
 			if err != nil {
 				return nil, nil, err
+			}
+		}
+	}
+	if _, annotated := bind.Pat.(*ast.AnnotatedPat); !annotated {
+		if idPat, ok := pat.(*core.IDPat); ok &&
+			idPat.SurfaceT == nil {
+			// An alias that survived inference of the bound
+			// expression is what the binding displays:
+			// "val x = 6 : myInt" is "myInt", as
+			// "val x : myInt = 6" is. An annotation on the pattern
+			// has already had its say, and wins: "val j : int = n"
+			// is "int" even where n is "nat".
+			if a := r.typeMap.AliasedTypeOf(bind.Exp); a != nil {
+				idPat.SurfaceT = a
 			}
 		}
 	}
@@ -342,6 +356,15 @@ func (r *resolver) toRecDecl(env *coreEnv, d *ast.ValDecl) (
 		idPat, err := r.toIDPat(bind.Pat)
 		if err != nil {
 			return nil, nil, err
+		}
+		// An alias that survived inference of the bound expression
+		// is what the binding displays, as it is for a binding
+		// that is not recursive.
+		if _, annotated := bind.Pat.(*ast.AnnotatedPat); !annotated &&
+			idPat.SurfaceT == nil {
+			if a := r.typeMap.AliasedTypeOf(bind.Exp); a != nil {
+				idPat.SurfaceT = a
+			}
 		}
 		idPats[i] = idPat
 		env2 = env2.bind(idPat)
@@ -517,15 +540,7 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 		}
 		return &core.Tuple{T: t, Args: args}, nil
 	case *ast.TypeStringExp:
-		// The operand's type is known after inference; render it as
-		// a string literal.
-		operandType, err := r.typeMap.TypeOf(e.Exp)
-		if err != nil {
-			return nil, err
-		}
-		return &core.Literal{
-			T: t, Kind: ast.StringLiteralOp, Value: operandType.String(),
-		}, nil
+		return r.toTypeString(e, t)
 	default:
 		return nil, &Error{
 			Span: exp.Span(),
@@ -533,6 +548,29 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 				exp.Op().String(),
 		}
 	}
+}
+
+// toTypeString renders "type_string e" as a string literal of the
+// operand's type: the type it was shown to have, keeping any type
+// alias, rather than the type inference reduced it to. Otherwise a
+// value the shell prints as "foo" would report "int", and two
+// operators reifying one type would disagree with what is
+// displayed.
+func (r *resolver) toTypeString(e *ast.TypeStringExp,
+	t types.Type,
+) (core.Exp, error) {
+	operandType := r.typeMap.AliasedTypeOf(e.Exp)
+	if operandType == nil {
+		var err error
+		operandType, err = r.typeMap.TypeOf(e.Exp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &core.Literal{
+		T: t, Kind: ast.StringLiteralOp,
+		Value: operandType.String(),
+	}, nil
 }
 
 func (r *resolver) toLiteral(literal *ast.Literal,
@@ -2107,7 +2145,7 @@ func datatypeOf(tc types.TyCon) string {
 func (r *resolver) toSelector(sel *ast.RecordSelector,
 	t types.Type,
 ) (core.Exp, error) {
-	fnType, ok := t.(*types.Fn)
+	fnType, ok := types.Unalias(t).(*types.Fn)
 	if !ok {
 		return nil, &Error{
 			Span: sel.Span(),
@@ -2116,7 +2154,8 @@ func (r *resolver) toSelector(sel *ast.RecordSelector,
 		}
 	}
 	index := -1
-	switch param := fnType.Param.(type) {
+	// A record reached through a type alias is still a record.
+	switch param := types.Unalias(fnType.Param).(type) {
 	case *types.Record:
 		for i, f := range param.Fields {
 			if f.Label == sel.Name {
@@ -2215,12 +2254,8 @@ func (r *resolver) toPat(pat ast.Pat) (core.Pat, error) {
 			return nil, err
 		}
 		if idPat, ok := inner.(*core.IDPat); ok {
-			surface, e1 := r.typeMap.sys.SurfaceFromAST(p.Type,
-				map[string]int{})
-			expanded, e2 := r.typeMap.sys.FromAST(p.Type,
-				map[string]int{})
-			if e1 == nil && e2 == nil && surface != expanded {
-				idPat.SurfaceT = surface
+			if a := r.typeMap.AliasedTypeOf(pat); a != nil {
+				idPat.SurfaceT = a
 			}
 		}
 		return inner, nil
@@ -2260,7 +2295,13 @@ func (r *resolver) toPat(pat ast.Pat) (core.Pat, error) {
 		if tc, isCon := r.typeMap.sys.LookupTyCon(p.Name); isCon {
 			return r.toCon0Pat(p.Name, tc, t), nil
 		}
-		return &core.IDPat{T: t, Name: p.Name}, nil
+		idPat := &core.IDPat{T: t, Name: p.Name}
+		// A type alias that survived inference is what the binding
+		// displays. It stays out of T, which the evaluator reads.
+		if a := r.typeMap.AliasedTypeOf(pat); a != nil {
+			idPat.SurfaceT = a
+		}
+		return idPat, nil
 	case *ast.ListPat:
 		return r.toListPat(p, t)
 	case *ast.LiteralPat:
@@ -2379,7 +2420,8 @@ func (r *resolver) toRecordPat(p *ast.RecordPat,
 // type, in the order of the values of a tuple of that type, or
 // nil if the type is neither.
 func recordLikeFields(t types.Type) []types.Field {
-	switch t := t.(type) {
+	// A record reached through a type alias is still a record.
+	switch t := types.Unalias(t).(type) {
 	case *types.Record:
 		return t.Fields
 	case *types.Tuple:

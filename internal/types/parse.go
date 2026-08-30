@@ -54,9 +54,10 @@ func (s *System) FromAST(t ast.Type, tyVars map[string]int) (
 }
 
 // SurfaceFromAST converts a type annotation like FromAST, but keeps
-// each type alias unexpanded (as a named type carrying the alias
-// name), so the result renders the annotation as it was written --
-// used for the display-only "surface" type of a binding.
+// a nullary type alias unexpanded (as a named type carrying the
+// alias name), so the result renders the annotation as it was
+// written -- used for the display-only "surface" type of a
+// binding. A parameterized alias expands, as morel-java's does.
 func (s *System) SurfaceFromAST(t ast.Type, tyVars map[string]int) (
 	Type, error,
 ) {
@@ -155,12 +156,12 @@ func (c *converter) convertNamed(n *ast.NamedType) (Type, error) {
 	}
 	if alias, ok := c.sys.LookupAlias(n.Name); ok &&
 		len(alias.TyVars) == len(n.Args) {
-		if c.keepAliases {
-			args, err := c.convertList(n.Args)
-			if err != nil {
-				return nil, err
-			}
-			return c.sys.Named(n.Name, args...), nil
+		// A parameterized alias is a type function: applying it to
+		// arguments substitutes them into the body and expands, so
+		// "int my_list" is "int list" and there is no name to keep.
+		// Only a nullary alias survives as a name of its own.
+		if c.keepAliases && len(n.Args) == 0 {
+			return c.sys.Named(n.Name), nil
 		}
 		return c.convert(expandAlias(alias, n.Args))
 	}

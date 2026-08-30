@@ -141,6 +141,9 @@ func populateExtent(sys *types.System, t types.Type, path string,
 			}
 		}
 	}
+	// A type alias is read through: the extent of an alias is the
+	// extent of what it abbreviates.
+	t = types.Unalias(t)
 	// lint: sort until '^	}' where '^	case '
 	switch t := t.(type) {
 	case *types.Named:

@@ -195,6 +195,9 @@ func (s *Sequence) eq(other Term) bool {
 // the unifier only so that a list/bag clash renders in user terms.
 const (
 	collectionOp = "$collection"
+	tupleOp      = "tuple"
+	fnOp         = "fn"
+	recordOp     = "record"
 	orderedOp    = "ordered"
 	unorderedOp  = "unordered"
 )
@@ -252,19 +255,71 @@ func renderCollection(t Term) string {
 		if orderednessOf(s) == orderedOp {
 			kind = "list"
 		}
-		return kind + "(" + renderCollection(s.Terms[0]) + ")"
+		return renderAtomic(s.Terms[0]) + " " + kind
 	}
-	var b strings.Builder
-	b.WriteString(s.Op)
-	b.WriteString("(")
-	for i, term := range s.Terms {
-		if i > 0 {
-			b.WriteString(", ")
+	if name, ok := strings.CutPrefix(s.Op, aliasPrefix); ok {
+		// "$alias:t(int)" reads "t (alias for int)".
+		return name + " (alias for " +
+			renderCollection(s.Terms[0]) + ")"
+	}
+	if s.Op == tupleOp {
+		return renderJoin(s.Terms, " * ")
+	}
+	if s.Op == fnOp && len(s.Terms) == 2 {
+		return renderCollection(s.Terms[0]) + " -> " +
+			renderCollection(s.Terms[1])
+	}
+	if names := recordLabels(s); names != nil {
+		var b strings.Builder
+		b.WriteString("{")
+		for i, term := range s.Terms {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(names[i] + ":" + renderCollection(term))
 		}
-		b.WriteString(renderCollection(term))
+		b.WriteString("}")
+		return b.String()
 	}
-	b.WriteString(")")
-	return b.String()
+	// A type constructor applied to arguments, "int option".
+	if len(s.Terms) == 1 {
+		return renderAtomic(s.Terms[0]) + " " + s.Op
+	}
+	return "(" + renderJoin(s.Terms, ", ") + ") " + s.Op
+}
+
+// renderJoin renders terms separated by sep.
+func renderJoin(terms []Term, sep string) string {
+	parts := make([]string, len(terms))
+	for i, t := range terms {
+		parts[i] = renderCollection(t)
+	}
+	return strings.Join(parts, sep)
+}
+
+// renderAtomic renders a term, parenthesized where it would
+// otherwise bind less tightly than the postfix type constructor
+// it is the argument of: "(int * int) list", not "int * int list".
+func renderAtomic(t Term) string {
+	s := renderCollection(t)
+	if !strings.Contains(s, " ") || strings.HasPrefix(s, "(") ||
+		strings.HasPrefix(s, "{") {
+		return s
+	}
+	return "(" + s + ")"
+}
+
+// recordLabels returns a record term's field labels, or nil where
+// the term is not a record.
+func recordLabels(s *Sequence) []string {
+	if !strings.HasPrefix(s.Op, recordOp+":") {
+		return nil
+	}
+	names := strings.Split(s.Op, ":")[1:]
+	if len(names) != len(s.Terms) {
+		return nil
+	}
+	return names
 }
 
 // TermPair is a pair of terms to be unified.

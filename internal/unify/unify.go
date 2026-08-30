@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // Action is called when a variable's term becomes known during
@@ -195,6 +196,11 @@ func (u *Unifier) Unify(pairs []TermPair, actions []VarAction,
 		for _, c := range w.constraints {
 			if c.name != "" && len(c.candidates) > 1 {
 				residuals = append(residuals, c.source)
+			}
+		}
+		if len(w.weakened) > 0 {
+			for v, t := range w.result {
+				w.result[v] = weaken(t, w.weakened)
 			}
 		}
 		return &Substitution{Map: w.result, Residuals: residuals}, nil
@@ -399,10 +405,17 @@ type work struct {
 	varAny      []TermPair
 	constraints []*mutableConstraint
 	result      map[*Var]Term
+
+	// weakened records each alias term that met a different type,
+	// and what it expands to, keyed by the term's rendering --
+	// terms compare structurally, not by identity.
+	weakened map[string]Term
 }
 
 func newWork(pairs []TermPair, constraints []Constraint) *work {
-	w := &work{result: map[*Var]Term{}}
+	w := &work{
+		result: map[*Var]Term{}, weakened: map[string]Term{},
+	}
 	for _, p := range pairs {
 		w.add(p.Left, p.Right)
 	}
@@ -460,6 +473,9 @@ func (w *work) decompose(pair TermPair) error {
 			renderCollection(left), renderCollection(right))
 	}
 	if left.Op != right.Op || len(left.Terms) != len(right.Terms) {
+		if w.headReduced(left, right) {
+			return nil
+		}
 		return fmt.Errorf("conflict: %s vs %s",
 			renderCollection(left), renderCollection(right))
 	}
@@ -467,6 +483,90 @@ func (w *work) decompose(pair TermPair) error {
 		w.add(t, right.Terms[i])
 	}
 	return nil
+}
+
+// headReduced expands the aliases at the head of two terms that
+// disagree, and queues the expansions, returning whether it did.
+//
+// A type alias is a term whose first argument is its expanded
+// body; where it meets a term with a different operator, the
+// aliases are expanded and the pair retried, so that an alias
+// unifies with the type it abbreviates. An alias that met a
+// different type is only as strong as what it abbreviates, so it
+// is weakened in the substitution on the way out.
+func (w *work) headReduced(left, right *Sequence) bool {
+	left2, right2 := headReduce(left), headReduce(right)
+	if left2 == Term(left) && right2 == Term(right) {
+		return false
+	}
+	if left2 != Term(left) {
+		w.weakened[left.String()] = left2
+	}
+	if right2 != Term(right) {
+		w.weakened[right.String()] = right2
+	}
+	if conflictsAtHead(left2, right2) {
+		// The expansions still disagree; the caller reports the
+		// aliases that were written, not what they expand to.
+		return false
+	}
+	w.add(left2, right2)
+	return true
+}
+
+// aliasPrefix is the operator prefix of a type-alias sequence: a
+// term "$alias:t(int)" is the alias "t", whose first argument is
+// what it expands to. It matches the type resolver's alias type
+// constructor.
+const aliasPrefix = "$alias:"
+
+// headReduce expands a term's aliases at the head, so that it
+// meets another term as the type it abbreviates.
+func headReduce(t Term) Term {
+	for {
+		s, ok := t.(*Sequence)
+		if !ok || !strings.HasPrefix(s.Op, aliasPrefix) {
+			return t
+		}
+		t = s.Terms[0]
+	}
+}
+
+// conflictsAtHead reports whether two expanded terms are
+// sequences that disagree at the head, and so can never unify.
+func conflictsAtHead(left, right Term) bool {
+	l, lok := left.(*Sequence)
+	r, rok := right.(*Sequence)
+	return lok && rok && l.Op != r.Op
+}
+
+// weaken replaces, throughout a term, each alias that met a
+// different type during unification with what it expands to.
+//
+// An alias is only as strong as what it abbreviates, so where
+// "nat" meets "int" the result is "int". Without this the first
+// type the unifier happened to visit would win, and "[n, i]" and
+// "[i, n]" would have different types.
+func weaken(t Term, weakened map[string]Term) Term {
+	if r, ok := weakened[t.String()]; ok {
+		return weaken(r, weakened)
+	}
+	s, ok := t.(*Sequence)
+	if !ok {
+		return t
+	}
+	terms := make([]Term, len(s.Terms))
+	changed := false
+	for i, u := range s.Terms {
+		terms[i] = weaken(u, weakened)
+		if terms[i] != u {
+			changed = true
+		}
+	}
+	if !changed {
+		return s
+	}
+	return &Sequence{Op: s.Op, Terms: terms}
 }
 
 // substituteAll applies "variable = term" to all pending pairs

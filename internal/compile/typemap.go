@@ -65,6 +65,33 @@ func (m *TypeMap) TypeOf(node ast.Node) (types.Type, error) {
 	return c.termType(m.subst.Resolve(term))
 }
 
+// AliasedTypeOf returns the type displayed for a node, with any
+// type alias intact, or nil where the node has no type or its
+// type has no alias.
+//
+// Only the displayed type keeps an alias. TypeOf expands them, so
+// that no part of the compiler that reads a type structurally --
+// selecting a field, choosing an overload -- has to know that an
+// alias exists.
+func (m *TypeMap) AliasedTypeOf(node ast.Node) types.Type {
+	term, ok := m.nodeTerm[node]
+	if !ok {
+		return nil
+	}
+	c := &termToTypeConverter{
+		m: m, vars: map[*unify.Var]int{}, keepAlias: true,
+	}
+	aliased, err := c.termType(m.subst.Resolve(term))
+	if err != nil {
+		return nil
+	}
+	plain, err := m.TypeOf(node)
+	if err != nil || aliased == plain {
+		return nil
+	}
+	return aliased
+}
+
 // Qualify returns the type of a bound pattern qualified by the
 // overload predicates deduced for this declaration, or nil if there
 // are none that constrain the pattern's type variables. The
@@ -162,6 +189,10 @@ func disjointVars(a, b map[*unify.Var]bool) bool {
 type termToTypeConverter struct {
 	m    *TypeMap
 	vars map[*unify.Var]int
+
+	// keepAlias keeps a type alias rather than expanding it. Only
+	// the type displayed for a binding keeps one.
+	keepAlias bool
 }
 
 func (c *termToTypeConverter) termType(t unify.Term) (types.Type,
@@ -176,9 +207,37 @@ func (c *termToTypeConverter) termType(t unify.Term) (types.Type,
 		}
 		return c.m.sys.Var(ordinal), nil
 	case *unify.Sequence:
+		if name, ok := aliasTermName(t); ok {
+			return c.aliasType(name, t)
+		}
 		return c.sequenceType(t)
 	}
 	return nil, fmt.Errorf("cannot convert term %s", t)
+}
+
+// aliasType converts an alias term. Its first argument is what
+// the alias expands to; the rest are the alias's own arguments,
+// which the type needs to rebuild itself. Where aliases are not
+// kept, only the expansion is returned.
+func (c *termToTypeConverter) aliasType(name string,
+	s *unify.Sequence,
+) (types.Type, error) {
+	base, err := c.termType(s.Terms[0])
+	if err != nil {
+		return nil, err
+	}
+	if !c.keepAlias {
+		return base, nil
+	}
+	args := make([]types.Type, len(s.Terms)-1)
+	for i, t := range s.Terms[1:] {
+		arg, aerr := c.termType(t)
+		if aerr != nil {
+			return nil, aerr
+		}
+		args[i] = arg
+	}
+	return c.m.sys.Alias(name, args, base), nil
 }
 
 func (c *termToTypeConverter) sequenceType(s *unify.Sequence) (

@@ -162,6 +162,32 @@ func qualifiedDesc(predicates []Predicate, base Type) string {
 	return b.String()
 }
 
+// AliasType is a use of a transparent type alias: the name it was
+// written as, and the type it abbreviates. An alias reaches only
+// the type that is displayed -- everything that reads a type
+// structurally reads Base -- so that nothing has to know an alias
+// exists.
+type AliasType struct {
+	typeBase
+
+	Args []Type
+	Name string
+	Base Type
+}
+
+// Unalias returns the type an alias abbreviates, and any other
+// type unchanged. Every read of a type's structure goes through
+// it.
+func Unalias(t Type) Type {
+	for {
+		a, ok := t.(*AliasType)
+		if !ok {
+			return t
+		}
+		t = a.Base
+	}
+}
+
 // Named is an instance of a datatype, e.g. "color" or
 // "int option".
 type Named struct {
