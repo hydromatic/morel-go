@@ -729,8 +729,9 @@ func (c *Config) optionString(s string) string {
 }
 
 // scalarString renders a scalar value unquoted for a table cell: an
-// int in plain decimal, a string verbatim (truncated by stringDepth),
-// a word in hexadecimal, an enum as its bare constructor name.
+// int in plain decimal, a real with "-" for its sign, a string
+// verbatim (truncated by stringDepth), a word in hexadecimal, an
+// enum as its bare constructor name.
 func (c *Config) scalarString(prim types.Type, v eval.Val) string {
 	if con, ok := v.(eval.Con); ok && con.Arg == nil {
 		return con.Name
@@ -748,7 +749,13 @@ func (c *Config) scalarString(prim types.Type, v eval.Val) string {
 		return strconv.FormatInt(int64(i), 10)
 	case realType:
 		r, _ := v.(float32)
-		return eval.FormatReal(r)
+		// A table is not Standard ML text, and reads better with
+		// minus signs: "-2.5" and "1.25E-6", not "~2.5" and
+		// "1.25E~6". A real's rendering uses "~" only as a sign,
+		// on the mantissa and on the exponent, so replacing it is
+		// exact. Strings are untouched, so the output of
+		// Real.toString still reads as Standard ML in a cell.
+		return strings.ReplaceAll(eval.FormatReal(r), "~", "-")
 	case stringType:
 		s, _ := v.(string)
 		if c.StringDepth >= 0 && len(s) > c.StringDepth {
