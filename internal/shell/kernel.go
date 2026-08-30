@@ -824,7 +824,7 @@ func (k *Kernel) runStatement(n ast.Node) string {
 		// built-in binding (a user datatype's Empty must hide
 		// exn's); the shell then echoes the declaration.
 		k.bindDatatypeCons(datatypeDecl)
-		return ast.UnparseDatatypeDecl(datatypeDecl)
+		return ast.UnparseDatatypeDecl(datatypeDecl, k.config.LineWidth)
 	}
 	if typeDecl, isType := resolved.Decl.(*ast.TypeDecl); isType {
 		// The declaration registered its type aliases; echo it,

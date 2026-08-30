@@ -246,32 +246,49 @@ func unparseNamedType(b *strings.Builder, n *NamedType, comma string) {
 // tree"), the same renaming applies throughout the constructor
 // argument types, and multi-argument type applications use ","
 // without a space.
-func UnparseDatatypeDecl(d *DatatypeDecl) string {
+func UnparseDatatypeDecl(d *DatatypeDecl, width int) string {
 	var b strings.Builder
 	for i, bind := range d.Binds {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString("datatype ")
+		var head strings.Builder
+		head.WriteString("datatype ")
 		rename := canonicalTyVars(bind.TyVars)
 		names := make([]string, len(bind.TyVars))
 		for j, tv := range bind.TyVars {
 			names[j] = rename[tv]
 		}
-		unparseDatatypeTyVars(&b, names)
-		b.WriteString(bind.Name + " = ")
+		unparseDatatypeTyVars(&head, names)
+		head.WriteString(bind.Name)
+		cons := make([]string, len(bind.Cons))
 		for j, c := range bind.Cons {
-			if j > 0 {
-				b.WriteString(" | ")
-			}
-			b.WriteString(c.Name)
+			var cb strings.Builder
+			cb.WriteString(c.Name)
 			if c.Of != nil {
-				b.WriteString(" of ")
-				unparseType(&b, renameTyVars(c.Of, rename), ",")
+				cb.WriteString(" of ")
+				unparseType(&cb, renameTyVars(c.Of, rename), ",")
 			}
+			cons[j] = cb.String()
 		}
+		b.WriteString(layoutDatatype(head.String(), cons, width))
 	}
 	return b.String()
+}
+
+// layoutDatatype lays a datatype bind out on one line, or, where
+// that would be wider than the line, over several: the name alone,
+// then one constructor to a line, indented and led by "=" and "|".
+//
+//	datatype personnel_id
+//	  = EMPLOYEE of int
+//	  | CONTRACTOR of {agency:string, ssid:string}
+func layoutDatatype(head string, cons []string, width int) string {
+	oneLine := head + " = " + strings.Join(cons, " | ")
+	if width <= 0 || len(oneLine) <= width {
+		return oneLine
+	}
+	return head + "\n  = " + strings.Join(cons, "\n  | ")
 }
 
 // UnparseTypeDecl renders a type-alias declaration as the shell
