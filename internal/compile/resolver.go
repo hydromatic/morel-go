@@ -42,9 +42,32 @@ func Resolve(resolved *Resolved, overloads *OverloadEnv) (core.Decl,
 		aggSubst:         map[ast.Node]*core.IDPat{},
 		overloads:        overloads,
 		dictionaryParams: map[string]*core.IDPat{},
+		freePats:         map[freeKey]*core.IDPat{},
 	}
 	decl, _, err := r.toDecl(nil, resolved.Decl)
 	return decl, err
+}
+
+// freeKey identifies a declaration site made for a name that this
+// compilation unit does not declare. Types are interned, so the
+// key compares by value.
+type freeKey struct {
+	name string
+	t    types.Type
+}
+
+// freePat returns the declaration site for an undeclared name,
+// making it on first use. Two references to one name at one type
+// share it; the same name at two types does not, so an overloaded
+// built-in still reads as two variables.
+func (r *resolver) freePat(name string, t types.Type) *core.IDPat {
+	key := freeKey{name, t}
+	pat, ok := r.freePats[key]
+	if !ok {
+		pat = &core.IDPat{T: t, Name: name}
+		r.freePats[key] = pat
+	}
+	return pat
 }
 
 // resolver converts AST nodes to Core, attaching the types that
@@ -90,6 +113,11 @@ type resolver struct {
 	// placeholder (hydromatic/morel#426, dictionary passing). It is
 	// populated by toCoreWithDictionaries for the duration of the body.
 	dictionaryParams map[string]*core.IDPat
+
+	// freePats are the declaration sites made for names this
+	// compilation unit does not declare, keyed so that repeated
+	// references share one.
+	freePats map[freeKey]*core.IDPat
 	// dictCount names dictionary parameters uniquely ("dict$0", ...).
 	dictCount int
 }
@@ -419,12 +447,14 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 			return con, nil
 		}
 		// The name is not declared in this compilation unit
-		// (e.g. a built-in value), so make a declaration site
-		// for it.
-		return &core.ID{
-			Pat:  &core.IDPat{T: t, Name: e.Name},
-			Span: e.Span(),
-		}, nil
+		// (e.g. a built-in value, or a foreign structure such as
+		// `scott`), so make a declaration site for it -- one per
+		// name and type, so that two references to it are one
+		// variable. Minting a site apiece made the second read
+		// as a variable of its own, and a plan named it
+		// `scott_1`.
+		return &core.ID{Pat: r.freePat(e.Name, t), Span: e.Span()},
+			nil
 	case *ast.If:
 		return r.toIf(env, e, t)
 	case *ast.InfixCall:

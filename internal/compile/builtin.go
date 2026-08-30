@@ -72,7 +72,7 @@ const (
 var topBuiltins = map[string]topBuiltin{
 	absName:      {"'a -> 'a", intName},
 	"app":        {"('a -> unit) -> 'a list -> unit", ""},
-	"bag":        {"'a list -> 'a bag", ""},
+	bagTyCon:     {"'a list -> 'a bag", ""},
 	"ceil":       {realToInt, ""},
 	"chr":        {"int -> char", ""},
 	"compare":    {"'a * 'a -> `order`", ""},

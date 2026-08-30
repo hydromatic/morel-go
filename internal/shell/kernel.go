@@ -843,6 +843,13 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	if err != nil {
 		return k.formatCompileError(err)
 	}
+	if !isPlanCall(coreDecl) {
+		// A Sys.plan or Sys.planEx call must not replace the
+		// statement it describes. Capture the statement before
+		// the checks below, so that one it fails is still the
+		// statement that Sys.planEx re-plans.
+		k.planExDecl = coreDecl
+	}
 	if s, isOver := k.overDeclEcho(coreDecl); isOver {
 		return s
 	}
@@ -856,11 +863,6 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	instName := ""
 	if nv, ok := coreDecl.(*core.NonRecValDecl); ok {
 		instName = nv.Overload
-	}
-	if !isPlanCall(coreDecl) {
-		// A Sys.plan or Sys.planEx call must not replace the
-		// statement it describes.
-		k.planExDecl = coreDecl
 	}
 	coreDecl = compile.Inline(
 		coreDecl, k.inlineEnv(), k.inlinePassCount(),

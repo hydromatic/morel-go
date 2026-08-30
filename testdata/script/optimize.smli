@@ -135,6 +135,8 @@ Sys.planEx "1";
 let val u = () in case u of () => "unit" | _ => "not unit" end;
 > stdIn:1.44-1.59 Error: match redundant
 >   raised at: stdIn:1.44-1.59
+Sys.planEx "1";
+> val it = "val it = \"unit\"" : string
 
 (*) Tuple case.
 let
@@ -146,6 +148,10 @@ in
    | _ => "other"
 end;
 > val it = "one:a" : string
+Sys.planEx "~1";
+> val it =
+>   "val it = let val t = (1, \"a\") in case t of (0, _) => \"zero\" | (1, s) => \"one:\" ^ s | _ => \"other\" end"
+>   : string
 Sys.planEx "1";
 > val it = "val it = #^ String (\"one:\", \"a\")" : string
 
@@ -159,6 +165,10 @@ in
    | _ => "other"
 end;
 > val it = "one:a" : string
+Sys.planEx "~1";
+> val it =
+>   "val it = let val t = {a = 1, b = \"a\"} in case t of {a = 0, b = _} => \"zero\" | {a = 1, b = s} => \"one:\" ^ s | _ => \"other\" end"
+>   : string
 Sys.planEx "1";
 > val it = "val it = #^ String (\"one:\", \"a\")" : string
 
@@ -189,6 +199,10 @@ in
     | NONE => "none"
 end;
 > val it = "some:a" : string
+Sys.planEx "~1";
+> val it =
+>   "val it = let val someA = SOME \"a\" in case someA of SOME(\"0\") => \"some0\" | SOME(s) => \"some:\" ^ s | NONE => \"none\" end"
+>   : string
 Sys.planEx "1";
 > val it = "val it = #^ String (\"some:\", \"a\")" : string
 
@@ -201,6 +215,10 @@ in
     | NONE => "none"
 end;
 > val it = "none" : string
+Sys.planEx "~1";
+> val it =
+>   "val it = let val none = NONE in case none of SOME(\"0\") => \"some0\" | SOME(s) => \"some:\" ^ s | NONE => \"none\" end"
+>   : string
 Sys.planEx "1";
 > val it = "val it = \"none\"" : string
 
@@ -211,6 +229,10 @@ in
   case `left` of INL s => "left:" ^ s | INR s => "right:" ^ s
 end;
 > val it = "left:a" : string
+Sys.planEx "~1";
+> val it =
+>   "val it = let val `left` = INL \"a\" in case `left` of INL(s) => \"left:\" ^ s | INR(s_1) => \"right:\" ^ s_1 end"
+>   : string
 Sys.planEx "1";
 > val it = "val it = #^ String (\"left:\", \"a\")" : string
 
@@ -380,6 +402,10 @@ Sys.planEx "1";
  * cases and emits the equivalent two-sided bounds. *)
 from x where abs x < 5;
 > val it = [~4,~3,~2,~1,0,1,2,3,4] : int list
+Sys.planEx "3";
+> val it =
+>   "val it = from x in #flatten Range ([OPEN (~5, 5)]) where #abs Int x < 5"
+>   : string
 from x where abs x <= 3;
 > val it = [~3,~2,~1,0,1,2,3] : int list
 from x where 5 > abs x;

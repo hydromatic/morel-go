@@ -41,6 +41,10 @@ Relational.count (bag []);
 > val it = 0 : int
 Relational.count (bag [false]);
 > val it = 1 : int
+Sys.plan ();
+> val it =
+>   "apply(fnValue Relational.count, argCode apply(fnValue Bag.fromList, argCode tuple(constant(false))))"
+>   : string
 
 Relational.nonEmpty (bag [1, 2, 3]);
 > val it = true : bool
@@ -48,6 +52,10 @@ Relational.nonEmpty (bag []);
 > val it = false : bool
 Relational.nonEmpty (bag [false]);
 > val it = true : bool
+Sys.plan ();
+> val it =
+>   "apply(fnValue Relational.nonEmpty, argCode apply(fnValue Bag.fromList, argCode tuple(constant(false))))"
+>   : string
 
 Relational.empty (bag [1, 2, 3]);
 > val it = false : bool
@@ -55,6 +63,10 @@ Relational.empty (bag []);
 > val it = true : bool
 Relational.empty (bag [false]);
 > val it = false : bool
+Sys.plan ();
+> val it =
+>   "apply(fnValue Relational.empty, argCode apply(fnValue Bag.fromList, argCode tuple(constant(false))))"
+>   : string
 
 val emps = [
   {empno=7839, ename="KING", mgr=0},
@@ -129,6 +141,10 @@ Relational.max (bag [INL 1, INR "a", INL 2]);
 > val it = INR "a" : (int,string) either
 Relational.max (bag [false, true]);
 > val it = true : bool
+Sys.plan ();
+> val it =
+>   "apply(fnValue Relational.max, argCode apply(fnValue Bag.fromList, argCode tuple(constant(false), constant(true))))"
+>   : string
 
 Relational.min (bag [1, 2, 3]);
 > val it = 1 : int
@@ -151,6 +167,10 @@ Relational.min (bag [INL 1, INR "a", INL 2]);
 > val it = INL 1 : (int,string) either
 Relational.min (bag [false, true]);
 > val it = false : bool
+Sys.plan ();
+> val it =
+>   "apply(fnValue Relational.min, argCode apply(fnValue Bag.fromList, argCode tuple(constant(false), constant(true))))"
+>   : string
 
 Relational.only [2];
 > val it = 2 : int

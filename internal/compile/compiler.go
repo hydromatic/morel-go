@@ -456,6 +456,12 @@ func planFnName(name string, t types.Type) string {
 			return op
 		}
 	}
+	if name == "abs" {
+		// "abs" is overloaded on int and real, as the arithmetic
+		// operators are, so its structure comes from the operand
+		// type rather than from the alias table.
+		return arithStruct(t) + ".abs"
+	}
 	if q, ok := planAliases[name]; ok {
 		return q
 	}
@@ -463,22 +469,27 @@ func planFnName(name string, t types.Type) string {
 }
 
 // arithStruct is the structure ("Int", "Real", or "Word") of an
-// arithmetic operator, taken from its operand type.
+// arithmetic operator or function, taken from its operand type.
+// A binary operator's parameter is a tuple, a unary function's is
+// the operand itself.
 func arithStruct(t types.Type) string {
-	if fn, ok := t.(*types.Fn); ok {
-		if tup, ok := fn.Param.(*types.Tuple); ok && len(tup.Args) > 0 {
-			// lint: sort until '^\t\t\t}' where '^\t\t\tcase '
-			switch tup.Args[0].String() {
-			case "real":
-				return "Real"
-			case "word":
-				return "Word"
-			default:
-				return "Int"
-			}
-		}
+	fn, ok := t.(*types.Fn)
+	if !ok {
+		return "Int"
 	}
-	return "Int"
+	arg := fn.Param
+	if tup, ok := arg.(*types.Tuple); ok && len(tup.Args) > 0 {
+		arg = tup.Args[0]
+	}
+	// lint: sort until '^\t}' where '^\tcase '
+	switch arg.String() {
+	case "real":
+		return "Real"
+	case "word":
+		return "Word"
+	default:
+		return "Int"
+	}
 }
 
 // planAliases maps a top-level alias to the structure member it
@@ -486,6 +497,7 @@ func arithStruct(t types.Type) string {
 var planAliases = map[string]string{
 	// lint: sort until '^}' where '^\t"'
 	"app":       "List.app",
+	bagTyCon:    "Bag.fromList",
 	"chr":       "Char.chr",
 	"explode":   "String.explode",
 	"foldl":     "List.foldl",

@@ -1244,7 +1244,7 @@ func collectionGenerator(sys *types.System,
 // is returned unchanged.
 func bagToList(sys *types.System, coll core.Exp) core.Exp {
 	named, ok := coll.Type().(*types.Named)
-	if !ok || named.Name != "bag" || len(named.Args) != 1 {
+	if !ok || named.Name != bagTyCon || len(named.Args) != 1 {
 		return coll
 	}
 	listT := sys.List(named.Args[0])

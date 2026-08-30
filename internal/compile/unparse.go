@@ -25,8 +25,45 @@ import (
 	"github.com/hydromatic/morel-go/internal/ast"
 	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/eval"
+	"github.com/hydromatic/morel-go/internal/parse"
 	"github.com/hydromatic/morel-go/internal/types"
 )
+
+// resolveBuiltins rewrites an identifier that names a structure
+// member -- "op ^", or the alias "size" -- into the member form
+// itself, "String.^" and "String.size".
+//
+// morel-java does this in its inliner, which replaces such an
+// identifier with the built-in's function literal, and the
+// distinction is what a plan's rendering turns on: an operator
+// still written as an identifier renders infix, `"one:" ^ s`,
+// while a resolved member renders `#^ String ("one:", s)`. That
+// is why the initial plan and an optimized one spell the same
+// application differently.
+//
+// morel-go's inliner leaves the identifier alone, so the
+// substitution happens here instead, on the tree a plan is
+// rendered from and never on the tree that is evaluated.
+func resolveBuiltins(d core.Decl) core.Decl {
+	r := &rewriter{}
+	r.exp = func(e core.Exp) (core.Exp, bool) {
+		id, ok := e.(*core.ID)
+		if !ok || strings.Contains(id.Pat.Name, ".") {
+			return nil, false
+		}
+		qualified := planFnName(id.Pat.Name, id.Pat.T)
+		structName, member, ok := strings.Cut(qualified, ".")
+		if !ok {
+			return nil, false
+		}
+		return &core.Apply{
+			T:   id.Pat.T,
+			Fn:  &core.Selector{T: id.Pat.T, Name: member},
+			Arg: &core.ID{Pat: &core.IDPat{Name: structName}},
+		}, true
+	}
+	return r.rewriteDecl(d)
+}
 
 // UnparseDecl renders a Core declaration as one line of source
 // text — the form Sys.planEx returns. Distinct variables sharing
@@ -42,6 +79,10 @@ func UnparseDecl(sys *types.System, decl core.Decl) string {
 // A sub-expression is parenthesized when the context binds
 // tighter than the expression's own operator.
 const (
+	// precQuery is the binding of a query, and of "fn", "let" and
+	// "case": each has an open-ended tail, so each parenthesizes
+	// where a step keyword could otherwise be read as its own.
+	precQuery   = 1
 	precOrelse  = 1 // orelse: left 2, right 3
 	precAndalso = 2
 	precCompare = 4 // = <> < <= > >= elem: non-associative
@@ -90,12 +131,16 @@ func (u *unparser) name(pat *core.IDPat) {
 	u.put(suffixed(pat.Name, len(list)))
 }
 
-// suffixed appends the renumbering suffix.
+// suffixed quotes a name that has to be quoted to be read back --
+// a reserved word such as "left" -- and appends the renumbering
+// suffix. The suffix goes outside the quotes, so that what is
+// marked as the reserved word is the name the user wrote.
 func suffixed(name string, i int) string {
+	quoted := parse.QuoteIdent(name)
 	if i == 0 {
-		return name
+		return quoted
 	}
-	return name + "_" + strconv.Itoa(i)
+	return quoted + "_" + strconv.Itoa(i)
 }
 
 // decl renders a declaration.
@@ -286,7 +331,11 @@ func (u *unparser) rangeList(e *core.RangeList) {
 }
 
 // infixName maps a core operator name to its infix spelling, for
-// the operators that render infix.
+// the operators that render infix. It covers every infix operator
+// of the grammar, as morel-java's Op.BY_OP_NAME does: an operator
+// written as an identifier -- "op ^" -- has not been resolved to
+// the structure member that implements it, and so still renders
+// as the operator it was written as. See infixOf.
 func infixName(name string) (string, int, rune) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch name {
@@ -294,10 +343,35 @@ func infixName(name string) (string, int, rune) {
 		return strings.TrimPrefix(name, "op "), precCompare, 'n'
 	case opAt, opCons:
 		return strings.TrimPrefix(name, "op "), precCons, 'r'
-	case opPlus, opMinus, opCaret:
-		// Only "+" of the arithmetic family renders infix; see
-		// apply.
+	case opCaret, opMinus, opPlus:
 		return strings.TrimPrefix(name, "op "), precPlus, 'l'
+	case opDiv, opMod, opTimes:
+		return strings.TrimPrefix(name, "op "), precTimes, 'l'
+	default:
+		return "", 0, 0
+	}
+}
+
+// infixOf returns the infix spelling of an application's
+// function, and whether it has one.
+//
+// An unresolved operator -- a bare "op X" identifier -- always
+// renders infix. A resolved structure member renders as
+// "#member Structure", with the sole exception of "Int.+" and
+// "Real.+", which morel-java keeps infix (Resolver.toOp); that is
+// why a plan can read "#* Int (x, y + 3)", mixing the two forms
+// in one expression.
+func infixOf(fn core.Exp) (string, int, rune) {
+	name := builtinName(fn)
+	if op, prec, assoc := infixName(name); op != "" {
+		if _, isID := fn.(*core.ID); isID {
+			return op, prec, assoc
+		}
+		return "", 0, 0
+	}
+	switch name {
+	case "Int.+", "Real.+":
+		return "+", precPlus, 'l'
 	default:
 		return "", 0, 0
 	}
@@ -319,8 +393,7 @@ func (u *unparser) apply(e *core.Apply, left, right int) {
 			return
 		}
 	}
-	if op, prec, assoc := infixName(name); op != "" &&
-		(op != "+" && op != "-" && op != "^" || op == "+") {
+	if op, prec, assoc := infixOf(e.Fn); op != "" {
 		if tuple, ok := e.Arg.(*core.Tuple); ok &&
 			len(tuple.Args) == 2 {
 			l, r := binding(prec, assoc)
@@ -485,7 +558,7 @@ func (u *unparser) step(step core.FromStep, scans *int,
 			return
 		}
 		u.put(" in ")
-		u.exp(s.Exp, 0, 0)
+		u.exp(s.Exp, precQuery+1, precQuery+1)
 	case *core.Skip:
 		u.put(" skip ")
 		u.exp(s.Exp, 0, 0)

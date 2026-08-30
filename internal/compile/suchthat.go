@@ -63,10 +63,14 @@ func Replan(decl core.Decl, env *InlineEnv, sys *types.System,
 ) core.Decl {
 	target, err := strconv.Atoi(phase)
 	if err != nil {
+		// Not a number -- "~1", as the corpus writes it -- so the
+		// declaration is returned as it was resolved, before any
+		// pass. Its built-in references are still identifiers.
 		return decl
 	}
 	if target == 0 || passCount <= 0 {
-		return newPass(decl, env, true).rewriteDecl(decl)
+		return resolveBuiltins(
+			newPass(decl, env, true).rewriteDecl(decl))
 	}
 	cur := decl
 	for i := range passCount {
@@ -76,7 +80,7 @@ func Replan(decl core.Decl, env *InlineEnv, sys *types.System,
 		}
 		cur = next
 		if i+2 == target {
-			return cur
+			return resolveBuiltins(cur)
 		}
 	}
 	for i := range passCount {
@@ -89,10 +93,10 @@ func Replan(decl core.Decl, env *InlineEnv, sys *types.System,
 		}
 		cur = next
 		if i+2 == target {
-			return cur
+			return resolveBuiltins(cur)
 		}
 	}
-	return cur
+	return resolveBuiltins(cur)
 }
 
 // grounder walks a declaration expanding each query, outermost

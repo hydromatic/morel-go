@@ -1927,6 +1927,9 @@ Sys.planEx "0";
 > val it =
 >   "val it = from d : {deptno:int, dname:string, loc:string} where op elem (d, #depts scott)"
 >   : string
+Sys.planEx "3";
+> val it = "val it = from d in #toList Bag (#depts scott) group d order d"
+>   : string
 
 (* testFromSuchThat2c - Record pattern with field renaming *)
 from loc, deptno, name
@@ -1977,6 +1980,10 @@ Sys.planEx "0";
 > val it =
 >   "val it = from dno : int join name : string join v : {deptno:int, dname:string, loc:string} where op elem (v, #depts scott) where #deptno v = dno where name = #dname v where #loc v = \"CHICAGO\" where dno = 30 yield {dno = #deptno v, name = #dname v}"
 >   : string
+Sys.planEx "3";
+> val it =
+>   "val it = from v in #toList Bag (#depts scott) group v order v join dno in [#deptno v] join name in [#dname v] where #loc v = \"CHICAGO\" where dno = 30 yield {dno = #deptno v, name = #dname v}"
+>   : string
 
 (* testFromSuchThat2d4 - Forward references with inequality constraint *)
 from dno, name, v
@@ -1995,6 +2002,10 @@ Sys.planEx "0";
 > val it =
 >   "val it = from dno : int join name : string join v : {deptno:int, dname:string, loc:string} where op elem (v, #depts scott) where #deptno v = dno where name = #dname v where #loc v = \"CHICAGO\" where dno > 25 yield {dno = #deptno v, name = #dname v}"
 >   : string
+Sys.planEx "3";
+> val it =
+>   "val it = from v in #toList Bag (#depts scott) group v order v join dno in [#deptno v] join name in [#dname v] where #loc v = \"CHICAGO\" where dno > 25 yield {dno = #deptno v, name = #dname v}"
+>   : string
 
 (* testFromSuchThat2e - Function inlining with elem predicate.
  * As testFromSuchThat2d but using a function. (Simple enough
@@ -2009,6 +2020,10 @@ from d
 Sys.planEx "0";
 > val it =
 >   "val it = from d : {deptno:int, dname:string, loc:string} where (let val d_1 = d in op elem (d_1, #depts scott) end) andalso #deptno d = 20 yield #dname d"
+>   : string
+Sys.planEx "999";
+> val it =
+>   "val it = from d in #toList Bag (#depts scott) group d order d where #deptno d = 20 yield #dname d"
 >   : string
 
 (* testFromSuchThat2f - Join via suchthat with two functions *)
@@ -2027,6 +2042,14 @@ in
 end;
 > val it = ["RESEARCH","RESEARCH","RESEARCH","RESEARCH","RESEARCH"]
 >   : string list
+Sys.planEx "0";
+> val it =
+>   "val it = let val isDept = fn d => op elem (d, #depts scott) in let val isEmp = fn e => op elem (e, #emps scott) in from d_1 : {deptno:int, dname:string, loc:string} join e_1 : {comm:real, deptno:int, empno:int, ename:string, hiredate:string, job:string, mgr:int, sal:real} where isDept d_1 andalso isEmp e_1 andalso #deptno d_1 = #deptno e_1 andalso #deptno d_1 = 20 yield #dname d_1 end end"
+>   : string
+Sys.planEx "999";
+> val it =
+>   "val it = from d in #toList Bag (#depts scott) group d order d join e in (from e in #toList Bag (#emps scott) group e order e) where #deptno d = #deptno e andalso #deptno d = 20 yield #dname d"
+>   : string
 
 (* testProvenanceThroughFunction - Provenance propagation through
  * function inversion. When 'f x' appears in WHERE, maybeFunction
