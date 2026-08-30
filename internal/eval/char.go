@@ -207,6 +207,10 @@ func CharToCString(c rune) string {
 	switch c {
 	case '"':
 		return `\"`
+	case '?':
+		return `\?`
+	case '\'':
+		return `\'`
 	case '\\':
 		return `\\`
 	case '\a':
@@ -247,6 +251,11 @@ func charFromCStringFn(arg Val) (Val, error) {
 		return noneVal, nil
 	}
 	if s[0] != '\\' {
+		// Only a printable character stands for itself; a control
+		// character is not C string syntax.
+		if s[0] < ' ' || s[0] > '~' {
+			return noneVal, nil
+		}
 		return someVal(rune(s[0])), nil
 	}
 	if len(s) == 1 { // a lone backslash
@@ -256,7 +265,10 @@ func charFromCStringFn(arg Val) (Val, error) {
 		return someVal(r), nil
 	}
 	if s[1] == 'x' {
-		return cCharCode(s[2:], hexBase, hexDigits)
+		// A hexadecimal escape runs to the end of the digits, and
+		// the value it spells must be a character: "\x100" is not
+		// "\x10" followed by "0", it is 256 and out of range.
+		return cCharCode(s[2:], hexBase, len(s))
 	}
 	if s[1] >= '0' && s[1] <= '7' {
 		return cCharCode(s[1:], octalBase, octalDigits)

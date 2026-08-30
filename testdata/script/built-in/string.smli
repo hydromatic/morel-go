@@ -542,6 +542,10 @@ String.toCString "a\"b";
 > val it = "a\\\"b" : string
 String.toCString "a\\b";
 > val it = "a\\\\b" : string
+String.toCString "a'b";
+> val it = "a\\'b" : string
+String.toCString "a?b";
+> val it = "a\\?b" : string
 String.toCString (str (chr 0) ^ "x");
 > val it = "\\000x" : string
 String.toCString ("a" ^ str (chr 200));

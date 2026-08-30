@@ -127,11 +127,17 @@ func mapFn(f Val) (Val, error) {
 }
 
 // explodeFn is "explode s", the characters of a string.
+//
+// A char is one of 256 values and a string is indexed by byte, so
+// the characters are the string's bytes. Reading them as runes
+// would decode UTF-8, and a byte above 127 that is not part of a
+// sequence -- "\128", which a string may hold -- would read as the
+// replacement character.
 func explodeFn(arg Val) (Val, error) {
 	s := asString(arg)
 	out := make([]Val, 0, len(s))
-	for _, r := range s {
-		out = append(out, r)
+	for i := range len(s) {
+		out = append(out, rune(s[i]))
 	}
 	return out, nil
 }
@@ -139,9 +145,11 @@ func explodeFn(arg Val) (Val, error) {
 // implodeFn is "implode cs", the string of a character list.
 func implodeFn(arg Val) (Val, error) {
 	list := asList(arg)
-	b := make([]rune, len(list))
+	// Each character is one byte, as explode reads them; a char is
+	// one of 256 values, so the conversion cannot lose anything.
+	b := make([]byte, len(list))
 	for i, v := range list {
-		b[i] = asChar(v)
+		b[i] = byte(asChar(v) & maxCharVal)
 	}
 	return string(b), nil
 }
