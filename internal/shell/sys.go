@@ -18,6 +18,7 @@
 package shell
 
 import (
+	"math/big"
 	"runtime"
 	"slices"
 	"strconv"
@@ -63,6 +64,9 @@ const (
 	// outputProp accepts an output-mode name, shown uppercase
 	// ("CLASSIC", "TABULAR").
 	outputProp
+	// bigIntProp accepts a number too large for a Morel "int",
+	// written as an int or as a numeral in a string.
+	bigIntProp
 	// dynamicProp is computed from the session (banner,
 	// directory) and cannot be set.
 	dynamicProp
@@ -83,6 +87,15 @@ const (
 	printDepthProp  = "printDepth"
 	printLengthProp = "printLength"
 	stringDepthProp = "stringDepth"
+)
+
+// rangeMaxLengthProp is the largest number of values that
+// expanding a range may produce, and its default, 2^24 - 1, the
+// same as "Vector.maxLen". It is larger than a Morel "int" can
+// hold in general, so it is kept as a numeral.
+const (
+	rangeMaxLengthProp    = "rangeMaxLength"
+	rangeMaxLengthDefault = "16777215"
 )
 
 // sysProps is the property table: every property is
@@ -106,12 +119,28 @@ var sysProps = map[string]sysProp{
 	printLengthProp:        {nil, intProp},
 	"productName":          {nil, dynamicProp},
 	"productVersion":       {nil, dynamicProp},
+	rangeMaxLengthProp:     {text(rangeMaxLengthDefault), bigIntProp},
 	"relationalize":        {text("false"), boolProp},
 	"scriptDirectory":      {nil, dynamicProp},
 	stringDepthProp:        {nil, intProp},
 	"stringFold":           {nil, stringProp},
 	"terminalBackground":   {nil, stringProp},
 	"timeZone":             {nil, stringProp},
+}
+
+// bigIntValue reads a property value written as a Morel "int" or
+// as a numeral in a string, the latter for a number that an "int"
+// cannot hold.
+func bigIntValue(v eval.Val) (*big.Int, bool) {
+	switch n := v.(type) {
+	case int32:
+		return big.NewInt(int64(n)), true
+	case string:
+		const decimal = 10
+		i, ok := new(big.Int).SetString(n, decimal)
+		return i, ok
+	}
+	return nil, false
 }
 
 // intPropField returns the config field backing an integer
@@ -488,6 +517,15 @@ func (k *Kernel) sysSet(arg eval.Val) (eval.Val, error) {
 	value := vals[1]
 	// lint: sort until '^	}' where '^	case '
 	switch prop.kind {
+	case bigIntProp:
+		n, isBig := bigIntValue(value)
+		if !isBig {
+			panic("property " + name + " requires an integer")
+		}
+		k.config.props[name] = n.String()
+		if name == rangeMaxLengthProp {
+			eval.SetRangeMaxLength(n)
+		}
 	case boolProp:
 		b, isBool := value.(bool)
 		if !isBool {
@@ -619,6 +657,12 @@ func (k *Kernel) sysUnset(arg eval.Val) (eval.Val, error) {
 		*field = intPropDefault(name)
 	} else {
 		delete(k.config.props, name)
+	}
+	if name == rangeMaxLengthProp {
+		const decimal = 10
+		n, _ := new(big.Int).SetString(rangeMaxLengthDefault,
+			decimal)
+		eval.SetRangeMaxLength(n)
 	}
 	return unitResult()
 }

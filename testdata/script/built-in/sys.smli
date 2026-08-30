@@ -158,9 +158,9 @@ Sys.showAll;
 showAll;
 > val it = fn : unit -> (string * string option) list
 List.length (Sys.showAll ());
-> val it = 22 : int
+> val it = 23 : int
 List.length (showAll ());
-> val it = 22 : int
+> val it = 23 : int
 
 (*) Mask version number since it changes with each release
 case Sys.show "productVersion" of

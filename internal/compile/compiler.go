@@ -282,6 +282,22 @@ func (c *compiler) builtinFnInfo(fnExp core.Exp,
 	}
 }
 
+// flattenElem returns the element type of a reference to
+// "Range.flatten", and false for any other expression. The
+// evaluator has no types, so the domain that an unbounded
+// endpoint stands for has to be settled here.
+func (c *compiler) flattenElem(exp core.Exp) (types.Type, bool) {
+	if BuiltinName(exp) != "Range.flatten" {
+		return nil, false
+	}
+	fn, ok := exp.Type().(*types.Fn)
+	if !ok {
+		return nil, false
+	}
+	elem := collectionElem(fn.Result)
+	return elem, elem != nil
+}
+
 // sumRef returns the type of a reference to the "sum" aggregate,
 // written bare or as a member of "Relational", and false for any
 // other expression.
@@ -955,6 +971,12 @@ func (c *compiler) compileApply(e *core.Apply, tail bool) (eval.Code,
 	fn, err := c.compileExp(e.Fn)
 	if err != nil {
 		return nil, err
+	}
+	if elem, ok := c.flattenElem(e.Fn); ok {
+		// "Range.flatten" over a known element type: an endpoint
+		// left unbounded is the end of that type's domain.
+		fn = eval.Constant(eval.RangeFlatten(
+			eval.DiscreteFor(c.sys, elem)))
 	}
 	if sumType, ok := sumRef(e.Fn); ok {
 		var zero eval.Val

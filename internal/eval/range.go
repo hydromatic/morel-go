@@ -18,6 +18,7 @@
 package eval
 
 import (
+	"math/big"
 	"slices"
 
 	"github.com/hydromatic/morel-go/internal/ast"
@@ -422,16 +423,26 @@ func intervalContains(iv interval, x Val) bool {
 // enumerateInterval lists the discrete values in a bounded
 // interval, in ascending order. A single-valued interval needs no
 // successor, so a point of any type enumerates.
-func enumerateInterval(iv interval) ([]Val, error) {
-	if iv.lo.inf || iv.hi.inf {
-		return nil, &MorelError{Exn: ExnDomain}
+func enumerateInterval(iv interval, d *Discrete) ([]Val, error) {
+	first, last, err := intervalEnds(iv, d)
+	if err != nil {
+		return nil, err
 	}
-	first, last := firstVal(iv.lo), lastVal(iv.hi)
 	if first == nil || last == nil {
 		return nil, &MorelError{Exn: ExnDomain}
 	}
 	if compareVals(first, last) > 0 {
 		return []Val{}, nil
+	}
+	err = checkRangeLength(first, last, d)
+	if err != nil {
+		return nil, err
+	}
+	if d != nil && d.Bounded() {
+		// The domain numbers the values, so the ones between the
+		// endpoints are read off by position; a product has no
+		// successor function of its own.
+		return valuesBetween(first, last, d), nil
 	}
 	out := []Val{first}
 	for cur := first; compareVals(cur, last) != 0; {
@@ -445,12 +456,67 @@ func enumerateInterval(iv interval) ([]Val, error) {
 	return out, nil
 }
 
+// valuesBetween lists the values from first to last inclusive, by
+// their positions in the domain.
+func valuesBetween(first, last Val, d *Discrete) []Val {
+	lo, hi := d.Ordinal(first), d.Ordinal(last)
+	out := []Val{}
+	for n := new(big.Int).Set(lo); n.Cmp(hi) <= 0; n.Add(n,
+		big.NewInt(1)) {
+		out = append(out, d.valueAt(new(big.Int).Set(n)))
+	}
+	return out
+}
+
+// intervalEnds are the least and greatest values an interval
+// includes. An endpoint left unbounded is the end of the element
+// type's domain; where the domain has no such end -- an int
+// reaches no last value -- there is nothing to enumerate towards,
+// which is Size rather than a walk that never finishes.
+func intervalEnds(iv interval, d *Discrete) (Val, Val, error) {
+	var first, last Val
+	switch {
+	case !iv.lo.inf:
+		first = firstVal(iv.lo)
+	case d != nil && d.Bounded():
+		first = d.Least()
+	default:
+		return nil, nil, &MorelError{Exn: ExnSize}
+	}
+	switch {
+	case !iv.hi.inf:
+		last = lastVal(iv.hi)
+	case d != nil && d.Bounded():
+		last = d.Greatest()
+	default:
+		return nil, nil, &MorelError{Exn: ExnSize}
+	}
+	return first, last, nil
+}
+
+// checkRangeLength refuses a range with more values than the
+// "rangeMaxLength" property allows. The values are counted, as
+// the difference of the endpoints' positions in the domain, so a
+// range of billions is refused as quickly as a range of three is
+// built.
+func checkRangeLength(first, last Val, d *Discrete) error {
+	if d == nil || !d.Counted() {
+		return nil
+	}
+	n := new(big.Int).Sub(d.Ordinal(last), d.Ordinal(first))
+	n.Add(n, big.NewInt(1))
+	if n.Cmp(RangeMaxLength()) > 0 {
+		return &MorelError{Exn: ExnSize}
+	}
+	return nil
+}
+
 // enumerateRanges concatenates the enumerated values of each range,
 // in input order.
-func enumerateRanges(ranges []Val) (Val, error) {
+func enumerateRanges(ranges []Val, d *Discrete) (Val, error) {
 	out := []Val{}
 	for _, r := range ranges {
-		vs, err := enumerateInterval(rangeToInterval(r))
+		vs, err := enumerateInterval(rangeToInterval(r), d)
 		if err != nil {
 			return nil, err
 		}
@@ -477,9 +543,22 @@ func rangeDiscreteSetOfFn(arg Val) (Val, error) {
 }
 
 // rangeFlattenFn is "Range.flatten": concatenate the values of each
-// range, in input order, without merging.
+// range, in input order, without merging. It knows nothing of the
+// element type, so an endpoint left unbounded has no end to stand
+// for; RangeFlatten is the form the compiler builds where the
+// type is at hand.
 func rangeFlattenFn(arg Val) (Val, error) {
-	return enumerateRanges(asList(arg))
+	return enumerateRanges(asList(arg), nil)
+}
+
+// RangeFlatten is "Range.flatten" over a known element type: an
+// endpoint left unbounded is the end of that type's domain, and a
+// range with more values than "rangeMaxLength" raises Size rather
+// than being walked.
+func RangeFlatten(d *Discrete) Fn {
+	return func(arg Val) (Val, error) {
+		return enumerateRanges(asList(arg), d)
+	}
 }
 
 // rangeRangesFn is "Range.ranges cs": the list of ranges in a set.
@@ -490,13 +569,13 @@ func rangeRangesFn(arg Val) (Val, error) {
 // rangeToListFn is "Range.toList ds": the values of a discrete set,
 // in ascending order.
 func rangeToListFn(arg Val) (Val, error) {
-	return enumerateRanges(setRangeList(arg))
+	return enumerateRanges(setRangeList(arg), nil)
 }
 
 // rangeToBagFn is "Range.toBag ds": the values of a discrete set as
 // a bag.
 func rangeToBagFn(arg Val) (Val, error) {
-	return enumerateRanges(setRangeList(arg))
+	return enumerateRanges(setRangeList(arg), nil)
 }
 
 // rangeComplementFn is "Range.complement cs": the continuous set of

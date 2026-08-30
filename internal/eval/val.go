@@ -83,6 +83,10 @@ var exnDescriptions = map[string]string{
 	"Subscript": "subscript out of bounds",
 }
 
+// zeroPos is the position of an exception that has none: the
+// shell writes it out rather than leaving the line off.
+const zeroPos = "0.0-0.0"
+
 // Describe renders the exception as the shell reports it:
 //
 //	uncaught exception Bind [nonexhaustive binding failure]
@@ -96,6 +100,13 @@ func (e *MorelError) Describe() string {
 	}
 	if e.Span != (token.Span{}) {
 		s += "\n  raised at: stdIn:" + e.Span.String()
+	} else {
+		// An exception that nothing gave a position to -- one
+		// raised while a range is expanded, say, where no
+		// expression is being evaluated -- still says where it
+		// came from, naming a position of zeros as morel-java
+		// does.
+		s += "\n  raised at: " + zeroPos
 	}
 	return s
 }

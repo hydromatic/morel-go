@@ -355,6 +355,60 @@ Range.flatten [POINT 1, POINT 2, POINT 1, POINT 3];
 Range.flatten ([] : int range list);
 > val it = [] : int list
 
+(* Discrete element types ----------------------------------------- *)
+
+(* Flattening a range walks its element type's discrete domain from one
+ * end to the other, so it shows what that domain's successor function
+ * and order are. *)
+
+(*) char: successor is the next code point.
+Range.flatten [CLOSED (#"a", #"d")];
+> val it = [#"a",#"b",#"c",#"d"] : char list
+
+(*) AT_MOST starts at the least value of the domain, #"\^@".
+Range.flatten [AT_MOST #"\002"];
+> val it = [#"\^@",#"\^A",#"\^B"] : char list
+
+(*) bool: false then true.
+Range.flatten [CLOSED (false, true)];
+> val it = [false,true] : bool list
+Range.flatten [AT_MOST false];
+> val it = [false] : bool list
+
+(*) unit has one value.
+Range.flatten [POINT ()];
+> val it = [()] : unit list
+
+(*) A tuple of bounded components enumerates completely.
+Range.flatten [CLOSED ((false, false), (true, true))];
+> val it = [(false,false),(false,true),(true,false),(true,true)]
+>   : (bool * bool) list
+Range.flatten [ALL] : bool list;
+> val it = [false,true] : bool list
+Range.flatten [ALL] : (bool * bool) list;
+> val it = [(false,false),(false,true),(true,false),(true,true)]
+>   : (bool * bool) list
+Range.flatten [ALL] : unit list;
+> val it = [()] : unit list
+
+(* How many values are too many is the "rangeMaxLength" property. Lower
+ * it and a range that was short enough no longer is. *)
+Sys.set ("rangeMaxLength", 4);
+> val it = () : unit
+Range.flatten [CLOSED (1, 3)];
+> val it = [1,2,3] : int list
+
+(* The limit may be larger than a Morel "int" can hold, and is then
+ * written as a numeral in a string. *)
+Sys.set ("rangeMaxLength", "4722366482869645213696");
+> val it = () : unit
+List.length (Range.flatten [CLOSED (1, 100)]);
+> val it = 100 : int
+Sys.show "rangeMaxLength";
+> val it = SOME "4722366482869645213696" : string option
+Sys.unset "rangeMaxLength";
+> val it = () : unit
+
 (* Range list syntax ---------------------------------------------- *)
 
 (*) Plain list literal: no ranges, unchanged.
@@ -443,6 +497,18 @@ from x in [1, 2, 3] where x < 2;
 [1 < 2, 3 < 4, 5 < 6];
 > val it = [true,true,true] : bool list
 
+(* Infinite forms (runtime error) --------------------------------- *)
+
+(*) AT_LEAST is unbounded above; enumeration raises Size.
+[5 ..] : int list;
+> uncaught exception Size [size]
+>   raised at: 0.0-0.0
+
+(*) Similar for GREATER_THAN.
+[5 ^..] : int list;
+> uncaught exception Size [size]
+>   raised at: 0.0-0.0
+
 (* Membership in infinite range-lists ----------------------------- *)
 
 (*) Unbounded discrete range: AT_LEAST.
@@ -506,8 +572,17 @@ from x in [1, 2, 3] where x < 2;
 Range.flatten [POINT 1.0, POINT 3.0, POINT 1.0];
 > val it = [1,3,1] : real list
 
+(*) Non-POINT ranges over real are infinite.
+[0.0 .. 1.0];
+> uncaught exception Size [size]
+>   raised at: 0.0-0.0
+
 (*) Same for string.
 ["a"];
 > val it = ["a"] : string list
+
+["a" .. "z"];
+> uncaught exception Size [size]
+>   raised at: 0.0-0.0
 
 (*) End range.smli
