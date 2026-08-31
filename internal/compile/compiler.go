@@ -64,7 +64,13 @@ func Statement(decl core.Decl,
 	}
 	var code, plan eval.Code
 	var ids []*core.IDPat
+	// lint: sort until '^	}' where '^	case '
 	switch d := decl.(type) {
+	case *core.FloatingAttrDecl:
+		// A floating attribute binds nothing and does nothing; it
+		// compiles to unit so that a statement made of one has
+		// something to evaluate.
+		code = eval.Unit()
 	case *core.NonRecValDecl:
 		exp, err := c.compileExp(d.Exp)
 		if err != nil {

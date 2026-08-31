@@ -42,7 +42,72 @@ func isDeclStart(kind token.Kind) bool {
 	}
 }
 
+// decl parses a declaration, with any attributes that precede or
+// follow it. Both positions are accepted, as in OCaml, and the
+// attributes are kept in source order.
 func (p *Parser) decl() (ast.Decl, error) {
+	start := p.tok.Span.Start
+	// A documentation comment before the declaration is sugar for
+	// "[@@doc \"...\"]", and comes before any attribute written
+	// out; morel-java collects them at the same point.
+	leading := p.docAttributes()
+	leading, err := p.declAttributes(leading)
+	if err != nil {
+		return nil, err
+	}
+	d, err := p.bareDecl()
+	if err != nil {
+		return nil, err
+	}
+	trailing, err := p.declAttributes(nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(leading) == 0 && len(trailing) == 0 {
+		return d, nil
+	}
+	end := d.Span().End
+	if n := len(trailing); n > 0 {
+		end = trailing[n-1].Span().End
+	}
+	span := token.Span{Start: start, End: end}
+	return ast.NewAttributedDecl(span, d,
+		append(leading, trailing...)), nil
+}
+
+// docAttributes turns the documentation comments standing before
+// the cursor into "[@@doc]" attributes, in source order.
+func (p *Parser) docAttributes() []*ast.Attribute {
+	docs := p.tok.Docs
+	if len(docs) == 0 {
+		return nil
+	}
+	attrs := make([]*ast.Attribute, len(docs))
+	for i, doc := range docs {
+		payload := ast.NewLiteral(p.tok.Span,
+			ast.StringLiteralOp, doc)
+		attrs[i] = ast.NewAttribute(p.tok.Span, ast.AttrDecl,
+			"doc", payload)
+	}
+	return attrs
+}
+
+// declAttributes appends the run of "[@@a]" attributes at the
+// cursor to attrs.
+func (p *Parser) declAttributes(attrs []*ast.Attribute) (
+	[]*ast.Attribute, error,
+) {
+	for p.tok.Kind == token.LBracketAt2 {
+		a, err := p.attribute(ast.AttrDecl)
+		if err != nil {
+			return nil, err
+		}
+		attrs = append(attrs, a)
+	}
+	return attrs, nil
+}
+
+func (p *Parser) bareDecl() (ast.Decl, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch p.tok.Kind {
 	case token.Datatype:
@@ -115,7 +180,7 @@ func (p *Parser) sigBind() (ast.SigBind, error) {
 	}
 	var specs []ast.SigSpec
 	for p.tok.Kind != token.End {
-		spec, specErr := p.sigSpec()
+		spec, specErr := p.attributedSigSpec()
 		if specErr != nil {
 			return ast.SigBind{}, specErr
 		}
@@ -126,6 +191,33 @@ func (p *Parser) sigBind() (ast.SigBind, error) {
 		return ast.SigBind{}, err
 	}
 	return ast.SigBind{Name: name, Specs: specs}, nil
+}
+
+// attributedSigSpec parses one specification with its attributes:
+// a documentation comment before it, then the specification, then
+// any "[@@a]". A floating "[@@@a]" is a specification of its own.
+func (p *Parser) attributedSigSpec() (ast.SigSpec, error) {
+	if p.tok.Kind == token.LBracketAt3 {
+		a, err := p.attribute(ast.AttrFloating)
+		if err != nil {
+			return ast.SigSpec{}, err
+		}
+		return ast.SigSpec{
+			Kind:  ast.FloatingAttrDeclOp,
+			Attrs: []*ast.Attribute{a},
+		}, nil
+	}
+	attrs := p.docAttributes()
+	spec, err := p.sigSpec()
+	if err != nil {
+		return ast.SigSpec{}, err
+	}
+	attrs, err = p.declAttributes(attrs)
+	if err != nil {
+		return ast.SigSpec{}, err
+	}
+	spec.Attrs = attrs
+	return spec, nil
 }
 
 // sigSpec parses one signature specification: "type [tyvars] name

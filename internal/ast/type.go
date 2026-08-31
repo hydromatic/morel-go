@@ -370,6 +370,11 @@ type SigSpec struct {
 	Name   string
 	Type   Type          // val's type, type's alias, exception's of
 	Bind   *DatatypeBind // datatype spec
+	// Attrs are the specification's attributes, "[@@a]", with a
+	// doc comment before it desugared to "[@@doc]" and first. For
+	// a floating attribute, which is a specification of its own,
+	// Kind is FloatingAttrDeclOp and Attrs holds the one.
+	Attrs []*Attribute
 }
 
 // SigBind is one "NAME = sig spec... end" of a signature

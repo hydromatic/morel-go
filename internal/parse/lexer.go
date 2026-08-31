@@ -49,6 +49,9 @@ type Lexer struct {
 	pos    token.Pos
 	start  token.Pos
 	startI int
+	// docs are the bodies of the documentation comments seen since
+	// the last token; the next token takes them.
+	docs []string
 }
 
 // NewLexer returns a lexer over src; name (e.g. "stdIn" or a file
@@ -164,9 +167,12 @@ func (l *Lexer) hasDigits(n int) bool {
 // token builds a token whose text is the source from the start of
 // the current scan to the current position.
 func (l *Lexer) token(k token.Kind) token.Token {
+	docs := l.docs
+	l.docs = nil
 	return token.Token{
 		Kind: k,
 		Text: string(l.src[l.startI:l.i]),
+		Docs: docs,
 		Span: token.Span{Start: l.start, End: l.pos},
 	}
 }
@@ -178,6 +184,18 @@ func (l *Lexer) skipTrivia() error {
 			l.advance()
 		case l.has("(*)"):
 			l.skipLineComment()
+		case l.has("(**)"), l.has("(***)"):
+			// Ordinary empty and single-star comments, which must
+			// win over the doc-comment opener below.
+			err := l.skipBlockComment()
+			if err != nil {
+				return err
+			}
+		case l.has("(**"):
+			err := l.skipDocComment()
+			if err != nil {
+				return err
+			}
 		case l.has("(*"):
 			err := l.skipBlockComment()
 			if err != nil {
@@ -193,6 +211,63 @@ func (l *Lexer) skipLineComment() {
 	for l.peek(0) >= 0 && l.peek(0) != '\n' {
 		l.advance()
 	}
+}
+
+// skipDocComment consumes a documentation comment,
+// "(** ... *)", and keeps its body for the next token.
+//
+// A comment nested inside it, "(* ... *)" or "(*) ... <nl>", is
+// part of the body and is captured verbatim, to any depth; only
+// the "*)" that closes the outermost one ends it.
+func (l *Lexer) skipDocComment() error {
+	start := l.pos
+	l.skipN(len("(**"))
+	bodyStart := l.i
+	depth := 1
+	for depth > 0 {
+		switch {
+		case l.peek(0) < 0:
+			span := token.Span{Start: start, End: l.pos}
+			return l.errorUnclosed(span, "unclosed comment")
+		case l.has("(*)"):
+			l.skipLineComment()
+		case l.has("(*"):
+			l.skipN(len("(*"))
+			depth++
+		case l.has("*)"):
+			if depth == 1 {
+				// The body ends before the closing marker.
+				l.docs = append(l.docs,
+					docText(string(l.src[bodyStart:l.i])))
+			}
+			l.skipN(len("*)"))
+			depth--
+		default:
+			l.advance()
+		}
+	}
+	return nil
+}
+
+// docText is a documentation comment's body as the "[@@doc]"
+// attribute records it: each line's leading whitespace and one
+// asterisk are dropped, following ocamldoc's "-stars" convention,
+// so that
+//
+//	(** First line
+//	 * Second line *)
+//
+// documents the two lines with the asterisk gone. Whitespace
+// after the asterisk is kept.
+func docText(body string) string {
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimLeft(line, " \t")
+		if after, found := strings.CutPrefix(trimmed, "*"); found {
+			lines[i] = after
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // skipBlockComment consumes a "(* ... *)" comment. Comments nest;
@@ -390,6 +465,9 @@ var symbols = []struct {
 	text string
 	kind token.Kind
 }{
+	{"[@@@", token.LBracketAt3},
+	{"[@@", token.LBracketAt2},
+	{"[@", token.LBracketAt},
 	{"...", token.Ellipsis},
 	{"..^", token.DotDotCaret},
 	{"?.", token.QDot},

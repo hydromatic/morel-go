@@ -101,6 +101,19 @@ func (p *Parser) postfixType() (ast.Type, error) {
 		}
 		t = ast.NewNamedType(span, text, []ast.Type{t})
 	}
+	// An attribute binds at atom level, after any application, so
+	// it is tighter than "*" or "->".
+	attrs, err := p.expAttributes()
+	if err != nil {
+		return nil, err
+	}
+	if len(attrs) > 0 {
+		span := token.Span{
+			Start: t.Span().Start,
+			End:   attrs[len(attrs)-1].Span().End,
+		}
+		t = ast.NewAttributedType(span, t, attrs)
+	}
 	return t, nil
 }
 

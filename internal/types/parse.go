@@ -77,6 +77,9 @@ type converter struct {
 func (c *converter) convert(t ast.Type) (Type, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch n := t.(type) {
+	case *ast.AttributedType:
+		// An attribute is inert; the type is the type it decorates.
+		return c.convert(n.Type)
 	case *ast.ExpressionType:
 		// "typeof e" in a type declaration: the type is whatever
 		// e has in the environment before the declaration.

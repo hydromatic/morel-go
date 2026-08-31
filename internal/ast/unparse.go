@@ -110,6 +110,19 @@ func UnparseSignatureDecl(d *SignatureDecl) string {
 
 // unparseSigSpec renders one signature specification.
 func unparseSigSpec(b *strings.Builder, spec SigSpec) {
+	if spec.Kind == FloatingAttrDeclOp {
+		// A floating attribute is a specification of its own.
+		unparseAttribute(b, spec.Attrs[0])
+		return
+	}
+	unparseSigSpecBody(b, spec)
+	for _, a := range spec.Attrs {
+		b.WriteString(" ")
+		unparseAttribute(b, a)
+	}
+}
+
+func unparseSigSpecBody(b *strings.Builder, spec SigSpec) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch spec.Kind {
 	case DatatypeDeclOp:
@@ -173,13 +186,28 @@ func UnparseType(t Type) string {
 func unparseType(b *strings.Builder, t Type, comma string) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch n := t.(type) {
+	case *AttributedType:
+		unparseType(b, n.Type, comma)
+		for _, a := range n.Attrs {
+			b.WriteString(" ")
+			unparseAttribute(b, a)
+		}
 	case *ExpressionType:
 		b.WriteString("typeof ")
 		unparseExpr(b, n.Exp, applyPrec)
 	case *FnType:
 		unparseTypeArg(b, n.Param, false, comma)
 		b.WriteString(" -> ")
-		unparseType(b, n.Result, comma)
+		// A function's result is not parenthesized -- "->" is
+		// right-associative -- unless it is attributed, where the
+		// parentheses say what the attribute is on.
+		if _, attributed := n.Result.(*AttributedType); attributed {
+			b.WriteString("(")
+			unparseType(b, n.Result, comma)
+			b.WriteString(")")
+		} else {
+			unparseType(b, n.Result, comma)
+		}
 	case *NamedType:
 		unparseNamedType(b, n, comma)
 	case *RecordType:
@@ -212,7 +240,8 @@ func unparseTypeArg(b *strings.Builder, t Type, inTuple bool,
 ) {
 	_, isFn := t.(*FnType)
 	_, isTuple := t.(*TupleType)
-	if isFn || (inTuple && isTuple) {
+	_, isAttributed := t.(*AttributedType)
+	if isFn || isAttributed || (inTuple && isTuple) {
 		b.WriteString("(")
 		unparseType(b, t, comma)
 		b.WriteString(")")
@@ -638,6 +667,20 @@ func unparseModifier(b *strings.Builder, m Modifier) {
 			b.WriteString(pair.To.Name + " = " + pair.From.Name)
 		}
 	}
+}
+
+// unparseAttribute renders an attribute as source, "[@a]", with
+// its payload if it has one.
+func unparseAttribute(b *strings.Builder, a *Attribute) {
+	b.WriteString("[" + a.Kind.Marker() + a.Name)
+	switch {
+	case a.TypePayload != nil:
+		b.WriteString(": " + UnparseType(a.TypePayload))
+	case a.Payload != nil:
+		b.WriteString(" ")
+		unparseExpr(b, a.Payload, 0)
+	}
+	b.WriteString("]")
 }
 
 // unparseParen renders body, parenthesized when the operator

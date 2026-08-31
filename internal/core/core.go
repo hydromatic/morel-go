@@ -470,3 +470,17 @@ type OverDecl struct {
 func (*OverDecl) Op() ast.Op { return ast.OverDeclOp }
 
 func (*OverDecl) decl() {}
+
+// FloatingAttrDecl is a floating attribute, "[@@@a]". It binds
+// nothing and evaluates to nothing; it survives to core only so
+// that a statement made of one has something to compile.
+type FloatingAttrDecl struct {
+	Name string
+}
+
+// Op implements Decl.
+func (*FloatingAttrDecl) Op() ast.Op {
+	return ast.FloatingAttrDeclOp
+}
+
+func (*FloatingAttrDecl) decl() {}

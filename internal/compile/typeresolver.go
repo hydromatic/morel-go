@@ -988,6 +988,9 @@ func (r *typeResolver) astTypeTerm(env typeEnv, t ast.Type) (
 ) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch t := t.(type) {
+	case *ast.AttributedType:
+		// An attribute is inert; the type is the type it decorates.
+		return r.astTypeTerm(env, t.Type)
 	case *ast.ExpressionType:
 		// "typeof exp": the annotation's type is the deduced type
 		// of exp.
@@ -1184,8 +1187,22 @@ func (r *typeResolver) deduceDecl(env typeEnv, decl ast.Decl,
 ) (ast.Decl, error) {
 	// lint: sort until '^	}' where '^	case '
 	switch d := decl.(type) {
+	case *ast.AttributedDecl:
+		// An attribute is inert; the declaration is its operand.
+		// The result keeps the attributes, so that the parse tree
+		// still shows them.
+		inner, err := r.deduceDecl(env, d.Decl, termMap)
+		if err != nil {
+			return nil, err
+		}
+		r.nodeTerm[decl] = r.primTerm(unitName)
+		return ast.NewAttributedDecl(d.Span(), inner, d.Attrs), nil
 	case *ast.DatatypeDecl:
 		return r.deduceDatatypeDecl(d, termMap)
+	case *ast.FloatingAttrDecl:
+		// A floating attribute declares nothing.
+		r.nodeTerm[decl] = r.primTerm(unitName)
+		return decl, nil
 	case *ast.FunDecl:
 		r.registerUserMethods(d)
 		return r.deduceValDecl(env, funToVal(d), termMap)
@@ -1934,6 +1951,8 @@ func containsQuery(exp ast.Expr) bool {
 		return containsQuery(e.Exp)
 	case *ast.Apply:
 		return containsQuery(e.Fn) || containsQuery(e.Arg)
+	case *ast.AttributedExp:
+		return containsQuery(e.Exp)
 	case *ast.Case:
 		return containsQuery(e.Exp) || anyMatchQuery(e.Matches)
 	case *ast.Fn:
@@ -2037,6 +2056,8 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 		return nil
 	case *ast.Apply:
 		return r.deduceApply(env, e, v)
+	case *ast.AttributedExp:
+		return r.deduceAttributed(env, e, v)
 	case *ast.Case:
 		return r.deduceCase(env, e, v)
 	case *ast.Elements:
@@ -2433,6 +2454,20 @@ func (r *typeResolver) selectorAction(sel *ast.RecordSelector,
 			}
 		},
 	})
+}
+
+// deduceAttributed types an attributed expression. An attribute
+// is inert, so the expression has the type of the expression it
+// decorates.
+func (r *typeResolver) deduceAttributed(env typeEnv,
+	e *ast.AttributedExp, v *unify.Var,
+) error {
+	err := r.deduceExp(env, e.Exp, v)
+	if err != nil {
+		return err
+	}
+	r.reg(e, v)
+	return nil
 }
 
 // deduceRangeList types a range list: every bound unifies to one
