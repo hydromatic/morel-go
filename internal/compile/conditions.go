@@ -164,22 +164,22 @@ func selectsOnly(exp ast.Expr, name string,
 	fields map[string]string,
 ) bool {
 	ok := true
-	walkCondition(exp, func(e ast.Expr) bool {
+	_, known := mapCondition(exp, func(e ast.Expr) ast.Expr {
 		if field, isSel := selectionOf(e, name); isSel {
 			if _, kept := fields[field]; !kept {
 				ok = false
 			}
 			// Do not descend; the name is used correctly.
-			return false
+			return e
 		}
 		if id, isID := e.(*ast.ID); isID && id.Name == name {
 			// A use that is not a selection: the condition wants the
 			// record as a whole.
 			ok = false
 		}
-		return true
-	}, func() { ok = false })
-	return ok
+		return nil
+	})
+	return ok && known
 }
 
 // selectionOf reads "#f name", the selection of a field from the
@@ -204,7 +204,9 @@ func selectionOf(e ast.Expr, name string) (string, bool) {
 func rewriteSelectors(exp ast.Expr, name string,
 	fields map[string]string,
 ) ast.Expr {
-	return mapCondition(exp, func(e ast.Expr) ast.Expr {
+	// selectsOnly has already reported that every form here is one
+	// the walk knows, so the rewrite is faithful.
+	out, _ := mapCondition(exp, func(e ast.Expr) ast.Expr {
 		field, isSel := selectionOf(e, name)
 		if !isSel {
 			return nil
@@ -217,6 +219,7 @@ func rewriteSelectors(exp ast.Expr, name string,
 		return ast.NewApply(apply.Span(),
 			ast.NewRecordSelector(apply.Fn.Span(), label), apply.Arg)
 	})
+	return out
 }
 
 // selection reads an application of a record selector, "#f e".
@@ -228,100 +231,74 @@ func selection(apply *ast.Apply) (string, ast.Expr, bool) {
 	return sel.Name, apply.Arg, true
 }
 
-// walkCondition visits every expression of a condition, calling
-// visit before descending; visit returns false to stop descending.
-// unknown is called for a form the walk does not know, so that a
-// caller can answer conservatively.
-func walkCondition(exp ast.Expr, visit func(ast.Expr) bool,
-	unknown func(),
+// mapCondition rewrites a condition bottom-up, and is the one
+// place that says what a condition may be built of.
+//
+// f returns nil to leave a node to the walk, or a node to put in
+// its place, which is not descended into; returning the node
+// itself is how a caller inspects one without rewriting it.
+//
+// It reports false where it met a form it does not know. A caller
+// must then answer conservatively: such a form may use the record
+// as a whole, and what is returned is not a faithful rewrite of
+// it. Deciding what is known and rebuilding it are the same walk,
+// so the two cannot come to disagree -- they did, and a record
+// with a base was rebuilt without one.
+func mapCondition(exp ast.Expr, f func(ast.Expr) ast.Expr) (ast.Expr,
+	bool,
 ) {
-	if !visit(exp) {
-		return
-	}
-	each := func(exps ...ast.Expr) {
-		for _, e := range exps {
-			if e != nil {
-				walkCondition(e, visit, unknown)
-			}
-		}
-	}
-	// lint: sort until '^\t}' where '^\tcase '
-	switch e := exp.(type) {
-	case *ast.AnnotatedExp:
-		each(e.Exp)
-	case *ast.Apply:
-		each(e.Fn, e.Arg)
-	case *ast.ID, *ast.Literal, *ast.RecordSelector:
-	case *ast.If:
-		each(e.Cond, e.IfTrue, e.IfFalse)
-	case *ast.InfixCall:
-		each(e.A0, e.A1)
-	case *ast.ListExp:
-		each(e.Args...)
-	case *ast.PrefixCall:
-		each(e.A)
-	case *ast.Record:
-		if e.Base != nil || len(e.Modifiers) > 0 {
-			unknown()
-			return
-		}
-		for _, f := range e.Fields {
-			each(f.Exp)
-		}
-	case *ast.Tuple:
-		each(e.Args...)
-	default:
-		unknown()
-	}
-}
-
-// mapCondition rewrites a condition bottom-up. f returns nil to
-// leave a node to the walk, or a replacement (which is not
-// descended into).
-func mapCondition(exp ast.Expr, f func(ast.Expr) ast.Expr) ast.Expr {
 	if e2 := f(exp); e2 != nil {
-		return e2
+		return e2, true
 	}
+	known := true
 	sub := func(e ast.Expr) ast.Expr {
 		if e == nil {
 			return nil
 		}
-		return mapCondition(e, f)
+		e2, ok := mapCondition(e, f)
+		known = known && ok
+		return e2
+	}
+	subs := func(exps []ast.Expr) []ast.Expr {
+		out := make([]ast.Expr, len(exps))
+		for i, e := range exps {
+			out[i] = sub(e)
+		}
+		return out
 	}
 	// lint: sort until '^\t}' where '^\tcase '
 	switch e := exp.(type) {
 	case *ast.AnnotatedExp:
-		return ast.NewAnnotatedExp(e.Span(), sub(e.Exp), e.Type)
+		return ast.NewAnnotatedExp(e.Span(), sub(e.Exp), e.Type), known
 	case *ast.Apply:
-		return ast.NewApply(e.Span(), sub(e.Fn), sub(e.Arg))
+		return ast.NewApply(e.Span(), sub(e.Fn), sub(e.Arg)), known
+	case *ast.ID, *ast.Literal, *ast.RecordSelector:
+		return exp, true
 	case *ast.If:
 		return ast.NewIf(e.Span(), sub(e.Cond), sub(e.IfTrue),
-			sub(e.IfFalse))
+			sub(e.IfFalse)), known
 	case *ast.InfixCall:
 		return ast.NewInfixCall(e.Span(), e.Kind, sub(e.A0),
-			sub(e.A1))
+			sub(e.A1)), known
 	case *ast.ListExp:
-		return ast.NewListExp(e.Span(), mapExprs(e.Args, f))
+		return ast.NewListExp(e.Span(), subs(e.Args)), known
 	case *ast.PrefixCall:
-		return ast.NewPrefixCall(e.Span(), e.Kind, sub(e.A))
+		return ast.NewPrefixCall(e.Span(), e.Kind, sub(e.A)), known
 	case *ast.Record:
+		if e.Base != nil || len(e.Modifiers) > 0 {
+			// NewRecord would drop them, so this is not a form the
+			// walk can rebuild.
+			return exp, false
+		}
 		fields := make([]ast.Field, len(e.Fields))
 		for i, fl := range e.Fields {
 			fields[i] = fl
 			fields[i].Exp = sub(fl.Exp)
 		}
-		return ast.NewRecord(e.Span(), fields)
+		return ast.NewRecord(e.Span(), fields), known
 	case *ast.Tuple:
-		return ast.NewTuple(e.Span(), mapExprs(e.Args, f))
+		return ast.NewTuple(e.Span(), subs(e.Args)), known
 	default:
-		return exp
+		return exp, false
 	}
-}
-
-func mapExprs(exps []ast.Expr, f func(ast.Expr) ast.Expr) []ast.Expr {
-	out := make([]ast.Expr, len(exps))
-	for i, e := range exps {
-		out[i] = mapCondition(e, f)
-	}
-	return out
 }
