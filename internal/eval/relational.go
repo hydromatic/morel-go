@@ -30,7 +30,9 @@ func RelationalAggregates() map[string]Fn {
 		"count":    relCountFn,
 		"empty":    relEmptyFn,
 		"max":      relMaxFn,
+		"maxBy":    relMaxByFn,
 		"min":      relMinFn,
+		"minBy":    relMinByFn,
 		"nonEmpty": relNonEmptyFn,
 		"sum":      SumFn(int32(0)),
 	}
@@ -159,6 +161,51 @@ func relMinFn(arg Val) (Val, error) {
 // collection.
 func relMaxFn(arg Val) (Val, error) {
 	return relExtreme(arg, 1)
+}
+
+// relMaxByFn is "maxBy keyFn c": the element of c whose key is
+// greatest; Empty on an empty collection.
+func relMaxByFn(keyFn Val) (Val, error) {
+	return relExtremeBy(keyFn, 1), nil
+}
+
+// relMinByFn is "minBy keyFn c": the element of c whose key is
+// least; Empty on an empty collection.
+func relMinByFn(keyFn Val) (Val, error) {
+	return relExtremeBy(keyFn, -1), nil
+}
+
+// relExtremeBy returns the function that takes a collection and
+// gives the element whose key is least (sign -1) or greatest
+// (sign 1). Keys are compared as values of their type, as max and
+// min compare elements, so a key that is a word is ordered as
+// unsigned and one that is a tuple, record, list or datatype is
+// ordered as Morel orders it.
+//
+// Where several elements tie for the extreme key the first is
+// returned, which for an unordered collection is not specified.
+func relExtremeBy(keyFn Val, sign int) Fn {
+	return func(arg Val) (Val, error) {
+		list := asList(arg)
+		if len(list) == 0 {
+			return nil, &MorelError{Exn: ExnEmpty}
+		}
+		best := list[0]
+		bestKey, err := ApplyVal(keyFn, best)
+		if err != nil {
+			return nil, err
+		}
+		for _, v := range list[1:] {
+			key, err := ApplyVal(keyFn, v)
+			if err != nil {
+				return nil, err
+			}
+			if compareVals(key, bestKey)*sign > 0 {
+				best, bestKey = v, key
+			}
+		}
+		return best, nil
+	}
 }
 
 // relExtreme returns the least (sign -1) or greatest (sign 1)

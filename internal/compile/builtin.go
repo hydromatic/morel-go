@@ -61,6 +61,8 @@ const (
 	intName    = "int"
 	sumName    = "sum"
 	onlyName   = "only"
+	maxByName  = "maxBy"
+	minByName  = "minBy"
 	realName   = "real"
 	wordName   = "word"
 	stringName = "string"
@@ -237,8 +239,15 @@ func collectionBindings(sys *types.System) []Binding {
 	// of the two.
 	iterateType := sys.Fn(coll,
 		sys.Fn(sys.Fn(sys.Tuple(coll, coll), coll), coll))
+	// "maxBy keyFn c" and "minBy keyFn c": the element whose key is
+	// greatest or least. The key is of a type of its own, and is
+	// compared as a value of that type, as max and min compare
+	// elements.
+	byType := sys.Fn(sys.Fn(a, sys.Var(1)), sys.Fn(coll, a))
 	return []Binding{
 		{Name: "iterate", Type: iterateType},
+		{Name: maxByName, Type: byType},
+		{Name: minByName, Type: byType},
 		{Name: opElem, Type: elemType},
 		{Name: opNotElem, Type: elemType},
 		{Name: "count", Type: collToInt},
@@ -262,23 +271,50 @@ func CollectionAggType(sys *types.System, member string,
 	if !ok {
 		return nil
 	}
-	// The member's declared parameter is "'a bag"; replace it with
-	// a collection of the same element type.
-	bag, ok := fn.Param.(*types.Named)
-	if !ok || bag.Name != bagTyCon || len(bag.Args) != 1 {
-		return nil
-	}
+	// lint: sort until '^\t}' where '^\tcase '
 	switch member {
 	case "count", "empty", "max", "min", "nonEmpty", onlyName, sumName:
-		return sys.Fn(sys.Collection(bag.Args[0]), fn.Result)
+		// The member's declared parameter is "'a bag"; replace it
+		// with a collection of the same element type.
+		elem := bagElem(fn.Param)
+		if elem == nil {
+			return nil
+		}
+		return sys.Fn(sys.Collection(elem), fn.Result)
 	case "iterate":
 		// Every bag in the signature becomes a collection; their
 		// shared orderedness makes iterate a list function on
 		// lists and a bag function on bags.
+		if bagElem(fn.Param) == nil {
+			return nil
+		}
 		return bagsToCollections(sys, fn)
+	case maxByName, minByName:
+		// "keyFn -> 'a bag -> 'a": the collection is the second
+		// parameter, so it is the result that adapts.
+		inner, isFn := fn.Result.(*types.Fn)
+		if !isFn {
+			return nil
+		}
+		elem := bagElem(inner.Param)
+		if elem == nil {
+			return nil
+		}
+		return sys.Fn(fn.Param,
+			sys.Fn(sys.Collection(elem), inner.Result))
 	default:
 		return nil
 	}
+}
+
+// bagElem is the element type of "'a bag", or nil if the type is
+// not a bag.
+func bagElem(t types.Type) types.Type {
+	bag, isBag := t.(*types.Named)
+	if !isBag || bag.Name != bagTyCon || len(bag.Args) != 1 {
+		return nil
+	}
+	return bag.Args[0]
 }
 
 // OverloadMethods returns the method overloads that signature
