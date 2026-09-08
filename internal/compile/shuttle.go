@@ -53,6 +53,14 @@ func (r *rewriter) rewriteExp(e core.Exp) core.Exp {
 		return &core.Apply{T: e.T, Fn: fn, Arg: arg, Span: e.Span}
 	case *core.Case:
 		return r.rewriteCase(e)
+	case *core.Check:
+		cond, value := r.rewriteExp(e.Cond), r.rewriteExp(e.Value)
+		if cond == e.Cond && value == e.Value {
+			return e
+		}
+		check := *e
+		check.Cond, check.Value = cond, value
+		return &check
 	case *core.Fn:
 		body := r.rewriteExp(e.Exp)
 		if body == e.Exp {

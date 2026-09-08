@@ -94,6 +94,20 @@ func (c *coverageChecker) checkCase(kase *core.Case) {
 	}
 }
 
+// CaseExhaustive reports whether a case's patterns cover every
+// value, so that nothing need be appended to make it total.
+func CaseExhaustive(sys *types.System, kase *core.Case) bool {
+	c := &coverageChecker{sys: sys}
+	elemType := kase.Matches[0].Pat.Type()
+	rows := make([][]core.Pat, 0, len(kase.Matches))
+	for i := range kase.Matches {
+		rows = append(rows, []core.Pat{kase.Matches[i].Pat})
+	}
+	return !c.useful(rows,
+		[]core.Pat{&core.WildcardPat{T: elemType}}) ||
+		modExhaustive(kase)
+}
+
 // modExhaustive reports whether a case over "e mod k" (k a
 // positive int literal) has patterns covering 0..k-1, the whole
 // range of the modulus, and is therefore exhaustive.

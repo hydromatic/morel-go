@@ -40,6 +40,9 @@ type TypeMap struct {
 	// use of a qualified-typed binding declared in an earlier statement
 	// (dictionary passing, hydromatic/morel#426). It may be nil.
 	bindings map[string]*Binding
+	// aliases maps an alias term's description to the name and
+	// conditions the type is rebuilt from.
+	aliases map[string]aliasInfo
 	// methodCalls maps a postfix method call — one whose receiver
 	// only inference typed — to the structure call it desugars to.
 	// The core resolver converts that, never the call.
@@ -215,7 +218,7 @@ func (c *termToTypeConverter) termType(t unify.Term) (types.Type,
 // the alias expands to; the rest are the alias's own arguments,
 // which the type needs to rebuild itself. Where aliases are not
 // kept, only the expansion is returned.
-func (c *termToTypeConverter) aliasType(name string,
+func (c *termToTypeConverter) aliasType(desc string,
 	s *unify.Sequence,
 ) (types.Type, error) {
 	base, err := c.termType(s.Terms[0])
@@ -233,7 +236,8 @@ func (c *termToTypeConverter) aliasType(name string,
 		}
 		args[i] = arg
 	}
-	return c.m.sys.Alias(name, args, base), nil
+	info := c.m.aliases[desc]
+	return c.m.sys.Alias(info.name, args, base, info.checks), nil
 }
 
 func (c *termToTypeConverter) sequenceType(s *unify.Sequence) (

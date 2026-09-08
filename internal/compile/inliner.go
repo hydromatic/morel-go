@@ -144,6 +144,13 @@ func (inl *inliner) visit(e core.Exp) (core.Exp, bool) {
 		if !ok {
 			return nil, false
 		}
+		if containsCheck(decl.Exp) {
+			// Raising is a check's only effect, so an optimizer that
+			// reasons about values alone would be entitled to discard
+			// one whose name is never read, or to defer one to
+			// wherever its name is read; either would lose the check.
+			return nil, false
+		}
 		switch inl.analysis[pat] {
 		case dead:
 			return inl.rewriteExp(e.Exp), true

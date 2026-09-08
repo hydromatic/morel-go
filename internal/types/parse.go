@@ -96,6 +96,18 @@ func (c *converter) convert(t ast.Type) (Type, error) {
 	case *ast.AttributedType:
 		// An attribute is inert; the type is the type it decorates.
 		return c.convert(n.Type)
+	case *ast.CheckedType:
+		// A checked type is an alias with conditions and no name.
+		// Where aliases are not kept it erases to its body, as any
+		// other alias does.
+		base, err := c.convert(n.Type)
+		if err != nil {
+			return nil, err
+		}
+		if !c.keepAliases {
+			return base, nil
+		}
+		return c.sys.Alias("", nil, base, n.Checks), nil
 	case *ast.ExpressionType:
 		// "typeof e" in a type declaration: the type is whatever
 		// e has in the environment before the declaration.
@@ -180,7 +192,17 @@ func (c *converter) convertNamed(n *ast.NamedType) (Type, error) {
 		// "int my_list" is "int list" and there is no name to keep.
 		// Only a nullary alias survives as a name of its own.
 		if c.keepAliases && len(n.Args) == 0 {
-			return c.sys.Named(n.Name), nil
+			// A nullary alias keeps its name. It is a real alias, not
+			// a bare name, so that Unalias reads what it abbreviates
+			// and a checked type carries its conditions with it.
+			// The body keeps its own aliases: a condition nested
+			// inside one -- a field declared "nat" -- is reached
+			// through them.
+			base, err := c.convert(alias.Body)
+			if err != nil {
+				return nil, err
+			}
+			return c.sys.Alias(n.Name, nil, base, alias.Checks), nil
 		}
 		return c.convert(expandAlias(alias, n.Args))
 	}

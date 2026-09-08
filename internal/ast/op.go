@@ -118,6 +118,10 @@ const (
 	AnnotatedExpOp
 	AnnotatedPatOp
 	ExpressionTypeOp
+	CheckedTypeOp
+	AsOp
+	AsOptOp
+	CheckExpOp
 
 	// Queries.
 
@@ -233,6 +237,10 @@ var opNames = map[Op]string{
 	AnnotatedExpOp:   "annotated_exp",
 	AnnotatedPatOp:   "annotated_pat",
 	ExpressionTypeOp: "expression_type",
+	CheckedTypeOp:    "checked_type",
+	AsOp:             "as",
+	AsOptOp:          "as_opt",
+	CheckExpOp:       "check_exp",
 
 	FromOp:       "from",
 	ExistsOp:     "exists",

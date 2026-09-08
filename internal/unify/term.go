@@ -259,7 +259,7 @@ func renderCollection(t Term) string {
 	}
 	if name, ok := strings.CutPrefix(s.Op, aliasPrefix); ok {
 		// "$alias:t(int)" reads "t (alias for int)".
-		return name + " (alias for " +
+		return aliasDisplayName(name) + " (alias for " +
 			renderCollection(s.Terms[0]) + ")"
 	}
 	if s.Op == tupleOp {

@@ -96,6 +96,65 @@ func applyModifier(m ast.Modifier, fields, allFields []string) (
 	}
 }
 
+// preserves reports whether a modifier leaves the record's type
+// as it was: the same fields, in the same places, each keeping the
+// type it had.
+//
+// Only such a modifier can claim the type of the record it was
+// applied to. One that adds, removes or renames a field produces a
+// record of a different shape; one that is "lenient" may give a
+// field a different type, which is what "lenient" is for. A verb
+// that skips preserves the type by doing nothing, which is right:
+// it did nothing.
+func preserves(sources []modField, fields []string) bool {
+	if len(sources) != len(fields) {
+		return false
+	}
+	for _, src := range sources {
+		// lint: sort until '^\t\t}' where '^\t\tcase '
+		switch source := src.src.(type) {
+		case assignedField:
+			if !source.sameType {
+				return false
+			}
+		case keptField:
+			// A field that kept its own name, rather than another's.
+			if source.field != src.label {
+				return false
+			}
+		case takenField:
+			if !source.sameType {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// claims reports whether a modifier claims something of a value it
+// assigns: that the value has the type the field it goes into was
+// declared with.
+//
+// A field being added has no declared type -- it takes the
+// value's -- and "lenient" gives up the field's type for the same
+// reason, so neither claims anything. A field kept, removed or
+// renamed carries a value that was checked when it was put there.
+func claims(sources []modField) bool {
+	for _, src := range sources {
+		switch source := src.src.(type) {
+		case assignedField:
+			if source.sameType {
+				return true
+			}
+		case takenField:
+			if source.sameType {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // assignFields applies an "extend" or "replace" modifier, in
 // either case taking each label to whichever of the verb's two
 // cases it falls in: the record has the label already, or it does

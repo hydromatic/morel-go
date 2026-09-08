@@ -69,6 +69,13 @@ func dump(b *strings.Builder, node Node) {
 		b.WriteString("(case ")
 		dump(b, n.Exp)
 		dumpMatches(b, "", n.Matches)
+	case *Cast:
+		b.WriteString("(" + n.Op().String() + " " +
+			UnparseExpr(n) + ")")
+	case *CheckExp:
+		b.WriteString("(check_exp " + UnparseExpr(n) + ")")
+	case *CheckedType:
+		b.WriteString("(checked_type " + UnparseType(n) + ")")
 	case *DatatypeDecl:
 		b.WriteString("(datatype_decl " + unparseDatatype(n) +
 			")")

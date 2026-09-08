@@ -155,7 +155,7 @@ func (f *file) declareTypes(sys *types.System) error {
 				return fmt.Errorf("sig: %s: type %s: %w",
 					f.name, t.name, err)
 			}
-			sys.DeclareAlias(t.name, t.tyVars, body)
+			sys.DeclareAlias(t.name, t.tyVars, body, nil)
 			continue
 		}
 		if t.name == "list" || sys.Lookup(t.name) != nil {

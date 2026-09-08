@@ -126,11 +126,28 @@ type Unifier struct {
 	varByName   map[string]*Var
 	atomByName  map[string]*Sequence
 	nameOrdinal map[string]int
+	// weakenVars are variables whose alias is weakened whether or
+	// not it met a different type; see WeakenVar.
+	weakenVars map[*Var]bool
+}
+
+// WeakenVar marks a variable whose type, if it is a type alias,
+// is weakened to what it abbreviates.
+//
+// A meet weakens an alias because an alias is only as strong as
+// its body. An operator overloaded at its operand's own type
+// weakens one for a different reason: it computes a value the type
+// has not been shown to contain, so what it gives back is the body
+// even where nothing met. Without this, "~n" and "n + n" would
+// keep a condition their values may fail.
+func (u *Unifier) WeakenVar(v *Var) {
+	u.weakenVars[v] = true
 }
 
 // New returns an empty Unifier.
 func New() *Unifier {
 	return &Unifier{
+		weakenVars:  map[*Var]bool{},
 		varByName:   map[string]*Var{},
 		atomByName:  map[string]*Sequence{},
 		nameOrdinal: map[string]int{},
@@ -198,6 +215,7 @@ func (u *Unifier) Unify(pairs []TermPair, actions []VarAction,
 				residuals = append(residuals, c.source)
 			}
 		}
+		u.recordWeakenings(w)
 		if len(w.weakened) > 0 {
 			for v, t := range w.result {
 				w.result[v] = weaken(t, w.weakened)
@@ -514,6 +532,18 @@ func (w *work) headReduced(left, right *Sequence) bool {
 	return true
 }
 
+// aliasDisplayName drops the mark that tells one declaration of a
+// name from another: a message names the type the user wrote, and
+// a name declared twice is written the same way both times.
+func aliasDisplayName(name string) string {
+	base, gen, marked := strings.Cut(name, "~")
+	if !marked || gen == "" ||
+		strings.TrimLeft(gen, "0123456789") != "" {
+		return name
+	}
+	return base
+}
+
 // aliasPrefix is the operator prefix of a type-alias sequence: a
 // term "$alias:t(int)" is the alias "t", whose first argument is
 // what it expands to. It matches the type resolver's alias type
@@ -538,6 +568,35 @@ func conflictsAtHead(left, right Term) bool {
 	l, lok := left.(*Sequence)
 	r, rok := right.(*Sequence)
 	return lok && rok && l.Op != r.Op
+}
+
+// recordWeakenings weakens the alias of each variable the caller
+// marked, whether or not it met a different type.
+func (u *Unifier) recordWeakenings(w *work) {
+	for v := range u.weakenVars {
+		// Follow the chain: a variable may have been bound to
+		// another before either was bound to a term.
+		t := resolveVar(w.result, v)
+		if body := headReduce(t); body != t {
+			w.weakened[t.String()] = body
+		}
+	}
+}
+
+// resolveVar follows a variable through the substitution to the
+// term it stands for, or to the last variable in the chain.
+func resolveVar(result map[*Var]Term, v *Var) Term {
+	var t Term = v
+	for {
+		next, ok := result[t.(*Var)]
+		if !ok {
+			return t
+		}
+		t = next
+		if _, isVar := t.(*Var); !isVar {
+			return t
+		}
+	}
 }
 
 // weaken replaces, throughout a term, each alias that met a

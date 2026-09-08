@@ -126,6 +126,7 @@ func deduceOnce(sys *types.System, bindings []Binding,
 		methodCalls:  map[*ast.Apply]ast.Expr{},
 		userMethods:  map[string]bool{},
 		headSubstAt:  -1,
+		aliases:      map[string]aliasInfo{},
 		recordFields: map[*ast.Record][]labelTerm{},
 	}
 	var env typeEnv = emptyTypeEnv{}
@@ -225,6 +226,7 @@ func (r *typeResolver) unify(sys *types.System, decl ast.Decl,
 			subst:       subst,
 			residuals:   subst.Residuals,
 			bindings:    r.bindings,
+			aliases:     r.aliases,
 			methodCalls: r.methodCalls,
 		}
 		err = r.checkRecordModifiers()
@@ -584,6 +586,10 @@ type typeResolver struct {
 	// makes another, in which the modifiers that needed those fields
 	// can be applied.
 	fieldsLearned bool
+	// aliases maps an alias term's description -- a name, or, for a
+	// checked type that has none, its body and conditions written
+	// out -- to what the type map needs to rebuild it.
+	aliases map[string]aliasInfo
 	// recordFields gives the fields, with their terms, of a record
 	// expression, so that a "yield" of a record — directly, or
 	// through "let"s the user wrote — can bind them. A record with
@@ -693,7 +699,16 @@ func (r *typeResolver) elemTerm(args []ast.Expr,
 	if len(args) == 0 {
 		return vElem
 	}
-	if _, annotated := args[0].(*ast.AnnotatedExp); !annotated {
+	// A conversion declares what it converted to, as an annotation
+	// declares what was written; "asOpt" does not, because what it
+	// gives back is an option, not the type it asked about.
+	switch first := args[0].(type) {
+	case *ast.AnnotatedExp:
+	case *ast.Cast:
+		if first.Opt {
+			return vElem
+		}
+	default:
 		return vElem
 	}
 	first, ok := r.nodeTerm[args[0]]
@@ -704,6 +719,88 @@ func (r *typeResolver) elemTerm(args []ast.Expr,
 		return vElem
 	}
 	return first
+}
+
+// deduceCast types a conversion, "e as t" or "e asOpt t".
+//
+// Both are well-typed if the type they convert to unifies with
+// the type of the expression -- which, conditions being erased,
+// means that every type over one base may be converted to any
+// other over that base, and that a conversion between different
+// bases is an ordinary type error. Neither is a runtime type
+// test: the question they ask is whether a value satisfies a
+// condition, never what type a value has.
+//
+// A conversion displays the type it was asked for, as an
+// annotation does; "asOpt" displays that type wrapped in option.
+func (r *typeResolver) deduceCast(env typeEnv, e *ast.Cast,
+	v *unify.Var,
+) error {
+	vExp := v
+	if e.Opt {
+		vExp = r.u.Variable()
+		r.equiv(v, optionTerm(vExp))
+	}
+	term, err := r.astTypeTerm(env, e.Type)
+	if err != nil {
+		return err
+	}
+	r.equiv(vExp, term)
+	err = r.deduceExp(env, e.Exp, vExp)
+	if err != nil {
+		return err
+	}
+	// The type is registered too, so that the core resolver can
+	// read the type converted *to* -- which is what is claimed --
+	// rather than the meet, or, for "asOpt", the option that wraps
+	// it.
+	r.reg2(e.Type, term)
+	if e.Opt {
+		r.regAnnotated(e, optionTerm(term))
+	} else {
+		r.regAnnotated(e, term)
+	}
+	return nil
+}
+
+// deduceCheckExp types "e check m", which adds a condition to the
+// type deduced for e: the counterpart of "as" for a type that is
+// not named.
+//
+// The condition is typed against the type the expression's own
+// conditions are written against -- the type its aliases
+// abbreviate -- so the base type need never be materialized.
+// Typing it against the expression's own type would weaken that
+// type: a condition compares the value with something, and where
+// an alias meets a different type the meet takes the weaker of the
+// two, so writing a condition on a "nat" would take away the
+// condition that made it one. A condition is added to what the
+// expression already claims, never in place of it.
+func (r *typeResolver) deduceCheckExp(env typeEnv,
+	e *ast.CheckExp, v *unify.Var,
+) error {
+	err := r.deduceExp(env, e.Exp, v)
+	if err != nil {
+		return err
+	}
+	term, ok := r.nodeTerm[e.Exp]
+	if !ok {
+		term = v
+	}
+	// The conditions are typed against the type the expression's
+	// own are typed against, the type they abbreviate.
+	checks, err := r.typeChecks(env, "", e.Span(),
+		unaliasTerm(term), e.Checks)
+	if err != nil {
+		return err
+	}
+	// The new conditions sit on top of what the expression already
+	// claims, so its term is the body: a named type keeps its name,
+	// "positive check i => i < 100", and one that has none reads as
+	// a single run, since that is how such a type is written.
+	desc := termDesc(term) + ast.UnparseChecks(checks)
+	r.reg2(e, r.aliasTerm(desc, "", checks, term))
+	return nil
 }
 
 // regAnnotated registers the type of an annotated node as the
@@ -840,7 +937,9 @@ func (r *typeResolver) typeTerm(t types.Type,
 	case *types.AliasType:
 		// A type alias keeps its name through inference; its first
 		// term is what it expands to.
-		return aliasTerm(t.Name, r.typeTerm(t.Base, subst), nil)
+		return r.aliasTerm(aliasKey(t.Name, t.Gen, t.Args, t.Base,
+			t.Checks), t.Name, t.Checks,
+			r.typeTerm(t.Base, subst))
 	case *types.Collection:
 		// A collection has free orderedness, so it unifies with a
 		// list or a bag; fresh per instantiation, but shared by
@@ -987,13 +1086,50 @@ func (r *typeResolver) astTypeTerm(env typeEnv, t ast.Type) (
 	case *ast.AttributedType:
 		// An attribute is inert; the type is the type it decorates.
 		return r.astTypeTerm(env, t.Type)
+	case *ast.CheckedType:
+		// A condition is typed against its base, and the base has
+		// to be materialized to do that, which a "typeof" cannot be
+		// at the point a type is converted. (One in a "type" or
+		// "datatype" declaration does work: there the expression it
+		// names can be deduced on its own.)
+		if exp, isTypeof := t.Type.(*ast.ExpressionType); isTypeof {
+			return nil, &Error{
+				Span: exp.Span(),
+				Msg:  "'typeof' is not supported here",
+			}
+		}
+		// A checked type is an alias with conditions and no name;
+		// its first term is what it erases to, so the unifier
+		// head-reduces it as it does any other alias.
+		body, err := r.astTypeTerm(env, t.Type)
+		if err != nil {
+			return nil, err
+		}
+		// A condition written here is typed here, as one written on
+		// a declaration is typed there, so that the core resolver
+		// has a type for every node of it.
+		checks, err := r.typeChecks(env, "", t.Span(), body,
+			t.Checks)
+		if err != nil {
+			return nil, err
+		}
+		t.Checks = checks
+		desc := ast.UnparseType(t.Type) + ast.UnparseChecks(checks)
+		return r.aliasTerm(desc, "", checks, body), nil
 	case *ast.ExpressionType:
-		// "typeof exp": the annotation's type is the deduced type
-		// of exp.
+		// "typeof exp" names the type exp was *shown* to have,
+		// conditions and all, so an annotation that uses it claims
+		// what that type claims. Returning the variable would give
+		// the type inference reduced it to: the variable is weakened
+		// wherever it meets what an alias abbreviates, and the claim
+		// would go with it.
 		v := r.u.Variable()
 		err := r.deduceExp(env, t.Exp, v)
 		if err != nil {
 			return nil, err
+		}
+		if term, ok := r.nodeTerm[t.Exp]; ok {
+			return term, nil
 		}
 		return v, nil
 	case *ast.FnType:
@@ -1049,24 +1185,58 @@ func (r *typeResolver) astTypeTerm(env typeEnv, t ast.Type) (
 	}
 }
 
+// inBasis reports whether a name is bound by the standard basis:
+// bound before any user declaration, and so not re-bindable out
+// from under a checked type's condition.
+func (r *typeResolver) inBasis(name string) bool {
+	b, ok := r.bindings[name]
+	return ok && b.Basis
+}
+
 // aliasTyCon is the operator prefix of a type-alias term.
 const aliasTyCon = "$alias:"
 
-// aliasTerm builds the term of a type alias. The first argument
-// is the expanded body, so that the unifier can head-reduce by
-// taking it; the rest are the alias's own arguments, which the
-// type map needs to rebuild the type.
-func aliasTerm(name string, body unify.Term,
-	args []unify.Term,
-) unify.Term {
-	terms := make([]unify.Term, 0, len(args)+1)
-	terms = append(terms, body)
-	terms = append(terms, args...)
-	return unify.Apply(aliasTyCon+name, terms...)
+// aliasKey is how a type is named where types are terms. A named
+// alias is named by its name and which declaration of it this is;
+// one that has none is written out in full, and there is nothing
+// to collide.
+func aliasKey(name string, gen int, args []types.Type,
+	base types.Type, checks []*ast.Fn,
+) string {
+	if name == "" {
+		return types.AliasDesc(name, args, base, checks)
+	}
+	return types.AliasKey(name, gen)
 }
 
-// aliasTermName returns the name of an alias term, and whether
-// the term is one.
+// aliasInfo is what a type map needs to rebuild an alias term as
+// a type: the name the alias was written as -- empty for a checked
+// type that has none -- and its conditions.
+type aliasInfo struct {
+	name   string
+	checks []*ast.Fn
+}
+
+// aliasTerm builds the term of a type alias, and registers what
+// its description stands for. The first argument is the expanded
+// body, so that the unifier can head-reduce by taking it; the rest
+// are the alias's own arguments, which the type map needs to
+// rebuild the type.
+//
+// The description is what distinguishes one alias from another: a
+// name, or, for a checked type that has none, its body and
+// conditions written out. Two checked types are the same type when
+// their conditions are textually equal, and this is where that is
+// decided.
+func (r *typeResolver) aliasTerm(desc, name string,
+	checks []*ast.Fn, body unify.Term,
+) unify.Term {
+	r.aliases[desc] = aliasInfo{name: name, checks: checks}
+	return unify.Apply(aliasTyCon+desc, body)
+}
+
+// aliasTermName returns the description of an alias term, and
+// whether the term is one.
 func aliasTermName(t unify.Term) (string, bool) {
 	s, ok := t.(*unify.Sequence)
 	if !ok || !strings.HasPrefix(s.Op, aliasTyCon) {
@@ -1109,7 +1279,8 @@ func (r *typeResolver) astNamedTerm(env typeEnv,
 			// substitutes and expands, and what is left is the body.
 			return body, nil
 		}
-		return aliasTerm(t.Name, body, nil), nil
+		return r.aliasTerm(types.AliasKey(t.Name, alias.Gen),
+			t.Name, alias.Checks, body), nil
 	}
 	terms := make([]unify.Term, len(t.Args))
 	for i, arg := range t.Args {
@@ -1208,7 +1379,7 @@ func (r *typeResolver) deduceDecl(env typeEnv, decl ast.Decl,
 		r.nodeTerm[decl] = r.primTerm(unitName)
 		return decl, nil
 	case *ast.TypeDecl:
-		return r.deduceTypeDecl(d)
+		return r.deduceTypeDecl(env, d)
 	case *ast.ValDecl:
 		return r.deduceValDecl(env, d, termMap)
 	default:
@@ -1266,6 +1437,109 @@ func (r *typeResolver) deduceValDecl(env typeEnv,
 	}
 	r.nodeTerm[decl] = r.primTerm(unitName)
 	return decl, nil
+}
+
+// deduceChecks types the conditions of a checked type, and
+// rejects the two shapes that cannot carry one.
+//
+// A condition is a function from the type it constrains to bool.
+// It sees that type as the type it abbreviates: the value has not
+// yet been admitted to the checked type, so the condition may not
+// be assumed of it.
+func (r *typeResolver) deduceChecks(env typeEnv,
+	b *ast.TypeBind,
+) error {
+	if len(b.Checks) == 0 {
+		return nil
+	}
+	if len(b.TyVars) > 0 {
+		// A parameterized alias is a type function, which expands at
+		// each use, so there is no type for a condition to be about.
+		return &Error{
+			Span: b.Span,
+			Msg:  "cannot check parameterized type '" + b.Name + "'",
+		}
+	}
+	base, err := r.astTypeTerm(env, b.Type)
+	if err != nil {
+		return err
+	}
+	checks, err := r.typeChecks(env, b.Name, b.Span, base, b.Checks)
+	if err != nil {
+		return err
+	}
+	// The declaration keeps the conditions the compiler made of it,
+	// and so does the alias it declared. This is not a second
+	// declaration of the name -- the same conditions, compiled --
+	// so it must not count as one.
+	b.Checks = checks
+	r.sys.SetAliasChecks(b.Name, checks)
+	return nil
+}
+
+// typeChecks types each condition as a function from base to
+// bool, in an environment that admits only the standard basis.
+// name is the checked type's, and is empty for one that has none.
+func (r *typeResolver) typeChecks(env typeEnv, name string,
+	span token.Span, base unify.Term, checks []*ast.Fn,
+) ([]*ast.Fn, error) {
+	closed := &closedTypeEnv{parent: env}
+	out := make([]*ast.Fn, len(checks))
+	for i, c := range checks {
+		v := r.u.Variable()
+		r.equiv(v, r.fnTerm(base, r.primTerm(boolName)))
+		err := r.deduceExp(closed, c, v)
+		if err != nil {
+			if closed.offender != "" {
+				what := "condition"
+				if name != "" {
+					what += " of checked type '" + name + "'"
+				}
+				return nil, &Error{
+					Span: span,
+					Msg: what + " is not closed; it refers to '" +
+						closed.offender + "'",
+				}
+			}
+			return nil, err
+		}
+		out[i] = r.desugaredCheck(c, v)
+	}
+	return out, nil
+}
+
+// desugaredCheck returns a condition with each postfix method call
+// replaced by the call it desugars to, or the condition itself
+// where none was.
+//
+// A condition is kept in the type, and echoed from there, so what
+// is kept must be what the compiler made of it: "ds.length ()" is
+// a call of "Bag.length", and reads as one. morel-java rewrites
+// the tree as it types it, and every later reader sees the
+// rewritten form; morel-go types without rewriting and records the
+// desugaring beside the call, so the rewrite is done here, once,
+// where the result is about to outlive the statement.
+func (r *typeResolver) desugaredCheck(c *ast.Fn,
+	v *unify.Var,
+) *ast.Fn {
+	matches := make([]*ast.Match, len(c.Matches))
+	changed := false
+	for i, m := range c.Matches {
+		exp := r.desugarExp(m.Exp)
+		matches[i] = m
+		if exp != m.Exp {
+			matches[i] = ast.NewMatch(m.Span(), m.Pat, exp)
+			changed = true
+		}
+	}
+	if !changed {
+		return c
+	}
+	c2 := ast.NewFn(c.Span(), matches)
+	// The rewritten condition has the type the written one had; the
+	// core resolver reads it from the node it is given.
+	r.reg2(c2, v)
+	return c2
 }
 
 func (r *typeResolver) deduceValBind(env typeEnv,
@@ -1339,6 +1613,7 @@ func (r *typeResolver) deduceDatatypeDecl(decl *ast.DatatypeDecl,
 		result := r.sys.Named(internals[bi], args...)
 		for _, c := range b.Cons {
 			var argType types.Type
+			var surfaceType types.Type
 			if c.Of != nil {
 				// A type variable in a constructor's argument must be
 				// bound by the datatype's head.
@@ -1364,8 +1639,16 @@ func (r *typeResolver) deduceDatatypeDecl(decl *ast.DatatypeDecl,
 					}
 				}
 				argType = t
+				// The type as written, so that a condition a
+				// constructor was declared to hold reaches the check
+				// made where it is applied.
+				surface, serr := r.sys.SurfaceFromAST(c.Of, tyVars)
+				if serr == nil && surface != argType {
+					surfaceType = surface
+				}
 			}
-			r.sys.DeclareTyCon(c.Name, argType, result)
+			r.sys.DeclareTyConSurface(c.Name, argType, result,
+				surfaceType)
 			conType := result
 			if argType != nil {
 				conType = r.sys.Fn(argType, result)
@@ -1392,7 +1675,8 @@ func (r *typeResolver) deduceDatatypeDecl(decl *ast.DatatypeDecl,
 // being declared) is an "unbound type constructor" error, as in
 // Standard ML. The resolved body replaces the written one, so the
 // shell echoes the expanded form.
-func (r *typeResolver) deduceTypeDecl(decl *ast.TypeDecl,
+func (r *typeResolver) deduceTypeDecl(env typeEnv,
+	decl *ast.TypeDecl,
 ) (ast.Decl, error) {
 	// The names this declaration binds. A body that names one of
 	// them means the alias of that name as it was before -- what
@@ -1416,7 +1700,13 @@ func (r *typeResolver) deduceTypeDecl(decl *ast.TypeDecl,
 	for i := range decl.Binds {
 		decl.Binds[i].Type = resolved[i]
 		r.sys.DeclareAlias(decl.Binds[i].Name, decl.Binds[i].TyVars,
-			resolved[i])
+			resolved[i], decl.Binds[i].Checks)
+	}
+	for i := range decl.Binds {
+		err := r.deduceChecks(env, &decl.Binds[i])
+		if err != nil {
+			return nil, err
+		}
 	}
 	r.nodeTerm[decl] = r.primTerm(unitName)
 	return decl, nil
@@ -2056,6 +2346,10 @@ func (r *typeResolver) deduceExp(env typeEnv, exp ast.Expr,
 		return r.deduceAttributed(env, e, v)
 	case *ast.Case:
 		return r.deduceCase(env, e, v)
+	case *ast.Cast:
+		return r.deduceCast(env, e, v)
+	case *ast.CheckExp:
+		return r.deduceCheckExp(env, e, v)
 	case *ast.Elements:
 		return r.deduceElements(e, v)
 	case *ast.Fn:
@@ -2358,6 +2652,13 @@ func (r *typeResolver) deduceApply(env typeEnv, apply *ast.Apply,
 		return nil
 	}
 	if id, ok := apply.Fn.(*ast.ID); ok {
+		if weakeningOps[id.Name] {
+			// An operator overloaded at its operand's own type
+			// computes a value that type has not been shown to
+			// contain, so it drops the condition of a checked type
+			// whatever it was applied to.
+			r.u.WeakenVar(v)
+		}
 		if insts := env.overloads(id.Name); insts != nil {
 			return r.deduceOverloadApply(env, apply, insts, v)
 		}
@@ -2589,6 +2890,12 @@ func (r *typeResolver) deduceModifiedRecord(env typeEnv,
 	record *ast.Record, ops *operands, v *unify.Var,
 ) error {
 	fields := r.fieldVariables(ops, record.Base)
+	// A chain of modifiers claims the type of the record it
+	// modifies only if every one of them leaves its shape alone.
+	shapeKept := true
+	// A modifier that changes the shape cannot claim the type, but
+	// the type's own conditions need not be lost with the name.
+	checks := r.baseChecks(ops, record.Base)
 	for _, m := range record.Modifiers {
 		var allFields []labelVar
 		if all, ok := m.(*ast.AllModifier); ok {
@@ -2599,6 +2906,8 @@ func (r *typeResolver) deduceModifiedRecord(env typeEnv,
 		if err != nil {
 			return err
 		}
+		shapeKept = shapeKept && preserves(sources, labelsOf(fields))
+		checks = inheritChecks(checks, sources)
 		// The fields of the record this modifier is applied to shadow
 		// the enclosing environment; only an assignment has
 		// expressions, and only they can refer to them.
@@ -2627,8 +2936,186 @@ func (r *typeResolver) deduceModifiedRecord(env typeEnv,
 		terms[i] = labelTerm{label: f.label, term: f.v}
 	}
 	r.recordFields[record] = terms
-	r.regEquiv(record, v, r.recordTerm(terms))
+	if shapeKept {
+		// The shape is the base's, so the type is too, conditions
+		// and name included; a record assembled from the fields
+		// would be a plain record, and would have lost them.
+		r.equiv(v, ops.vars[record.Base])
+		r.reg(record, v)
+		return nil
+	}
+	recordTerm := r.recordTerm(terms)
+	if len(checks) == 0 {
+		r.regEquiv(record, v, recordTerm)
+		return nil
+	}
+	// The conditions were written for the record the modifiers were
+	// applied to, so they are typed again here, against the record
+	// they produced. The result is a checked type that has no name.
+	checks, err := r.typeChecks(env, "", record.Span(), recordTerm,
+		checks)
+	if err != nil {
+		return err
+	}
+	desc := termDesc(recordTerm) + ast.UnparseChecks(checks)
+	r.regEquiv(record, v,
+		r.aliasTerm(desc, "", checks, recordTerm))
 	return nil
+}
+
+// desugarExp replaces each postfix method call in an expression
+// by the call it desugars to.
+//
+// A rebuilt node takes the type of the node it replaces, because
+// nothing types it afterwards: morel-java rewrites as it types,
+// and every node it makes is typed as it is made. A form this does
+// not know is left alone, which claims less and is safe.
+func (r *typeResolver) desugarExp(e ast.Expr) ast.Expr {
+	if apply, isApply := e.(*ast.Apply); isApply {
+		if desugared, isMethod := r.methodCalls[apply]; isMethod {
+			// The call it desugars to may hold one of its own.
+			return r.keepType(e, r.desugarExp(desugared))
+		}
+	}
+	// lint: sort until '^\t}' where '^\tcase '
+	switch e := e.(type) {
+	case *ast.AnnotatedExp:
+		exp := r.desugarExp(e.Exp)
+		if exp == e.Exp {
+			return e
+		}
+		return r.keepType(e,
+			ast.NewAnnotatedExp(e.Span(), exp, e.Type))
+	case *ast.Apply:
+		fn, arg := r.desugarExp(e.Fn), r.desugarExp(e.Arg)
+		if fn == e.Fn && arg == e.Arg {
+			return e
+		}
+		return r.keepType(e, ast.NewApply(e.Span(), fn, arg))
+	case *ast.If:
+		cond := r.desugarExp(e.Cond)
+		ifTrue, ifFalse := r.desugarExp(e.IfTrue), r.desugarExp(e.IfFalse)
+		if cond == e.Cond && ifTrue == e.IfTrue &&
+			ifFalse == e.IfFalse {
+			return e
+		}
+		return r.keepType(e,
+			ast.NewIf(e.Span(), cond, ifTrue, ifFalse))
+	case *ast.InfixCall:
+		a0, a1 := r.desugarExp(e.A0), r.desugarExp(e.A1)
+		if a0 == e.A0 && a1 == e.A1 {
+			return e
+		}
+		return r.keepType(e,
+			ast.NewInfixCall(e.Span(), e.Kind, a0, a1))
+	case *ast.ListExp:
+		args, changed := r.desugarExps(e.Args)
+		if !changed {
+			return e
+		}
+		return r.keepType(e, ast.NewListExp(e.Span(), args))
+	case *ast.PrefixCall:
+		a := r.desugarExp(e.A)
+		if a == e.A {
+			return e
+		}
+		return r.keepType(e, ast.NewPrefixCall(e.Span(), e.Kind, a))
+	case *ast.Tuple:
+		args, changed := r.desugarExps(e.Args)
+		if !changed {
+			return e
+		}
+		return r.keepType(e, ast.NewTuple(e.Span(), args))
+	default:
+		return e
+	}
+}
+
+func (r *typeResolver) desugarExps(exps []ast.Expr) ([]ast.Expr,
+	bool,
+) {
+	out := make([]ast.Expr, len(exps))
+	changed := false
+	for i, e := range exps {
+		out[i] = r.desugarExp(e)
+		if out[i] != e {
+			changed = true
+		}
+	}
+	return out, changed
+}
+
+// keepType gives a rewritten node the type of the node it
+// replaces.
+func (r *typeResolver) keepType(old, exp ast.Expr) ast.Expr {
+	if term, ok := r.nodeTerm[old]; ok {
+		r.nodeTerm[exp] = term
+	}
+	return exp
+}
+
+// termDesc is how a term is written, for the description of a
+// checked type that has no name.
+func termDesc(t unify.Term) string {
+	return t.String()
+}
+
+// baseChecks are the conditions of the type of a record modifier's
+// base, if it is a checked type.
+func (r *typeResolver) baseChecks(ops *operands,
+	base ast.Expr,
+) []*ast.Fn {
+	info, ok := r.aliases[baseAliasDesc(r, ops, base)]
+	if !ok {
+		return nil
+	}
+	return info.checks
+}
+
+// baseAliasDesc is the description of the alias term a record
+// modifier's base resolves to, or "" if it is not an alias.
+func baseAliasDesc(r *typeResolver, ops *operands,
+	base ast.Expr,
+) string {
+	term, ok := r.nodeTerm[base]
+	if !ok {
+		term = ops.vars[base]
+	}
+	desc, isAlias := aliasTermName(term)
+	if !isAlias {
+		return ""
+	}
+	return desc
+}
+
+// inheritChecks returns the conditions that survive a modifier,
+// rewritten for the record it produced.
+//
+// A field the modifier kept is still there, under whatever label
+// it kept it at; one it assigned to holds a value that was never
+// shown to satisfy anything, and one it removed is not there at
+// all. So a condition is carried over if it depends only on
+// fields that were kept, and is rewritten to name them as the
+// result names them.
+func inheritChecks(checks []*ast.Fn,
+	sources []modField,
+) []*ast.Fn {
+	if len(checks) == 0 {
+		return nil
+	}
+	fields := map[string]string{}
+	for _, src := range sources {
+		if kept, isKept := src.src.(keptField); isKept {
+			fields[kept.field] = src.label
+		}
+	}
+	var out []*ast.Fn
+	for _, c := range checks {
+		if c2 := inheritCheck(c, fields); c2 != nil {
+			out = append(out, c2)
+		}
+	}
+	return out
 }
 
 // labelVar is one field of a record a modifier is applied to or

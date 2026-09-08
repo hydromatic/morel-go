@@ -34,6 +34,12 @@ type System struct {
 	tycons    map[string]TyCon
 	conCount  map[string]int
 	aliases   map[string]Alias
+	// aliasGen counts the declarations of each alias name; see
+	// Alias.Gen.
+	aliasGen map[string]int
+	// checkCodes holds the compiled form of each checked type's
+	// conditions; see SetCheckCode.
+	checkCodes map[*ast.Fn]any
 
 	// typeofResolver deduces the type of the expression of a
 	// "typeof" written inside a type declaration. The shell sets
@@ -66,8 +72,13 @@ type System struct {
 // its ordinal among the datatype's constructors in declaration
 // order. Runtime constructor values carry (datatype, ordinal).
 type TyCon struct {
-	Arg     Type
-	Result  Type
+	Arg    Type
+	Result Type
+	// Surface is the argument type as it was written, with any
+	// type alias intact, or nil where it is the same as Arg. A
+	// checked type reaches a constructor only through this: Arg has
+	// its aliases expanded, so the condition is not in it.
+	Surface Type
 	Ordinal int
 }
 
@@ -80,11 +91,13 @@ func NewSystem() *System {
 		tycons:      map[string]TyCon{},
 		conCount:    map[string]int{},
 		aliases:     map[string]Alias{},
+		aliasGen:    map[string]int{},
+		checkCodes:  map[*ast.Fn]any{},
 		datatypeKey: map[string]string{},
 		datatypeGen: map[string]int{},
 	}
 	prim := func(name string) Type {
-		t := &Primitive{typeBase{name}}
+		t := &Primitive{typeBase{name, ""}}
 		s.byKey[name] = t
 		return t
 	}
@@ -166,19 +179,51 @@ func (s *System) DatatypeDisplay(internal string) string {
 	return src
 }
 
-// Alias is a type alias's definition: its type parameters and the
-// body they parameterize (an AST type, expanded at each use).
+// SetCheckCode records the compiled form of one condition of a
+// checked type. The type system does not look inside it -- it is
+// a core expression, which the type system cannot name -- but it
+// is where it lives, because a checked type may be declared in
+// one statement and claimed in another, and the system is what
+// outlives a statement.
+//
+// A condition is keyed by the syntax it was written as, which the
+// alias carries, so the type that claims it and the declaration
+// that compiled it agree by construction.
+func (s *System) SetCheckCode(check *ast.Fn, code any) {
+	s.checkCodes[check] = code
+}
+
+// CheckCode returns the compiled form of a condition, if it has
+// been compiled.
+func (s *System) CheckCode(check *ast.Fn) (any, bool) {
+	code, ok := s.checkCodes[check]
+	return code, ok
+}
+
+// Alias is a type alias's definition: its type parameters, the
+// body they parameterize (an AST type, expanded at each use), and
+// the conditions that make it a checked type, if it has any.
 type Alias struct {
 	TyVars []string
 	Body   ast.Type
+	Checks []*ast.Fn
+	// Gen counts how many times the name has been declared. A name
+	// declared again is a different type, and the two must be
+	// distinguishable where a type is written as its name alone.
+	Gen int
 }
 
 // DeclareAlias registers a transparent type alias, e.g.
-// "type 'a my_list = 'a list".
+// "type 'a my_list = 'a list"; checks, if any, make it a checked
+// type.
 func (s *System) DeclareAlias(name string, tyVars []string,
-	body ast.Type,
+	body ast.Type, checks []*ast.Fn,
 ) {
-	s.aliases[name] = Alias{TyVars: tyVars, Body: body}
+	s.aliasGen[name]++
+	s.aliases[name] = Alias{
+		TyVars: tyVars, Body: body, Checks: checks,
+		Gen: s.aliasGen[name],
+	}
 }
 
 // SetTypeofResolver supplies the deduction that a "typeof" in a
@@ -210,12 +255,21 @@ func expandAlias(alias Alias, args []ast.Type) ast.Type {
 // a constant constructor. Constructors of one datatype get
 // ordinals in declaration order.
 func (s *System) DeclareTyCon(name string, arg, result Type) {
+	s.DeclareTyConSurface(name, arg, result, nil)
+}
+
+// DeclareTyConSurface is DeclareTyCon, also recording the
+// argument type as it was written; see TyCon.Surface.
+func (s *System) DeclareTyConSurface(name string, arg, result,
+	surface Type,
+) {
 	key := datatypeName(result)
 	ordinal := s.conCount[key]
 	s.conCount[key] = ordinal + 1
 	s.tycons[name] = TyCon{
 		Arg:     arg,
 		Result:  result,
+		Surface: surface,
 		Ordinal: ordinal,
 	}
 }
@@ -230,7 +284,10 @@ func (s *System) NumConstructors(datatype string) int {
 // its declared argument type (nil for a constant constructor),
 // and its ordinal.
 type Constructor struct {
-	Arg     Type
+	Arg Type
+	// Surface is the argument type as written, with any alias
+	// intact; nil where it is the same as Arg. See TyCon.Surface.
+	Surface Type
 	Name    string
 	Ordinal int
 }
@@ -243,6 +300,7 @@ func (s *System) Constructors(datatype string) []Constructor {
 		if datatypeName(tc.Result) == datatype {
 			cons = append(cons, Constructor{
 				Arg:     tc.Arg,
+				Surface: tc.Surface,
 				Name:    name,
 				Ordinal: tc.Ordinal,
 			})
@@ -276,24 +334,79 @@ func (s *System) LookupTyCon(name string) (TyCon, bool) {
 }
 
 // Alias returns a use of the transparent type alias with the
-// given name, arguments and expansion. It prints as the name it
-// was written as; Unalias reads what it abbreviates.
-func (s *System) Alias(name string, args []Type, base Type) Type {
-	key := "$alias:" + namedDesc(name, args) + "=" + base.String()
-	return s.intern(key, func() Type {
+// given name, arguments and expansion; checks, if any, make it a
+// checked type. It prints as the name it was written as, or, if it
+// has none, as its body and conditions in full; Unalias reads what
+// it abbreviates.
+func (s *System) Alias(name string, args []Type, base Type,
+	checks []*ast.Fn,
+) Type {
+	desc := AliasDesc(name, args, base, checks)
+	// An alias prints as its name, so its mark carries what the
+	// name abbreviates -- its body, and, where the name hides them,
+	// its conditions. That is what tells one declaration of the
+	// name from the next, here and in every type built over it. A
+	// name redeclared with the same body and a different condition
+	// would otherwise be the type it replaced, and a value claimed
+	// at it would be checked against the condition it used to have.
+	mark := "$" + desc + "=" + base.String() + base.Mark()
+	if name != "" {
+		mark += ast.UnparseChecks(checks)
+	}
+	gen := s.aliasGen[name]
+	return s.intern("$alias:"+mark, func() Type {
 		return &AliasType{
-			typeBase{namedDesc(name, args)},
-			args, name, base,
+			typeBase{desc, mark}, args, name, base, checks, gen,
 		}
 	})
+}
+
+// AliasKey is how an alias is named where types are terms: its
+// name, and which declaration of that name it is. A name declared
+// again is a different type, and a term names a type by its name
+// alone, so the two would otherwise be one term and would meet.
+func AliasKey(name string, gen int) string {
+	if gen <= 1 {
+		return name
+	}
+	return name + "~" + strconv.Itoa(gen)
+}
+
+// AliasDesc returns how an alias is written: by its name, or, if
+// it has none, by its body and its conditions. It is also what
+// identifies a checked type, so two are the same type when their
+// conditions are textually equal.
+func AliasDesc(name string, args []Type, base Type,
+	checks []*ast.Fn,
+) string {
+	if name != "" {
+		// A named type is written by its name, conditions and all.
+		// Two checked types of one name and different conditions are
+		// then indistinguishable, which is why a name may be
+		// redeclared but not shadowed.
+		return namedDesc(name, args)
+	}
+	return base.String() + ast.UnparseChecks(checks)
+}
+
+// SetAliasChecks replaces the conditions of an alias already
+// declared, without counting another declaration of the name. The
+// conditions the compiler makes of a checked type replace the ones
+// it was parsed with, and that is still the one declaration the
+// user wrote.
+func (s *System) SetAliasChecks(name string, checks []*ast.Fn) {
+	if a, ok := s.aliases[name]; ok {
+		a.Checks = checks
+		s.aliases[name] = a
+	}
 }
 
 // Named returns the instance of a datatype with the given type
 // arguments, e.g. Named("option", Int) is "int option".
 func (s *System) Named(name string, args ...Type) Type {
-	key := namedDesc(name, args)
-	return s.intern(key, func() Type {
-		return &Named{typeBase{key}, args, name}
+	desc, mark := namedDesc(name, args), marks(args...)
+	return s.intern(desc+mark, func() Type {
+		return &Named{typeBase{desc, mark}, args, name}
 	})
 }
 
@@ -347,9 +460,9 @@ func (s *System) Qualified(predicates []Predicate, base Type) Type {
 	if len(predicates) == 0 {
 		return base
 	}
-	key := qualifiedDesc(predicates, base)
-	return s.intern(key, func() Type {
-		return &Qualified{typeBase{key}, predicates, base}
+	desc, mark := qualifiedDesc(predicates, base), marks(base)
+	return s.intern(desc+mark, func() Type {
+		return &Qualified{typeBase{desc, mark}, predicates, base}
 	})
 }
 
@@ -357,15 +470,15 @@ func (s *System) Qualified(predicates []Predicate, base Type) Type {
 func (s *System) Var(ordinal int) Type {
 	name := varName(ordinal)
 	return s.intern(name, func() Type {
-		return &Var{typeBase{name}, ordinal}
+		return &Var{typeBase{name, ""}, ordinal}
 	})
 }
 
 // List returns the type "elem list".
 func (s *System) List(elem Type) Type {
-	key := descArg(elem) + " list"
-	return s.intern(key, func() Type {
-		return &List{typeBase{key}, elem}
+	desc, mark := descArg(elem)+" list", marks(elem)
+	return s.intern(desc+mark, func() Type {
+		return &List{typeBase{desc, mark}, elem}
 	})
 }
 
@@ -373,17 +486,18 @@ func (s *System) List(elem Type) Type {
 // orderedness free. It prints as a bag (the default when
 // orderedness is unforced).
 func (s *System) Collection(elem Type) Type {
-	key := descArg(elem) + " $collection"
-	return s.intern(key, func() Type {
-		return &Collection{typeBase{key}, elem}
+	desc, mark := descArg(elem)+" $collection", marks(elem)
+	return s.intern(desc+mark, func() Type {
+		return &Collection{typeBase{desc, mark}, elem}
 	})
 }
 
 // Fn returns the type "param -> result".
 func (s *System) Fn(param, result Type) Type {
-	key := descParam(param) + " -> " + result.String()
-	return s.intern(key, func() Type {
-		return &Fn{typeBase{key}, param, result}
+	desc := descParam(param) + " -> " + descResult(result)
+	mark := marks(param, result)
+	return s.intern(desc+mark, func() Type {
+		return &Fn{typeBase{desc, mark}, param, result}
 	})
 }
 
@@ -393,9 +507,9 @@ func (s *System) Tuple(args ...Type) Type {
 	for i, a := range args {
 		descs[i] = descArg(a)
 	}
-	key := strings.Join(descs, " * ")
-	return s.intern(key, func() Type {
-		return &Tuple{typeBase{key}, args}
+	desc, mark := strings.Join(descs, " * "), marks(args...)
+	return s.intern(desc+mark, func() Type {
+		return &Tuple{typeBase{desc, mark}, args}
 	})
 }
 
@@ -424,9 +538,9 @@ func (s *System) record(fields []Field, progressive bool) Type {
 	sort.Slice(sorted, func(i, j int) bool {
 		return LabelLess(sorted[i].Label, sorted[j].Label)
 	})
-	key := recordDesc(sorted, progressive)
-	return s.intern(key, func() Type {
-		return &Record{typeBase{key}, sorted, progressive}
+	desc, mark := recordDesc(sorted, progressive), fieldMarks(sorted)
+	return s.intern(desc+mark, func() Type {
+		return &Record{typeBase{desc, mark}, sorted, progressive}
 	})
 }
 

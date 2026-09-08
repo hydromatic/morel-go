@@ -163,6 +163,31 @@ var infixOpNames = map[ast.Op]string{
 	ast.TimesOp:   opTimes,
 }
 
+// weakeningOps are the operators overloaded at their operand's
+// own type, "'a * 'a -> 'a" rather than Standard ML's
+// "int * int -> int".
+//
+// Each computes a value that the operand's type has not been
+// shown to contain, so each drops the condition of a checked type
+// whatever it was applied to: "s + s" is an "int" even where "s"
+// is a "small", and "fun dbl (i: small) = i + i" is
+// "int -> int". The parameter is still checked, because a check
+// reads the annotation, never the type inference deduced.
+//
+// "Int.abs" and "Int.max" need nothing: they are declared at a
+// concrete "int", so an alias reaching them meets a different type
+// and the meet does the work.
+var weakeningOps = map[string]bool{
+	// lint: sort until '^}' where '^\t'
+	absName:  true,
+	opDiv:    true,
+	opMinus:  true,
+	opMod:    true,
+	opNegate: true,
+	opPlus:   true,
+	opTimes:  true,
+}
+
 // TopBindings returns the bindings of the top-level built-in
 // values, sorted by name.
 func TopBindings(sys *types.System) []Binding {

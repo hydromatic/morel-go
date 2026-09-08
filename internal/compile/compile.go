@@ -40,6 +40,12 @@ func (e *Error) Error() string { return e.Msg }
 type Binding struct {
 	Name string
 	Type types.Type
+	// Basis is whether the name is part of the standard basis --
+	// bound before any user declaration, and so not re-bindable
+	// out from under a condition. A checked type's condition may
+	// refer only to the value it is given and to the basis; see
+	// closedTypeEnv.
+	Basis bool
 }
 
 // ItValDecl wraps an expression statement as the declaration

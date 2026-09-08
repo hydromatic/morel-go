@@ -445,22 +445,33 @@ func (p *Parser) conBind() (ast.ConBind, error) {
 // "[tyvars] name = type".
 func (p *Parser) typeDecl() (ast.Decl, error) {
 	start := p.tok.Span.Start
-	end := p.tok.Span.End
 	err := p.next()
 	if err != nil {
 		return nil, err
 	}
+	// A binding with no type variables is blamed from the keyword
+	// that introduces it, as morel-java's is; one that has them is
+	// blamed from the first of them.
+	kwStart := start
+	// The declaration ends where its last binding does, conditions
+	// included; an error the unifier reports about it stands there.
+	var end token.Pos
 	var binds []ast.TypeBind
 	for {
 		var bind ast.TypeBind
-		bind, err = p.typeBind()
+		bind, err = p.typeBind(kwStart)
 		if err != nil {
 			return nil, err
 		}
 		binds = append(binds, bind)
+		end = bind.Span.End
+		if len(bind.Checks) > 0 {
+			end = bind.Checks[len(bind.Checks)-1].Span().End
+		}
 		if p.tok.Kind != token.And {
 			break
 		}
+		kwStart = p.tok.Span.Start
 		err = p.next()
 		if err != nil {
 			return nil, err
@@ -470,7 +481,11 @@ func (p *Parser) typeDecl() (ast.Decl, error) {
 	return ast.NewTypeDecl(span, binds), nil
 }
 
-func (p *Parser) typeBind() (ast.TypeBind, error) {
+func (p *Parser) typeBind(kwStart token.Pos) (ast.TypeBind, error) {
+	start := kwStart
+	if p.tok.Kind == token.TyVar || p.tok.Kind == token.LParen {
+		start = p.tok.Span.Start
+	}
 	tyVars, err := p.tyVarSeq()
 	if err != nil {
 		return ast.TypeBind{}, err
@@ -496,7 +511,18 @@ func (p *Parser) typeBind() (ast.TypeBind, error) {
 	if err != nil {
 		return ast.TypeBind{}, err
 	}
-	return ast.TypeBind{TyVars: tyVars, Name: name, Type: t}, nil
+	// typeExpr has taken any "check" clauses, because a type may
+	// carry one wherever it is written. Here they belong to the
+	// name being declared, so lift them off the body.
+	var checks []*ast.Fn
+	if checked, ok := t.(*ast.CheckedType); ok {
+		checks = checked.Checks
+		t = checked.Type
+	}
+	return ast.TypeBind{
+		TyVars: tyVars, Name: name, Type: t, Checks: checks,
+		Span: token.Span{Start: start, End: t.Span().End},
+	}, nil
 }
 
 // valDecl parses "val [rec] pat = exp [and pat = exp ...]".

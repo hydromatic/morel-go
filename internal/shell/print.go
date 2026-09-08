@@ -302,8 +302,14 @@ func (c *Config) typeDoc(t types.Type) pp.Doc {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch t := t.(type) {
 	case *types.Fn:
-		param := c.parenTypeDoc(t.Param, isFn(t.Param))
-		result := c.typeDoc(t.Result)
+		param := c.parenTypeDoc(t.Param,
+			isFn(t.Param) || types.WrittenChecked(t.Param))
+		// "->" is right-associative, so a result needs no
+		// parentheses -- unless it is a checked type written in
+		// full, whose condition would otherwise read as being on
+		// the whole function type.
+		result := c.parenTypeDoc(t.Result,
+			types.WrittenChecked(t.Result))
 		// The type breaks before "->", which leads the
 		// continuation line; an explicit union (not group) keeps
 		// this arrow honest when the result itself can break.
@@ -345,7 +351,8 @@ func (c *Config) typeDoc(t types.Type) pp.Doc {
 	case *types.Tuple:
 		items := make([]pp.Doc, len(t.Args))
 		for i, arg := range t.Args {
-			d := c.parenTypeDoc(arg, isFn(arg) || isTuple(arg))
+			d := c.parenTypeDoc(arg, isFn(arg) || isTuple(arg) ||
+				types.WrittenChecked(arg))
 			if i == 0 {
 				items[i] = d
 			} else {
@@ -391,7 +398,8 @@ func (c *Config) recordTypeDoc(t *types.Record) pp.Doc {
 func (c *Config) collectionTypeDoc(elem types.Type,
 	name string,
 ) pp.Doc {
-	elemDoc := c.parenTypeDoc(elem, isFn(elem) || isTuple(elem))
+	elemDoc := c.parenTypeDoc(elem, isFn(elem) || isTuple(elem) ||
+		types.WrittenChecked(elem))
 	return pp.Align(pp.Beside(elemDoc,
 		pp.Group(pp.Beside(pp.Line(), pp.Text(name)))))
 }

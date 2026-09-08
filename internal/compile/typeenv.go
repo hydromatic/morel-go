@@ -52,6 +52,53 @@ func (emptyTypeEnv) peek(string) (unify.Term, bool) {
 
 func (emptyTypeEnv) overloads(string) []*unify.Var { return nil }
 
+// closedTypeEnv is the environment a checked type's condition is
+// typed in: it admits the standard basis and nothing else.
+//
+// A condition may refer only to the value it is given and to the
+// basis. That is what lets a checked type be interned by the text
+// of its condition -- a type identified by its text cannot also
+// depend on an environment -- and it settles what a condition
+// means when the values it used are re-bound, by making the
+// question not arise.
+//
+// The names a condition binds itself are bound in front of this,
+// so a lookup that reaches here is a free name. Closedness is
+// decided by the binding rather than by the name, so shadowing a
+// basis name does not smuggle an environment in.
+type closedTypeEnv struct {
+	parent typeEnv
+	// offender is the first free name found that is not in the
+	// basis. The caller reports it; the lookup itself can only fail.
+	offender string
+}
+
+func (e *closedTypeEnv) get(r *typeResolver, name string) (
+	unify.Term, bool,
+) {
+	if r.inBasis(name) {
+		return e.parent.get(r, name)
+	}
+	if _, bound := e.parent.get(r, name); !bound {
+		// Not bound at all. That is an unbound name, which is a
+		// different complaint from a condition that reaches outside
+		// the basis, and the caller lets it be reported as one.
+		return nil, false
+	}
+	if e.offender == "" {
+		e.offender = name
+	}
+	return nil, false
+}
+
+func (e *closedTypeEnv) peek(name string) (unify.Term, bool) {
+	return e.parent.peek(name)
+}
+
+func (e *closedTypeEnv) overloads(name string) []*unify.Var {
+	return e.parent.overloads(name)
+}
+
 // bindTypeEnv binds one name in front of a parent environment.
 type bindTypeEnv struct {
 	parent typeEnv

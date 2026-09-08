@@ -155,6 +155,52 @@ func (c *Con) Type() types.Type { return c.T }
 
 func (*Con) exp() {}
 
+// CheckKind says what a Check does when its condition is false,
+// and what it gives back when the condition holds.
+type CheckKind int
+
+const (
+	// CheckRaise gives back the value, and raises Constraint if the
+	// condition is false. It is what a claim compiles to.
+	CheckRaise CheckKind = iota
+	// CheckRequire gives back true, and raises as CheckRaise does.
+	// A component of a composite value is checked this way, so that
+	// the checks of the parts conjoin into one condition.
+	CheckRequire
+	// CheckAttempt gives back the condition's own answer, raising
+	// nothing. "asOpt" asks rather than claims, so a value that
+	// does not have the type is an answer, not a failure.
+	CheckAttempt
+)
+
+// Check enforces a checked type's conditions on a value.
+//
+// Cond is the condition, a bool expression over Value; TypeName
+// names the type in the message, and is "value" for a type that
+// has none; Blame says what the value is of ("field x"), and is
+// empty for the whole value.
+//
+// A condition that raises is not false but unknown, and the
+// message says so; either way the value has not been shown to
+// have the type.
+type Check struct {
+	T        types.Type
+	Cond     Exp
+	Value    Exp
+	TypeName string
+	Blame    string
+	Kind     CheckKind
+	Span     token.Span
+}
+
+// Op implements Exp.
+func (*Check) Op() ast.Op { return ast.CheckExpOp }
+
+// Type implements Exp.
+func (c *Check) Type() types.Type { return c.T }
+
+func (*Check) exp() {}
+
 // Selector is a record or tuple field selector used as a
 // function, e.g. "#b" applied to "{a:int, b:bool}"; Index is the
 // field's position in canonical order.

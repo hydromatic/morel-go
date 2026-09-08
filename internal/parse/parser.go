@@ -241,12 +241,62 @@ var (
 )
 
 func (p *Parser) expr() (ast.Expr, error) {
+	e, err := p.exprNoCheck()
+	if err != nil {
+		return nil, err
+	}
+	checks, err := p.checks()
+	if err != nil {
+		return nil, err
+	}
+	if len(checks) == 0 {
+		return e, nil
+	}
+	// Several conditions belong to one expression, as they do to
+	// one type declaration; nesting them would put each in the type
+	// of the last, and only the last would be seen.
+	span := token.Span{
+		Start: e.Span().Start,
+		End:   checks[len(checks)-1].Span().End,
+	}
+	return ast.NewCheckExp(span, e, checks), nil
+}
+
+// exprNoCheck parses an expression that does not extend over a
+// following "check".
+//
+// A match's body is parsed at this level, so that "check" ends the
+// match rather than being taken into it. That is what lets a type
+// carry several conditions -- in "int check i => i >= 1 check j =>
+// j <= 12" the first condition ends at the second "check" -- and
+// it means an expression-level "check" must be parenthesized to
+// appear in a match body.
+func (p *Parser) exprNoCheck() (ast.Expr, error) {
 	e, err := p.expr0()
 	if err != nil {
 		return nil, err
 	}
-	// A type annotation, "e : t", binds loosest of all.
-	for p.tok.Kind == token.Colon {
+	// A type annotation, "e : t", and the conversions "e as t" and
+	// "e asOpt t", bind loosest of all, and are left-associative.
+	for {
+		var build func(token.Span, ast.Expr, ast.Type) ast.Expr
+		// lint: sort until '^\t\t}' where '^\t\tcase '
+		switch p.tok.Kind {
+		case token.As:
+			build = func(s token.Span, e ast.Expr, t ast.Type) ast.Expr {
+				return ast.NewCast(s, e, t, false)
+			}
+		case token.AsOpt:
+			build = func(s token.Span, e ast.Expr, t ast.Type) ast.Expr {
+				return ast.NewCast(s, e, t, true)
+			}
+		case token.Colon:
+			build = func(s token.Span, e ast.Expr, t ast.Type) ast.Expr {
+				return ast.NewAnnotatedExp(s, e, t)
+			}
+		default:
+			return e, nil
+		}
 		err = p.next()
 		if err != nil {
 			return nil, err
@@ -255,13 +305,34 @@ func (p *Parser) expr() (ast.Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		span := token.Span{
+		e = build(token.Span{
 			Start: e.Span().Start,
 			End:   t.Span().End,
-		}
-		e = ast.NewAnnotatedExp(span, e, t)
+		}, e, t)
 	}
-	return e, nil
+}
+
+// checks parses the run of "check match" clauses that may follow
+// an expression or a type.
+func (p *Parser) checks() ([]*ast.Fn, error) {
+	var checks []*ast.Fn
+	for p.tok.Kind == token.Check {
+		start := p.tok.Span.Start
+		err := p.next()
+		if err != nil {
+			return nil, err
+		}
+		matches, err := p.matchList()
+		if err != nil {
+			return nil, err
+		}
+		span := token.Span{
+			Start: start,
+			End:   matches[len(matches)-1].Span().End,
+		}
+		checks = append(checks, ast.NewFn(span, matches))
+	}
+	return checks, nil
 }
 
 func (p *Parser) expr0() (ast.Expr, error) {
@@ -861,7 +932,7 @@ func (p *Parser) match() (*ast.Match, error) {
 	if err != nil {
 		return nil, err
 	}
-	exp, err := p.expr()
+	exp, err := p.exprNoCheck()
 	if err != nil {
 		return nil, err
 	}

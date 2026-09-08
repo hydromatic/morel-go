@@ -18,6 +18,7 @@
 package ast
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -192,6 +193,13 @@ func unparseType(b *strings.Builder, t Type, comma string) {
 			b.WriteString(" ")
 			unparseAttribute(b, a)
 		}
+	case *CheckedType:
+		// A condition binds more loosely than anything else in a
+		// type, so an operand that is itself a function or tuple
+		// type needs no parentheses; one that carries a condition of
+		// its own does, or the two runs would merge.
+		unparseCheckedOperand(b, n.Type, comma)
+		unparseChecks(b, n.Checks)
 	case *ExpressionType:
 		b.WriteString("typeof ")
 		unparseExpr(b, n.Exp, applyPrec)
@@ -241,7 +249,8 @@ func unparseTypeArg(b *strings.Builder, t Type, inTuple bool,
 	_, isFn := t.(*FnType)
 	_, isTuple := t.(*TupleType)
 	_, isAttributed := t.(*AttributedType)
-	if isFn || isAttributed || (inTuple && isTuple) {
+	_, isChecked := t.(*CheckedType)
+	if isFn || isAttributed || isChecked || (inTuple && isTuple) {
 		b.WriteString("(")
 		unparseType(b, t, comma)
 		b.WriteString(")")
@@ -338,7 +347,9 @@ func UnparseTypeDecl(d *TypeDecl) string {
 		}
 		unparseDatatypeTyVars(&b, names)
 		b.WriteString(bind.Name + " = ")
-		unparseType(&b, renameTyVars(bind.Type, rename), ",")
+		unparseType(&b,
+			sortRecordFields(renameTyVars(bind.Type, rename)), ",")
+		unparseChecks(&b, bind.Checks)
 	}
 	return b.String()
 }
@@ -407,6 +418,72 @@ func tyVarName(i int) string {
 	return "'" + string(b)
 }
 
+// LabelLess reports whether one record label sorts before
+// another: numeric labels first, in numeric order, then names
+// alphabetically. It is where a record's canonical order is
+// decided, for a type and for a value alike.
+func LabelLess(a, b string) bool {
+	an, aerr := strconv.Atoi(a)
+	bn, berr := strconv.Atoi(b)
+	if aerr == nil && berr == nil {
+		return an < bn
+	}
+	if aerr == nil || berr == nil {
+		return aerr == nil
+	}
+	return a < b
+}
+
+// sortRecordFields returns a type with every record type's fields
+// in canonical order, as a record type is written once it has been
+// resolved. The echo of a declaration shows the type the compiler
+// made of it; a parse tree shows what was written, and keeps the
+// order it was written in.
+func sortRecordFields(t Type) Type {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch n := t.(type) {
+	case *CheckedType:
+		return &CheckedType{
+			typeBase: n.typeBase,
+			Type:     sortRecordFields(n.Type),
+			Checks:   n.Checks,
+		}
+	case *FnType:
+		return &FnType{
+			typeBase: n.typeBase,
+			Param:    sortRecordFields(n.Param),
+			Result:   sortRecordFields(n.Result),
+		}
+	case *NamedType:
+		args := make([]Type, len(n.Args))
+		for i, a := range n.Args {
+			args[i] = sortRecordFields(a)
+		}
+		return &NamedType{
+			typeBase: n.typeBase, Name: n.Name, Args: args,
+		}
+	case *RecordType:
+		fields := make([]TypeField, len(n.Fields))
+		for i, f := range n.Fields {
+			fields[i] = TypeField{
+				Label: f.Label, Type: sortRecordFields(f.Type),
+			}
+		}
+		sort.Slice(fields, func(i, j int) bool {
+			return LabelLess(fields[i].Label, fields[j].Label)
+		})
+		return &RecordType{typeBase: n.typeBase, Fields: fields}
+	case *TupleType:
+		args := make([]Type, len(n.Args))
+		for i, a := range n.Args {
+			args[i] = sortRecordFields(a)
+		}
+		return &TupleType{typeBase: n.typeBase, Args: args}
+	default:
+		return t
+	}
+}
+
 // renameTyVars returns a copy of t with each type variable renamed
 // per m; a variable absent from m is left unchanged.
 func renameTyVars(t Type, m map[string]string) Type {
@@ -457,6 +534,7 @@ func unparseTypeDecl(d *TypeDecl) string {
 		}
 		unparseTyVars(&b, bind.TyVars)
 		b.WriteString(bind.Name + " = " + UnparseType(bind.Type))
+		unparseChecks(&b, bind.Checks)
 	}
 	return b.String()
 }
@@ -566,6 +644,54 @@ var unparseOps = map[Op]opInfo{
 // sits between the multiplicative level and application.
 const applyPrec = 9
 
+// castPrec is the precedence of ":", "as", "asOpt" and "check",
+// which bind loosest of all.
+const castPrec = 0
+
+// unparseCheckedOperand renders the type a condition is written
+// on. It needs parentheses only if it carries conditions of its
+// own, which parentheses are what say where each run ends.
+func unparseCheckedOperand(b *strings.Builder, t Type,
+	comma string,
+) {
+	if _, checked := t.(*CheckedType); checked {
+		b.WriteString("(")
+		unparseType(b, t, comma)
+		b.WriteString(")")
+		return
+	}
+	unparseType(b, t, comma)
+}
+
+// UnparseChecks renders a run of conditions as the text that
+// identifies them, " check m1 check m2". Two checked types are the
+// same type when this text is equal.
+func UnparseChecks(checks []*Fn) string {
+	var b strings.Builder
+	unparseChecks(&b, checks)
+	return b.String()
+}
+
+// unparseChecks renders a run of conditions, " check m1 check m2".
+func unparseChecks(b *strings.Builder, checks []*Fn) {
+	for _, c := range checks {
+		b.WriteString(" check ")
+		unparseMatches(b, c.Matches)
+	}
+}
+
+// unparseMatches renders a match list, "p1 => e1 | p2 => e2".
+func unparseMatches(b *strings.Builder, matches []*Match) {
+	for i, m := range matches {
+		if i > 0 {
+			b.WriteString(" | ")
+		}
+		unparsePat(b, m.Pat)
+		b.WriteString(" => ")
+		unparseExpr(b, m.Exp, castPrec+1)
+	}
+}
+
 // UnparseExpr renders an expression as source text,
 // parenthesizing by operator precedence.
 func UnparseExpr(e Expr) string {
@@ -577,17 +703,54 @@ func UnparseExpr(e Expr) string {
 func unparseExpr(b *strings.Builder, e Expr, prec int) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch n := e.(type) {
+	case *AnnotatedExp:
+		unparseParen(b, prec, castPrec, func() {
+			unparseExpr(b, n.Exp, castPrec)
+			b.WriteString(" : ")
+			unparseType(b, n.Type, ", ")
+		})
 	case *Apply:
 		unparseParen(b, prec, applyPrec, func() {
 			unparseExpr(b, n.Fn, applyPrec)
 			b.WriteString(" ")
 			unparseExpr(b, n.Arg, applyPrec+1)
 		})
+	case *Case:
+		// A "case" is not delimited on the right -- its last branch
+		// runs on -- so it is parenthesized wherever an operand is.
+		unparseParen(b, prec, castPrec, func() {
+			b.WriteString("case ")
+			unparseExpr(b, n.Exp, castPrec)
+			b.WriteString(" of ")
+			unparseMatches(b, n.Matches)
+		})
+	case *Cast:
+		unparseCast(b, n, prec)
+	case *CheckExp:
+		// An operand that ends in a type must be parenthesized, or
+		// the type would take the condition: "e : int check c"
+		// reads as "e : (int check c)".
+		unparseParen(b, prec, castPrec, func() {
+			unparseExpr(b, n.Exp, castPrec+1)
+			unparseChecks(b, n.Checks)
+		})
 	case *Elements:
 		b.WriteString("elements")
+	case *Fn:
+		unparseParen(b, prec, castPrec, func() {
+			b.WriteString("fn ")
+			unparseMatches(b, n.Matches)
+		})
 	case *From:
 		unparseParen(b, prec, 1, func() { unparseFrom(b, n) })
 	case *ID:
+		// A hidden member -- "Bag.$length", the binding behind a
+		// member a signature can only declare once -- is written as
+		// the member it stands for, which is what was called.
+		if s, m, hidden := strings.Cut(n.Name, ".$"); hidden {
+			b.WriteString("#" + m + " " + s)
+			break
+		}
 		b.WriteString(n.Name)
 	case *InfixCall:
 		op := unparseOps[n.Kind]
@@ -599,6 +762,21 @@ func unparseExpr(b *strings.Builder, e Expr, prec int) {
 			unparseExpr(b, n.A0, left)
 			b.WriteString(op.text)
 			unparseExpr(b, n.A1, r)
+		})
+	case *Let:
+		// A "let" ends with "end", so it delimits itself and needs
+		// parentheses only where an operand does.
+		unparseParen(b, prec, applyPrec, func() {
+			b.WriteString("let ")
+			for i, d := range n.Decls {
+				if i > 0 {
+					b.WriteString(" ")
+				}
+				unparseDecl(b, d)
+			}
+			b.WriteString(" in ")
+			unparseExpr(b, n.Exp, castPrec)
+			b.WriteString(" end")
 		})
 	case *ListExp:
 		unparseExprList(b, "[", n.Args, "]")
@@ -626,6 +804,38 @@ func unparseExpr(b *strings.Builder, e Expr, prec int) {
 	default:
 		panic("unparse: unknown expression")
 	}
+}
+
+// unparseDecl renders a declaration inside a "let": only the
+// value declaration a rewritten condition builds.
+func unparseDecl(b *strings.Builder, d Decl) {
+	valDecl, isVal := d.(*ValDecl)
+	if !isVal {
+		b.WriteString("...")
+		return
+	}
+	b.WriteString("val ")
+	for i, bind := range valDecl.Binds {
+		if i > 0 {
+			b.WriteString(" and ")
+		}
+		unparsePat(b, bind.Pat)
+		b.WriteString(" = ")
+		unparseExpr(b, bind.Exp, castPrec)
+	}
+}
+
+// unparseCast renders a conversion, "e as t" or "e asOpt t".
+func unparseCast(b *strings.Builder, n *Cast, prec int) {
+	unparseParen(b, prec, castPrec, func() {
+		unparseExpr(b, n.Exp, castPrec)
+		if n.Opt {
+			b.WriteString(" asOpt ")
+		} else {
+			b.WriteString(" as ")
+		}
+		unparseType(b, n.Type, ", ")
+	})
 }
 
 // unparseFields renders "a = e1, b = e2, ..."; a field with no

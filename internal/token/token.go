@@ -44,7 +44,9 @@ const (
 	And
 	Andalso
 	As
+	AsOpt
 	Case
+	Check
 	Datatype
 	Div
 	Else
@@ -175,7 +177,9 @@ var kindNames = map[Kind]string{
 	And:              "and",
 	Andalso:          "andalso",
 	As:               "as",
+	AsOpt:            "asOpt",
 	Case:             "case",
+	Check:            "check",
 	Datatype:         "datatype",
 	Div:              "div",
 	Else:             "else",

@@ -340,11 +340,17 @@ func NewDatatypeDecl(span token.Span,
 // Op implements Node.
 func (*DatatypeDecl) Op() Op { return DatatypeDeclOp }
 
-// TypeBind is one binding of a type-alias declaration.
+// TypeBind is one binding of a type-alias declaration. Checks,
+// when non-empty, are the "check" clauses that make it a checked
+// type: conditions that every value of the type satisfies.
 type TypeBind struct {
 	TyVars []string
 	Name   string
 	Type   Type
+	Checks []*Fn
+	// Span covers the type variables, the name and the body, but
+	// not the conditions; an error about the binding stands there.
+	Span token.Span
 }
 
 // TypeDecl is "type bind [and bind ...]".
@@ -403,6 +409,80 @@ func NewSignatureDecl(span token.Span,
 
 // Op implements Node.
 func (*SignatureDecl) Op() Op { return SignatureDeclOp }
+
+// CheckedType is "type check match", a type carrying conditions
+// that every value of it satisfies. A condition is written as a
+// function from the type it constrains to bool; separate clauses
+// are conjoined, whereas the branches of one clause are
+// alternatives, so they are kept as a list of functions rather
+// than flattened into one match list.
+type CheckedType struct {
+	typeBase
+
+	Type   Type
+	Checks []*Fn
+}
+
+// NewCheckedType returns a type with conditions. There is at
+// least one.
+func NewCheckedType(span token.Span, t Type,
+	checks []*Fn,
+) *CheckedType {
+	return &CheckedType{typeBase: tb(span), Type: t, Checks: checks}
+}
+
+// Op implements Node.
+func (*CheckedType) Op() Op { return CheckedTypeOp }
+
+// Cast is a conversion, "exp as type" or "exp asOpt type". Both
+// narrow a value to a type whose conditions may not hold of it;
+// they differ in how they report failure. "as" raises, and has the
+// type it converts to; "asOpt" answers NONE, and has that type
+// wrapped in "option".
+type Cast struct {
+	exprBase
+
+	Exp  Expr
+	Type Type
+	// Opt distinguishes "asOpt" from "as".
+	Opt bool
+}
+
+// NewCast returns a conversion; opt selects "asOpt" over "as".
+func NewCast(span token.Span, exp Expr, t Type,
+	opt bool,
+) *Cast {
+	return &Cast{exprBase: exprBase{base{span}}, Exp: exp, Type: t, Opt: opt}
+}
+
+// Op implements Node.
+func (c *Cast) Op() Op {
+	if c.Opt {
+		return AsOptOp
+	}
+	return AsOp
+}
+
+// CheckExp is "exp check match", an expression carrying
+// conditions. It adds to what the expression already claims,
+// rather than replacing it.
+type CheckExp struct {
+	exprBase
+
+	Exp    Expr
+	Checks []*Fn
+}
+
+// NewCheckExp returns an expression with conditions. There is at
+// least one.
+func NewCheckExp(span token.Span, exp Expr,
+	checks []*Fn,
+) *CheckExp {
+	return &CheckExp{exprBase: exprBase{base{span}}, Exp: exp, Checks: checks}
+}
+
+// Op implements Node.
+func (*CheckExp) Op() Op { return CheckExpOp }
 
 // ExpressionType is "typeof exp".
 type ExpressionType struct {

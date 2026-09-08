@@ -35,17 +35,18 @@ type Con struct {
 
 // Names of the built-in exceptions that the runtime raises.
 const (
-	ExnBind      = "Bind"
-	ExnChr       = "Chr"
-	ExnDate      = "Date"
-	ExnDiv       = "Div"
-	ExnDomain    = "Domain"
-	ExnEmpty     = "Empty"
-	ExnOverflow  = "Overflow"
-	ExnSize      = "Size"
-	ExnSubscript = "Subscript"
-	ExnTime      = "Time"
-	ExnUnequal   = "UnequalLengths"
+	ExnBind       = "Bind"
+	ExnChr        = "Chr"
+	ExnConstraint = "Constraint"
+	ExnDate       = "Date"
+	ExnDiv        = "Div"
+	ExnDomain     = "Domain"
+	ExnEmpty      = "Empty"
+	ExnOverflow   = "Overflow"
+	ExnSize       = "Size"
+	ExnSubscript  = "Subscript"
+	ExnTime       = "Time"
+	ExnUnequal    = "UnequalLengths"
 )
 
 // Relation is a foreign relation: a collection whose rows come
@@ -65,6 +66,10 @@ type MorelError struct {
 	// appears in the report's brackets, e.g.
 	// "uncaught exception Fail [Fail: boom]".
 	ExnValue Val
+	// Desc is the bracketed description of an exception whose
+	// message is made when it is raised rather than fixed by its
+	// name, as a failed check's is.
+	Desc string
 }
 
 func (e *MorelError) Error() string {
@@ -87,13 +92,32 @@ var exnDescriptions = map[string]string{
 // shell writes it out rather than leaving the line off.
 const zeroPos = "0.0-0.0"
 
+// Summary is how an exception reads when quoted inside another
+// message: its name, and its bracketed description if it has one,
+// but not where it was raised.
+func (e *MorelError) Summary() string {
+	s := e.Exn
+	if e.Desc != "" {
+		return s + " [" + e.Desc + "]"
+	}
+	if d, ok := exnDescriptions[e.Exn]; ok {
+		return s + " [" + d + "]"
+	}
+	if con, ok := e.ExnValue.(Con); ok && con.Arg != nil {
+		return s + " [" + exnMessage(con) + "]"
+	}
+	return s
+}
+
 // Describe renders the exception as the shell reports it:
 //
 //	uncaught exception Bind [nonexhaustive binding failure]
 //	  raised at: stdIn:1.5-1.20
 func (e *MorelError) Describe() string {
 	s := "uncaught exception " + e.Exn
-	if d, ok := exnDescriptions[e.Exn]; ok {
+	if e.Desc != "" {
+		s += " [" + e.Desc + "]"
+	} else if d, ok := exnDescriptions[e.Exn]; ok {
 		s += " [" + d + "]"
 	} else if con, ok := e.ExnValue.(Con); ok && con.Arg != nil {
 		s += " [" + exnMessage(con) + "]"

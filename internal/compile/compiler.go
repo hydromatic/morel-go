@@ -166,6 +166,24 @@ func literalCode(e *core.Literal) eval.Code {
 	return eval.Constant(e.Value)
 }
 
+// compileCheck compiles a check of a checked type's conditions.
+// The value and the condition are evaluated one after the other
+// in this frame; the condition reads the value through a variable
+// the enforcer bound, so evaluating it here costs nothing.
+func (c *compiler) compileCheck(e *core.Check) (eval.Code, error) {
+	value, err := c.compileExp(e.Value)
+	if err != nil {
+		return nil, err
+	}
+	cond, err := c.compileExp(e.Cond)
+	if err != nil {
+		return nil, err
+	}
+	return eval.CheckCode(value, cond, e.Value.Type(), e.TypeName,
+		e.Blame, e.Kind != core.CheckAttempt,
+		e.Kind == core.CheckRaise, e.Span), nil
+}
+
 func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch e := exp.(type) {
@@ -173,6 +191,8 @@ func (c *compiler) compileExp(exp core.Exp) (eval.Code, error) {
 		return c.compileApply(e, false)
 	case *core.Case:
 		return c.compileCase(e, false)
+	case *core.Check:
+		return c.compileCheck(e)
 	case *core.Con:
 		if e.Datatype == variantTypeName {
 			return c.compileVariantCon(e)

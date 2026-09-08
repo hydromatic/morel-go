@@ -226,6 +226,9 @@ func (a *analyzer) exp(e core.Exp) {
 				info.parallel = true
 			}
 		}
+	case *core.Check:
+		a.exp(e.Value)
+		a.exp(e.Cond)
 	case *core.Fn:
 		a.declare(e.IDPat)
 		a.exp(e.Exp)

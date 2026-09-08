@@ -33,6 +33,7 @@ import (
 	"github.com/hydromatic/morel-go/internal/core"
 	"github.com/hydromatic/morel-go/internal/eval"
 	"github.com/hydromatic/morel-go/internal/parse"
+	"github.com/hydromatic/morel-go/internal/pp"
 	"github.com/hydromatic/morel-go/internal/sig"
 	"github.com/hydromatic/morel-go/internal/token"
 	"github.com/hydromatic/morel-go/internal/types"
@@ -215,6 +216,17 @@ func NewKernel(name string) *Kernel {
 		overloads:  compile.NewOverloadEnv(),
 		fileValues: map[string]*eval.File{},
 	}
+	// A message that quotes a value writes it as a result is
+	// written, but flat, and at the default print length and depth
+	// rather than the session's: a message is not a result, and
+	// should not change with a property.
+	msgConfig := DefaultConfig()
+	msgConfig.sys = sys
+	msgConfig.LineWidth = -1
+	eval.ValueString = func(t types.Type, v eval.Val) string {
+		return pp.Render(msgConfig.width(),
+			pp.Flatten(msgConfig.valueDoc(t, v, 1)))
+	}
 	// Method overloads that the signature files cannot express (a
 	// record has one field per name): Range.contains dispatched on
 	// the set types, targeting hidden bindings.
@@ -274,6 +286,12 @@ func NewKernel(name string) *Kernel {
 	// Sys.clearEnv can restore exactly it.
 	k.typeofTypes = map[ast.Expr]types.Type{}
 	sys.SetTypeofResolver(k.deduceTypeof)
+	// Everything bound by now is the standard basis: a condition on
+	// a checked type may refer to it, because it cannot be re-bound
+	// out from under the type.
+	for i := range k.bindings {
+		k.bindings[i].Basis = true
+	}
 	k.initBindings = slices.Clone(k.bindings)
 	k.initValues = maps.Clone(k.values)
 	for _, b := range result.Bindings {
@@ -927,6 +945,13 @@ func (k *Kernel) runStatement(n ast.Node) string {
 		return k.echoDatatypeDecl(datatypeDecl)
 	}
 	if typeDecl, isType := resolved.Decl.(*ast.TypeDecl); isType {
+		// A type declaration lowers to nothing, but its conditions
+		// are compiled here, where they were written, so that a
+		// later statement can claim the type.
+		cerr := compile.ResolveChecks(resolved, k.overloads)
+		if cerr != nil {
+			return k.formatCompileError(cerr)
+		}
 		return k.echoTypeDecl(typeDecl)
 	}
 	coreDecl, err := compile.Resolve(resolved, k.overloads)
@@ -1179,8 +1204,15 @@ func notImplemented(name string) eval.Fn {
 // so unpulled corpus statements stay silent.
 func (k *Kernel) formatCompileError(err error) string {
 	var compileErr *compile.Error
-	if !errors.As(err, &compileErr) ||
-		compileErr.Span == (token.Span{}) {
+	if !errors.As(err, &compileErr) {
+		// Not a compile error, so not a feature that is missing but
+		// a failure inside the compiler. morel-java would raise
+		// where morel-go returns, and would not be quiet about it;
+		// say so rather than counting it as a gap and printing
+		// nothing.
+		return "internal error: " + err.Error()
+	}
+	if compileErr.Span == (token.Span{}) {
 		k.recordGap(err.Error())
 		return ""
 	}
@@ -1274,6 +1306,10 @@ func (k *Kernel) bind(name string, t types.Type) {
 	for i := range k.bindings {
 		if k.bindings[i].Name == name {
 			k.bindings[i].Type = t
+			// The user has declared a value of their own, so the
+			// name is no longer the basis's, whatever it was before.
+			// A checked type's condition may not refer to it.
+			k.bindings[i].Basis = false
 			return
 		}
 	}

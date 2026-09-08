@@ -26,6 +26,30 @@ import (
 // loosest; "*" is non-associative; a type-constructor application
 // ("int list") binds tightest.
 func (p *Parser) typeExpr() (ast.Type, error) {
+	t, err := p.fnType()
+	if err != nil {
+		return nil, err
+	}
+	// A condition binds more loosely than anything else in a type,
+	// so "int -> int check c" puts the condition on the function
+	// type; parenthesizing puts it on a component instead.
+	checks, err := p.checks()
+	if err != nil {
+		return nil, err
+	}
+	if len(checks) == 0 {
+		return t, nil
+	}
+	span := token.Span{
+		Start: t.Span().Start,
+		End:   checks[len(checks)-1].Span().End,
+	}
+	return ast.NewCheckedType(span, t, checks), nil
+}
+
+// fnType parses a type up to but not including any "check"
+// clause: "t", or "t -> t", which is right-associative.
+func (p *Parser) fnType() (ast.Type, error) {
 	t, err := p.tupleType()
 	if err != nil {
 		return nil, err
@@ -37,7 +61,7 @@ func (p *Parser) typeExpr() (ast.Type, error) {
 	if err != nil {
 		return nil, err
 	}
-	result, err := p.typeExpr()
+	result, err := p.fnType()
 	if err != nil {
 		return nil, err
 	}

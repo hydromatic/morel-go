@@ -50,6 +50,11 @@ func cloneExp(e core.Exp, fresh map[*core.IDPat]*core.IDPat,
 		return &core.Case{
 			T: e.T, Exp: exp, Matches: matches, Span: e.Span,
 		}
+	case *core.Check:
+		check := *e
+		check.Cond = cloneExp(e.Cond, fresh)
+		check.Value = cloneExp(e.Value, fresh)
+		return &check
 	case *core.Fn:
 		pat := cloneIDPat(e.IDPat, fresh)
 		return &core.Fn{T: e.T, IDPat: pat, Exp: cloneExp(e.Exp, fresh)}

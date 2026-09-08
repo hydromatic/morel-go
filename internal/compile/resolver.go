@@ -48,6 +48,32 @@ func Resolve(resolved *Resolved, overloads *OverloadEnv) (core.Decl,
 	return decl, err
 }
 
+// ResolveChecks compiles the conditions of the checked types that
+// a type declaration declares. A type declaration lowers to
+// nothing, and so never reaches Resolve; but its conditions must
+// be compiled where they are written, because a type declared in
+// one statement may be claimed in another.
+func ResolveChecks(resolved *Resolved, overloads *OverloadEnv) error {
+	decl, isType := resolved.Decl.(*ast.TypeDecl)
+	if !isType {
+		return nil
+	}
+	r := &resolver{
+		typeMap:          resolved.TypeMap,
+		aggSubst:         map[ast.Node]*core.IDPat{},
+		overloads:        overloads,
+		dictionaryParams: map[string]*core.IDPat{},
+		freePats:         map[freeKey]*core.IDPat{},
+	}
+	for _, b := range decl.Binds {
+		err := r.compileChecks(nil, b.Checks)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // freeKey identifies a declaration site made for a name that this
 // compilation unit does not declare. Types are interned, so the
 // key compares by value.
@@ -243,25 +269,18 @@ func (r *resolver) toDecl(env *coreEnv, decl ast.Decl) (core.Decl,
 			}
 		}
 	}
-	if _, annotated := bind.Pat.(*ast.AnnotatedPat); !annotated {
-		if idPat, ok := pat.(*core.IDPat); ok &&
-			idPat.SurfaceT == nil {
-			// An alias that survived inference of the bound
-			// expression is what the binding displays:
-			// "val x = 6 : myInt" is "myInt", as
-			// "val x : myInt = 6" is. An annotation on the pattern
-			// has already had its say, and wins: "val j : int = n"
-			// is "int" even where n is "nat".
-			if a := r.typeMap.AliasedTypeOf(bind.Exp); a != nil {
-				idPat.SurfaceT = a
-			}
-		}
-	}
+	r.setSurfaceType(pat, bind)
 	if exp == nil {
 		exp, err = r.toExp(env, bind.Exp)
 		if err != nil {
 			return nil, nil, err
 		}
+	}
+	// A binding at a checked type is where a value flows into a
+	// claim, so the condition is checked here.
+	exp, err = r.checkedAt(bind.Pat, exp, bind.Span())
+	if err != nil {
+		return nil, nil, err
 	}
 	env2 := env
 	for _, id := range core.PatIDs(pat) {
@@ -425,8 +444,15 @@ func (r *resolver) toIDPat(pat ast.Pat) (*core.IDPat, error) {
 		surface, e1 := r.typeMap.sys.SurfaceFromAST(p.Type,
 			map[string]int{})
 		expanded, e2 := r.typeMap.sys.FromAST(p.Type, map[string]int{})
-		if e1 == nil && e2 == nil && surface != expanded {
-			idPat.SurfaceT = surface
+		if e1 == nil && e2 == nil {
+			// A pattern annotation drops the conditions it writes
+			// out; one inside a type it merely names is the name's
+			// own business.
+			surface = types.StripWrittenChecks(r.typeMap.sys,
+				p.Type, surface)
+			if surface != expanded {
+				idPat.SurfaceT = surface
+			}
 		}
 		return idPat, nil
 	case *ast.IDPat:
@@ -451,7 +477,7 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 	// lint: sort until '^\t}' where '^\tcase '
 	switch e := exp.(type) {
 	case *ast.AnnotatedExp:
-		return r.toExp(env, e.Exp)
+		return r.toAnnotatedExp(env, e)
 	case *ast.Apply:
 		return r.toApply(env, e, t)
 	case *ast.AttributedExp:
@@ -459,6 +485,10 @@ func (r *resolver) toExp(env *coreEnv, exp ast.Expr) (core.Exp,
 		return r.toExp(env, e.Exp)
 	case *ast.Case:
 		return r.toCase(env, e, t)
+	case *ast.Cast:
+		return r.toCast(env, e)
+	case *ast.CheckExp:
+		return r.toCheckExp(env, e)
 	case *ast.Elements:
 		return r.toElements(e)
 	case *ast.Fn:
@@ -636,6 +666,13 @@ func (r *resolver) toApply(env *coreEnv, apply *ast.Apply,
 	if err != nil {
 		return nil, err
 	}
+	// Applying a datatype constructor is a construction site, like
+	// a binding: the constructor was declared to hold the type it
+	// holds, so its argument is checked.
+	arg, err = r.checkedConArg(fn, arg, apply.Fn.Span())
+	if err != nil {
+		return nil, err
+	}
 	apply2 := &core.Apply{
 		T:    t,
 		Fn:   fn,
@@ -643,6 +680,179 @@ func (r *resolver) toApply(env *coreEnv, apply *ast.Apply,
 		Span: apply.Span(),
 	}
 	return apply2, nil
+}
+
+// setSurfaceType gives a bound name the type the binding displays.
+//
+// An alias that survived inference of the bound expression is what
+// it displays: "val x = 6 : myInt" is "myInt", as "val x : myInt =
+// 6" is. An annotation on the pattern has already had its say, and
+// wins: "val j : int = n" is "int" even where n is "nat" -- unless
+// the expression declared a type of its own, which is the stronger
+// answer.
+func (r *resolver) setSurfaceType(pat core.Pat, bind *ast.ValBind) {
+	if _, annotated := bind.Pat.(*ast.AnnotatedPat); annotated {
+		return
+	}
+	idPat, isID := pat.(*core.IDPat)
+	if !isID || (idPat.SurfaceT != nil && !declaresType(bind.Exp)) {
+		return
+	}
+	if from, isFrom := bind.Exp.(*ast.From); isFrom {
+		if t := r.queryRealType(from, pat); t != nil {
+			idPat.SurfaceT = t
+			return
+		}
+	}
+	if a := r.typeMap.AliasedTypeOf(bind.Exp); a != nil {
+		idPat.SurfaceT = a
+	}
+}
+
+// queryRealType is the type to display for a query whose scan
+// names the type of what it scans, or nil if there is none.
+//
+// Either half of the scan may name it: the pattern, as in
+// "from n: nat in [1, 2]", or the source, as in
+// "from n in ([1] : nat list)".
+//
+// The name is the elements' only while they are still the values
+// the scan produced. A step that computes new ones -- a "group",
+// an "into", a "yield" of anything but the scanned value itself --
+// gives the query a different element type, and the name is not
+// about it. "from n: nat in [1, 2] yield n" is a "nat list";
+// "yield n + 0" is an "int list", because an operator drops a
+// condition just as it does in "fun decr (n: nat) = n - 1".
+func (r *resolver) queryRealType(from *ast.From,
+	pat core.Pat,
+) types.Type {
+	if len(from.Steps) == 0 {
+		return nil
+	}
+	scan, isScan := from.Steps[0].(*ast.Scan)
+	if !isScan {
+		return nil
+	}
+	written := r.scanWrittenType(scan)
+	if written == nil || types.Unalias(written) == written {
+		return nil
+	}
+	name := scannedName(scan.Pat)
+	for _, step := range from.Steps[1:] {
+		if !preservesElements(step, name) {
+			return nil
+		}
+	}
+	elem := collectionElem(pat.Type())
+	if elem == nil || elem != types.Unalias(written) {
+		return nil
+	}
+	if _, isList := pat.Type().(*types.List); isList {
+		return r.typeMap.sys.List(written)
+	}
+	return r.typeMap.sys.Named(bagTyCon, written)
+}
+
+// scanWrittenType is the type written for the values a scan
+// produces -- on the pattern, or on the source -- or nil if
+// neither says.
+func (r *resolver) scanWrittenType(scan *ast.Scan) types.Type {
+	surface := func(t ast.Type) types.Type {
+		s, err := r.typeMap.sys.SurfaceFromAST(t, map[string]int{})
+		if err != nil {
+			return nil
+		}
+		return s
+	}
+	if p, isAnnotated := scan.Pat.(*ast.AnnotatedPat); isAnnotated &&
+		scannedName(scan.Pat) != "" {
+		return surface(p.Type)
+	}
+	if e, isAnnotated := scan.Exp.(*ast.AnnotatedExp); isAnnotated {
+		t := surface(e.Type)
+		if t == nil {
+			return nil
+		}
+		return collectionElem(t)
+	}
+	return nil
+}
+
+// scannedName is the name a scan pattern binds to the whole value
+// it scans, or "" if it binds none.
+//
+// A pattern that destructures binds parts, and it is the parts
+// that have types; no one name covers the whole value.
+func scannedName(pat ast.Pat) string {
+	if p, isAnnotated := pat.(*ast.AnnotatedPat); isAnnotated {
+		return scannedName(p.Pat)
+	}
+	if p, isID := pat.(*ast.IDPat); isID {
+		return p.Name
+	}
+	return ""
+}
+
+// preservesElements reports whether a step leaves the query's
+// elements the values the scan produced, so that a name written on
+// them is still theirs. name is what the scan bound them to, or ""
+// if it bound no one name.
+func preservesElements(step ast.FromStep, name string) bool {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch step.Op() {
+	case ast.DistinctOp, ast.OrderOp, ast.RequireOp, ast.SkipOp,
+		ast.TakeOp, ast.UnorderOp, ast.WhereOp:
+		return true
+	case ast.YieldOp:
+		// Yielding the scanned value itself changes nothing.
+		y, isYield := step.(*ast.YieldStep)
+		if !isYield || y.Binder != "" || name == "" {
+			return false
+		}
+		id, isID := y.Exp.(*ast.ID)
+		return isID && id.Name == name
+	default:
+		return false
+	}
+}
+
+// displayedPatType is the type a pattern displays: its aliased
+// type, with every checked type that has no name replaced by what
+// it abbreviates, and nil where nothing is left to say.
+//
+// A name is worth keeping -- it is what the user called the type
+// -- but a condition written in full says nothing a reader of the
+// binding needs, and the value has been checked against it
+// already. What is claimed is read from the annotation, not from
+// here.
+func (r *resolver) displayedPatType(pat ast.Pat,
+	annotation ast.Type,
+) types.Type {
+	a := r.typeMap.AliasedTypeOf(pat)
+	if a == nil {
+		return nil
+	}
+	stripped := types.StripWrittenChecks(r.typeMap.sys, annotation, a)
+	plain, err := r.typeMap.TypeOf(pat)
+	if err == nil && stripped == plain {
+		return nil
+	}
+	return stripped
+}
+
+// declaresType reports whether an expression says what its type
+// is, rather than leaving inference to say. A pattern takes its
+// surface type from what inference made of it, which is the
+// weaker answer where the expression declared one: "val b = e
+// check m" holds what "e check m" claims, not what the variable
+// it was deduced into reduced to.
+func declaresType(exp ast.Expr) bool {
+	switch exp.(type) {
+	case *ast.AnnotatedExp, *ast.Cast, *ast.CheckExp:
+		return true
+	default:
+		return false
+	}
 }
 
 // applyDicts wraps fn in one curried application per dictionary
@@ -1685,6 +1895,15 @@ func (r *resolver) toScanStep(cur *coreEnv,
 	for _, id := range core.PatIDs(pat) {
 		cur = cur.bind(id)
 	}
+	// The type's condition becomes a step of its own rather than
+	// part of the scan's condition, which only a join reads.
+	typeCond, err := r.scanTypeCondition(s.Pat, pat)
+	if err != nil {
+		return nil, nil, err
+	}
+	if typeCond != nil {
+		steps = append(steps, &core.Where{Exp: typeCond})
+	}
 	// A "join ... on" condition filters over the scan's variables,
 	// so it lowers to a where after the scan — except for an outer
 	// join, which evaluates it over the unwrapped values inside
@@ -1870,13 +2089,60 @@ func (r *resolver) toFn(env *coreEnv, fn *ast.Fn,
 	if err != nil {
 		return nil, err
 	}
-	body := &core.Case{
+	body := core.Exp(&core.Case{
 		T:       fnType.Result,
 		Exp:     &core.ID{Pat: param},
 		Matches: matches,
 		Span:    fn.Span(),
+	})
+	// A parameter whose pattern claims per component -- "(x: nat,
+	// y)" -- is checked here rather than in the branch, which only
+	// rewrites a pattern that binds the whole value. The check goes
+	// inside the function, so it travels with the function value.
+	claimed, err := r.parameterType(fn)
+	if err != nil {
+		return nil, err
+	}
+	if claimed != nil {
+		raw := &core.IDPat{T: fnType.Param, Name: r.freshRecordName()}
+		checked, cerr := r.checked(&core.ID{Pat: raw}, claimed, "",
+			fn.Span())
+		if cerr != nil {
+			return nil, cerr
+		}
+		body = &core.Let{
+			Decl: &core.NonRecValDecl{
+				Pat: param, Exp: checked, Span: fn.Span(),
+			},
+			Exp: body,
+		}
+		param = raw
 	}
 	return &core.Fn{T: fnType, IDPat: param, Exp: body}, nil
+}
+
+// parameterType returns the type a function's parameter claims,
+// or nil if it claims nothing.
+//
+// Only a function of a single match is considered: one of several
+// may annotate each differently, and which of them the parameter
+// claims is a question composite values raise more generally. A
+// pattern that binds the whole value is left to the branch, which
+// checks it there; doing it here as well would check every
+// argument twice.
+//
+//nolint:nilnil // a nil type means nothing is claimed
+func (r *resolver) parameterType(fn *ast.Fn) (types.Type, error) {
+	if len(fn.Matches) != 1 {
+		return nil, nil
+	}
+	pat := fn.Matches[0].Pat
+	if annotated, isAnnotated := pat.(*ast.AnnotatedPat); isAnnotated {
+		if _, isID := annotated.Pat.(*ast.IDPat); isID {
+			return nil, nil
+		}
+	}
+	return r.claimedPatType(pat)
 }
 
 // irrefutable reports whether a pattern always matches — a
@@ -2050,8 +2316,9 @@ func (r *resolver) toModifiedRecord(env *coreEnv,
 	var bindOperands func(i int) (core.Exp, error)
 	bindOperands = func(i int) (core.Exp, error) {
 		if i == len(exps) {
-			return r.modify(env, record.Modifiers, 0,
-				operands[record.Base], operands, record.Span())
+			return r.modify(env, record, 0,
+				operands[record.Base], operands, record.Span(),
+				false, true)
 		}
 		exp, err := r.toExp(env, exps[i])
 		if err != nil {
@@ -2066,13 +2333,116 @@ func (r *resolver) toModifiedRecord(env *coreEnv,
 	return bindOperands(0)
 }
 
-// modify applies the modifiers of a record, from i onwards.
-func (r *resolver) modify(env *coreEnv, modifiers []ast.Modifier,
-	i int, value *core.ID, operands map[ast.Expr]*core.ID,
-	span token.Span,
+// baseClaimedType is the type a record modifier's base has.
+//
+// It is read from the base rather than from the result: assigning
+// to a field meets its type with the value's, and a meet weakens
+// an alias, so by the time the result has a type the condition
+// being claimed may be gone from it.
+func (r *resolver) baseClaimedType(base ast.Expr) types.Type {
+	return r.typeMap.AliasedTypeOf(base)
+}
+
+// compileInherited compiles the conditions of a modified record
+// whose type has no name of its own.
+//
+// A modifier that changed the record's shape may have carried
+// conditions over into a type that was never declared. They are
+// compiled here, where they were rewritten, so that the type can
+// be claimed later; this happens whether or not anything is
+// claimed now, because it is the type that outlives the statement.
+func (r *resolver) compileInherited(env *coreEnv,
+	record *ast.Record,
+) error {
+	a, isAlias := r.typeMap.AliasedTypeOf(record).(*types.AliasType)
+	if !isAlias || len(a.Checks) == 0 {
+		return nil
+	}
+	return r.compileChecks(env, a.Checks)
+}
+
+// toCheckExp converts "e check m". A condition written on an
+// expression is a claim, so it is checked where it is written.
+func (r *resolver) toCheckExp(env *coreEnv,
+	e *ast.CheckExp,
 ) (core.Exp, error) {
+	inner, err := r.toExp(env, e.Exp)
+	if err != nil {
+		return nil, err
+	}
+	claimed := r.typeMap.AliasedTypeOf(e)
+	if claimed == nil {
+		return inner, nil
+	}
+	a, isAlias := claimed.(*types.AliasType)
+	if isAlias {
+		// The type has no name, so nothing declared its conditions;
+		// they are compiled here, where they were written.
+		err = r.compileChecks(env, a.Checks)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !r.hasCheck(claimed) {
+		return inner, nil
+	}
+	return r.checked(inner, claimed, "", e.Span())
+}
+
+// toAnnotatedExp converts "e : t". An ascription is a claim, like
+// a binding, so it is checked wherever it appears -- not only
+// where its value is bound.
+func (r *resolver) toAnnotatedExp(env *coreEnv,
+	e *ast.AnnotatedExp,
+) (core.Exp, error) {
+	inner, err := r.toExp(env, e.Exp)
+	if err != nil {
+		return nil, err
+	}
+	claimed := r.typeMap.AliasedTypeOf(e)
+	if claimed == nil {
+		return inner, nil
+	}
+	err = rejectCheckedFunction(claimed, claimed, e.Type.Span())
+	if err != nil {
+		return nil, err
+	}
+	if !r.hasCheck(claimed) {
+		return inner, nil
+	}
+	return r.checked(inner, claimed, "", e.Span())
+}
+
+// modify applies the modifiers of a record, from i onwards.
+//
+// claimed says whether a modifier already applied assigned to a
+// field that keeps its declared type. Such an assignment is a
+// claim -- nobody else wrote the type down, so nowhere else would
+// check it -- and the check is made once, at the end of the chain.
+func (r *resolver) modify(env *coreEnv, record *ast.Record,
+	i int, value *core.ID, operands map[ast.Expr]*core.ID,
+	span token.Span, claimed, shapeKept bool,
+) (core.Exp, error) {
+	modifiers := record.Modifiers
 	if i == len(modifiers) {
-		return value, nil
+		err := r.compileInherited(env, record)
+		if err != nil {
+			return nil, err
+		}
+		if !claimed || !shapeKept {
+			// Nothing was assigned, so nothing is claimed that has
+			// not been shown: every value the result carries was
+			// checked when it was put there. A chain that changed
+			// the shape claims nothing either, because the type it
+			// modified no longer fits the result.
+			return value, nil
+		}
+		// The claim is the type of the record being modified.
+		t := r.baseClaimedType(record.Base)
+		if t == nil || !r.hasCheck(t) {
+			return value, nil
+		}
+		return r.checked(value, t, "", span)
 	}
 	m := modifiers[i]
 	var allID *core.ID
@@ -2108,7 +2478,9 @@ func (r *resolver) modify(env *coreEnv, modifiers []ast.Modifier,
 			}
 			return r.letValue(built, span,
 				func(id *core.ID) (core.Exp, error) {
-					return r.modify(env, modifiers, i+1, id, operands, span)
+					return r.modify(env, record, i+1, id, operands,
+						span, claimed || claims(sources),
+						shapeKept && preserves(sources, names))
 				})
 		})
 }
@@ -2454,6 +2826,10 @@ func (r *resolver) toMatches(env *coreEnv,
 		if err != nil {
 			return nil, err
 		}
+		pat, body, err = r.checkedBranch(pat, body, m)
+		if err != nil {
+			return nil, err
+		}
 		result[i] = core.Match{Pat: pat, Exp: body, Span: m.Span()}
 	}
 	return result, nil
@@ -2477,7 +2853,10 @@ func (r *resolver) toPat(pat ast.Pat) (core.Pat, error) {
 			return nil, err
 		}
 		if idPat, ok := inner.(*core.IDPat); ok {
-			if a := r.typeMap.AliasedTypeOf(pat); a != nil {
+			// A pattern annotation displays only what has a name;
+			// the claim is read from the annotation itself, not
+			// from here, so nothing is lost by stripping.
+			if a := r.displayedPatType(pat, p.Type); a != nil {
 				idPat.SurfaceT = a
 			}
 		}
@@ -2521,6 +2900,8 @@ func (r *resolver) toPat(pat ast.Pat) (core.Pat, error) {
 		idPat := &core.IDPat{T: t, Name: p.Name}
 		// A type alias that survived inference is what the binding
 		// displays. It stays out of T, which the evaluator reads.
+		// Its conditions are kept, named or not: nobody wrote this
+		// type down, so what it says is all there is to say.
 		if a := r.typeMap.AliasedTypeOf(pat); a != nil {
 			idPat.SurfaceT = a
 		}

@@ -41,7 +41,7 @@ sig
    * ListPair, `Unordered` from IEEEReal) — matching the reference
    * implementation's EXN datatype; only `Fail` carries a payload.
    *)
-  datatype exn = Bind | Chr | Div | Domain | Empty | Fail of string | Match | Overflow | Size | Span | Subscript | UnequalLengths | Unordered
+  datatype exn = Bind | Chr | Constraint | Div | Domain | Empty | Fail of string | Match | Overflow | Size | Span | Subscript | UnequalLengths | Unordered
 
   (** is raised when pattern matching fails in a `val` binding. *)
   exception Bind
@@ -56,6 +56,12 @@ sig
    * is raised by `Char.chr` when given an integer outside the valid range.
    *)
   exception Chr
+
+  (**
+   * is raised when a value does not satisfy the `check` condition of the
+   * checked type it is being converted to.
+   *)
+  exception Constraint [@@specified "morel"]
 
   (** is raised on integer division by zero. *)
   exception Div
