@@ -438,9 +438,57 @@ func (l *Lexer) scanEscape() error {
 	case l.hasDigits(decimalEscapeLen):
 		l.skipN(decimalEscapeLen)
 		return nil
+	case r == '\r' || r == '\n':
+		// A backslash at the end of a line continues the string on
+		// the next line: the backslash, the newline, and the spaces
+		// and tabs that begin the next line are ignored. A bare
+		// newline is still part of the string.
+		if r == '\r' && l.peek(1) == '\n' {
+			l.advance()
+		}
+		l.advance()
+		for l.peek(0) == ' ' || l.peek(0) == '\t' {
+			l.advance()
+		}
+		return nil
+	case l.escapePartial(r):
+		// The input ends part-way through an escape, and more input
+		// could complete it, so the string is unclosed rather than
+		// wrong: the shell asks for another line instead of
+		// reporting an error. A bare "\" is the state that typing
+		// any escape passes through, and a line continuation too.
+		span := token.Span{Start: l.start, End: l.pos}
+		return l.errorUnclosed(span, "unclosed string")
 	default:
 		span := token.Span{Start: start, End: l.pos}
 		return l.errorAt(span, "illegal escape")
+	}
+}
+
+// escapePartial reports whether the input ends part-way through an
+// escape that more input could complete: "\" alone, which any
+// escape and a line continuation both begin with; "\^", which one
+// character in "@"-"_" completes; and "\d" or "\dd", which
+// further digits complete.
+func (l *Lexer) escapePartial(r rune) bool {
+	switch {
+	case r < 0:
+		return true
+	case r == '^':
+		return l.peek(1) < 0
+	case r >= '0' && r <= '9':
+		for k := 1; k < decimalEscapeLen; k++ {
+			c := l.peek(k)
+			if c < 0 {
+				return true
+			}
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
+		return false
+	default:
+		return false
 	}
 }
 

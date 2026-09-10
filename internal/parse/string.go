@@ -59,6 +59,18 @@ func decodeEscape(b *strings.Builder, r []rune) int {
 		b.WriteRune(r[1] - '@')
 		return 1
 	}
+	if r[0] == '\r' || r[0] == '\n' {
+		// A line continuation: the newline, and the spaces and tabs
+		// that begin the next line, contribute nothing.
+		n := 1
+		if r[0] == '\r' && n < len(r) && r[n] == '\n' {
+			n++
+		}
+		for n < len(r) && (r[n] == ' ' || r[n] == '\t') {
+			n++
+		}
+		return n - 1
+	}
 	const digits, base = 3, 10
 	n := rune(0)
 	for k := range digits {

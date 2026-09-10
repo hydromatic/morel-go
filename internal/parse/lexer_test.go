@@ -18,6 +18,7 @@
 package parse_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -116,6 +117,51 @@ func TestLexStrings(t *testing.T) {
 	// A string may contain a raw newline.
 	check(t, "\"ab\ncd\"", "string literal:\"ab\ncd\"")
 	check(t, `#"a" #"\n"`, `char literal:#"a" char literal:#"\n"`)
+	// A backslash at the end of a line continues the string: the
+	// backslash, the newline, and the spaces and tabs that begin
+	// the next line are ignored.
+	check(t, "\"ab\\\n   cd\"", "string literal:\"ab\\\n   cd\"")
+}
+
+// TestLexPartialEscape checks that input ending part-way through an
+// escape is reported as an unclosed string, not a bad escape. The
+// shell asks for another line when a statement is unclosed, and
+// "\\" at the end of a line is how a continued string looks while
+// it is being typed; reporting it as a bad escape ends the
+// statement with an error the user cannot get out of.
+func TestLexPartialEscape(t *testing.T) {
+	unclosed := func(src string, want bool) {
+		t.Helper()
+		l := parse.NewLexer("stdIn", src)
+		for {
+			tok, err := l.Next()
+			if err != nil {
+				var perr *parse.Error
+				if !errors.As(err, &perr) || perr.Unclosed != want {
+					t.Errorf("lex(%q): err %v, want unclosed=%v",
+						src, err, want)
+				}
+				return
+			}
+			if tok.Kind == token.EOF {
+				if want {
+					t.Errorf("lex(%q): no error, want unclosed", src)
+				}
+				return
+			}
+		}
+	}
+	// More input could complete the escape.
+	unclosed(`"ab\`, true)
+	unclosed(`"ab\^`, true)
+	unclosed(`"ab\0`, true)
+	unclosed(`"ab\06`, true)
+	unclosed(`"ab`, true)
+	// No input could: these are bad escapes, and stay errors.
+	unclosed(`"ab\q"`, false)
+	unclosed(`"ab\0x"`, false)
+	// And a complete continuation is no error at all.
+	unclosed("\"ab\\\n  cd\"", false)
 }
 
 func TestLexTyVars(t *testing.T) {
