@@ -96,9 +96,10 @@ func maybeFields(ctx *genContext, pat *core.IDPat,
 		return nil
 	}
 	ctx2 := &genContext{
-		sys:     ctx.sys,
-		extents: map[*core.IDPat]bool{},
-		recFns:  ctx.recFns,
+		sys:        ctx.sys,
+		extents:    map[*core.IDPat]bool{},
+		recFns:     ctx.recFns,
+		ungrounded: ctx.ungrounded,
 	}
 	for p := range ctx.extents {
 		ctx2.extents[p] = true

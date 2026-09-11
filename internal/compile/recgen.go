@@ -243,9 +243,10 @@ func invertBase(ctx *genContext, rec *recAnalysis,
 	var bc []core.Exp
 	decomposeConjuncts(base, &bc)
 	inner := &genContext{
-		sys:     ctx.sys,
-		extents: map[*core.IDPat]bool{row: true},
-		recFns:  ctx.recFns,
+		sys:        ctx.sys,
+		extents:    map[*core.IDPat]bool{row: true},
+		recFns:     ctx.recFns,
+		ungrounded: ctx.ungrounded,
 	}
 	g := maybeGenerator(inner, row, bc)
 	if g == nil {

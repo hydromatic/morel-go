@@ -105,6 +105,19 @@ func (c *generatorCache) add(g *generator) {
 	}
 }
 
+// everInfinite reports whether any generator recorded for a
+// pattern is infinite -- true of every extent variable, whose
+// extent generator is the first one registered and is never
+// removed.
+func (c *generatorCache) everInfinite(pat *core.IDPat) bool {
+	for _, g := range c.m[pat] {
+		if g.card == infinite {
+			return true
+		}
+	}
+	return false
+}
+
 // best returns the most recently added generator for a pattern,
 // or nil.
 func (c *generatorCache) best(pat *core.IDPat) *generator {
@@ -140,6 +153,11 @@ type genContext struct {
 	sys     *types.System
 	extents map[*core.IDPat]bool
 	recFns  map[string]*core.Fn
+	// ungrounded is the variables still looking for a generator. A
+	// bound that mentions one of them makes this generator wait on
+	// it, and the wait may be a cycle; a bound that mentions only
+	// variables already bound cannot.
+	ungrounded map[*core.IDPat]bool
 }
 
 // maybeGenerator deduces a generator for a variable from the
@@ -170,7 +188,7 @@ func maybeGenerator(ctx *genContext, pat *core.IDPat,
 	if g := maybeTupleCase(ctx, pat, constraints); g != nil {
 		return g
 	}
-	if g := maybeRangeGenerator(sys, pat, constraints); g != nil {
+	if g := maybeRangeGenerator(ctx, pat, constraints); g != nil {
 		return g
 	}
 	if g := maybePrefix(sys, pat, constraints); g != nil {
@@ -508,36 +526,63 @@ type bound struct {
 // maybeRangeGenerator inverts a pair of bound conjuncts — a lower
 // like "x > 3" and an upper like "x < 10" — into a generator that
 // enumerates the range between them. Both sides are required: a
-// one-sided bound generates nothing. Constant bounds are
-// preferred, since a variable bound makes the generator depend on
-// the variable's scan.
-func maybeRangeGenerator(sys *types.System, pat *core.IDPat,
+// one-sided bound generates nothing.
+func maybeRangeGenerator(ctx *genContext, pat *core.IDPat,
 	constraints []core.Exp,
 ) *generator {
+	sys := ctx.sys
 	if pat.T != sys.Int {
 		return nil
 	}
-	lo := findBound(sys, pat, constraints, true, true)
-	if lo == nil {
-		lo = findBound(sys, pat, constraints, true, false)
-	}
-	hi := findBound(sys, pat, constraints, false, true)
-	if hi == nil {
-		hi = findBound(sys, pat, constraints, false, false)
-	}
+	lo := chooseBound(ctx, pat, constraints, true)
+	hi := chooseBound(ctx, pat, constraints, false)
 	if lo == nil || hi == nil {
 		return nil
 	}
 	return rangeGenerator(sys, pat, lo, hi)
 }
 
+// boundPreference is how much we like the shape of a bound.
+type boundPreference int
+
+const (
+	// boundGrounded mentions only variables that are bound already,
+	// as "x" is in "from x in [3, 5, 7], y where y < x". Such a
+	// bound generates "y" afresh for each "x", which is tighter
+	// than any constant bound, and it cannot make a cycle, because
+	// "x" does not wait on "y".
+	boundGrounded boundPreference = iota
+	// boundConstant mentions no variables. It is independent of
+	// every other variable, and so is always safe.
+	boundConstant
+	// boundAny is any shape, and may mention a variable that is
+	// itself waiting for a generator: a cycle that generator
+	// scheduling may not break, but better than no bound at all.
+	boundAny
+)
+
+// chooseBound picks one side's bound, in order of preference.
+func chooseBound(ctx *genContext, pat *core.IDPat,
+	constraints []core.Exp, lower bool,
+) *bound {
+	for _, pref := range []boundPreference{
+		boundGrounded, boundConstant, boundAny,
+	} {
+		if b := findBound(ctx, pat, constraints, lower,
+			pref); b != nil {
+			return b
+		}
+	}
+	return nil
+}
+
 // findBound returns the first bound of the given side a conjunct
-// implies for the variable, optionally requiring a constant.
-func findBound(sys *types.System, pat *core.IDPat,
-	constraints []core.Exp, lower, constOnly bool,
+// implies for the variable, of the shape the preference asks for.
+func findBound(ctx *genContext, pat *core.IDPat,
+	constraints []core.Exp, lower bool, pref boundPreference,
 ) *bound {
 	for _, c := range constraints {
-		lo, hi := conjunctBounds(sys, c, pat)
+		lo, hi := conjunctBounds(ctx.sys, c, pat)
 		b := hi
 		if lower {
 			b = lo
@@ -545,13 +590,48 @@ func findBound(sys *types.System, pat *core.IDPat,
 		if b == nil {
 			continue
 		}
-		if _, isConst := b.value.(*core.Literal); constOnly &&
-			!isConst {
+		if !wants(b, pref, ctx.ungrounded) {
 			continue
 		}
 		return b
 	}
 	return nil
+}
+
+// wants reports whether a bound is of the shape a preference asks
+// for.
+func wants(b *bound, pref boundPreference,
+	ungrounded map[*core.IDPat]bool,
+) bool {
+	_, isConst := b.value.(*core.Literal)
+	switch pref {
+	case boundGrounded:
+		// A constant is not grounded: it mentions no variable, but it
+		// is also no tighter for one row than the next, and it is
+		// what the next preference is for.
+		return !isConst && !mentionsUngrounded(b.value, ungrounded)
+	case boundConstant:
+		return isConst
+	default:
+		return true
+	}
+}
+
+// mentionsUngrounded reports whether an expression reads a variable
+// that is still looking for a generator.
+func mentionsUngrounded(e core.Exp,
+	ungrounded map[*core.IDPat]bool,
+) bool {
+	found := false
+	r := &rewriter{}
+	r.exp = func(x core.Exp) (core.Exp, bool) {
+		if id, isID := x.(*core.ID); isID && ungrounded[id.Pat] {
+			found = true
+		}
+		return nil, false
+	}
+	r.rewriteExp(e)
+	return found
 }
 
 // conjunctBounds returns the lower and upper bounds a conjunct

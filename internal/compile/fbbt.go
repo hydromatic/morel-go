@@ -18,6 +18,7 @@
 package compile
 
 import (
+	"fmt"
 	"math"
 	"slices"
 	"strings"
@@ -95,16 +96,37 @@ type fbbtState struct {
 	sys       *types.System
 	intervals map[*core.IDPat]*span
 	inputs    map[*core.IDPat]span
+	// deduce is the variables we are deducing bounds for. Others
+	// are tracked but never emitted.
+	deduce map[*core.IDPat]bool
 }
 
-// knows reports whether the variable participates: unbounded and
-// numeric.
+// knows reports whether FBBT tracks a variable's interval. Every
+// numeric variable is tracked, not only the ones whose bounds we
+// are deducing: a variable that a scan bounds, such as "z" in
+// "from z in [1, 2, 3], x where x < z", tells us about its
+// neighbours even though it needs no bounds of its own.
 func (st *fbbtState) knows(pat *core.IDPat) bool {
-	return st.intervals[pat] != nil
+	return pat != nil &&
+		(pat.T == st.sys.Int || pat.T == st.sys.Real)
+}
+
+// interval is a variable's current interval, unbounded until
+// something tightens it.
+func (st *fbbtState) interval(pat *core.IDPat) *span {
+	s := st.intervals[pat]
+	if s == nil {
+		s = &span{}
+		st.intervals[pat] = s
+	}
+	return s
 }
 
 func (st *fbbtState) tighten(pat *core.IDPat, o span) bool {
-	return st.intervals[pat].tighten(o)
+	if !st.knows(pat) {
+		return false
+	}
+	return st.interval(pat).tighten(o)
 }
 
 // strengthen deduces constant bounds for the unbounded variables
@@ -117,21 +139,27 @@ func fbbtStrengthen(sys *types.System,
 		sys:       sys,
 		intervals: map[*core.IDPat]*span{},
 		inputs:    map[*core.IDPat]span{},
+		deduce:    map[*core.IDPat]bool{},
 	}
 	for _, pat := range unbounded {
-		if pat.T == sys.Int || pat.T == sys.Real {
-			st.intervals[pat] = &span{}
+		if st.knows(pat) {
+			st.deduce[pat] = true
+			st.interval(pat)
 		}
 	}
-	if len(st.intervals) == 0 {
+	if len(st.deduce) == 0 {
 		return where
 	}
 	var conjuncts []core.Exp
 	decomposeConjuncts(where, &conjuncts)
-	// The constant bounds already present are the baseline: only
-	// strictly tighter deductions are worth emitting.
+	// The baseline is what the extractor can already use: a bare
+	// variable compared with a constant. A bound that needs
+	// arithmetic to see -- "x" from "x + 1 = 3" -- is a deduction,
+	// and has to be emitted even though the same propagator could
+	// have found it; counting it as already present is what kept
+	// "from x where x + 1 = 3" from being grounded.
 	for _, c := range conjuncts {
-		st.propagateLinearConstant(c)
+		st.baselineBound(c)
 	}
 	for pat, s := range st.intervals {
 		st.inputs[pat] = *s
@@ -146,6 +174,9 @@ func fbbtStrengthen(sys *types.System,
 				changed = true
 			}
 			if st.propagateMultiply(c) {
+				changed = true
+			}
+			if st.propagateSum(c) {
 				changed = true
 			}
 		}
@@ -172,6 +203,11 @@ func (st *fbbtState) deducedBounds() []core.Exp {
 	})
 	var out []core.Exp
 	for _, pat := range pats {
+		if !st.deduce[pat] {
+			// A variable that a scan bounds. It needs no bounds of its
+			// own.
+			continue
+		}
 		s := st.intervals[pat]
 		if s.empty {
 			continue
@@ -180,12 +216,12 @@ func (st *fbbtState) deducedBounds() []core.Exp {
 		if s.hasLo && (!in.hasLo || s.lo > in.lo ||
 			(s.lo == in.lo && s.loOpen && !in.loOpen)) {
 			out = append(out,
-				st.boundConjunct(pat, s.lo, s.loOpen, true))
+				boundConjunct(st.sys, pat, s.lo, s.loOpen, true))
 		}
 		if s.hasHi && (!in.hasHi || s.hi < in.hi ||
 			(s.hi == in.hi && s.hiOpen && !in.hiOpen)) {
 			out = append(out,
-				st.boundConjunct(pat, s.hi, s.hiOpen, false))
+				boundConjunct(st.sys, pat, s.hi, s.hiOpen, false))
 		}
 	}
 	return out
@@ -193,10 +229,9 @@ func (st *fbbtState) deducedBounds() []core.Exp {
 
 // boundConjunct builds "x >= v" and friends, snapping a
 // fractional bound on an integer variable inward.
-func (st *fbbtState) boundConjunct(pat *core.IDPat, v float64,
+func boundConjunct(sys *types.System, pat *core.IDPat, v float64,
 	strict, lower bool,
 ) core.Exp {
-	sys := st.sys
 	var lit *core.Literal
 	if pat.T == sys.Int {
 		var snapped float64
@@ -297,6 +332,321 @@ func linearTermOf(e core.Exp) linTerm {
 	return linTerm{}
 }
 
+// A linear form is a combination of *atoms* with coefficients, plus
+// a constant. An atom is a variable, or an "abs" term -- a quantity
+// the arithmetic cannot see into, but whose value lies in a known
+// interval, which is exactly what a variable is to FBBT.
+//
+// It is what lets a constraint with coefficients be read, such as
+// "3 * t + 5 * f = 30", which the earlier form -- one variable and
+// an offset -- could not.
+type linAtom struct {
+	key string
+	exp core.Exp
+	pat *core.IDPat // the variable, or the one inside an "abs"
+	// inCoef and off are the coefficient and the constant inside
+	// an "abs": 2 and ~1 in "abs (2 * x - 1)".
+	inCoef float64
+	off    float64
+	isAbs  bool
+	coef   float64
+}
+
+type linearForm struct {
+	atoms []linAtom
+	konst float64
+	ok    bool
+}
+
+// constForm is a form with no atoms.
+func constForm(v float64) linearForm {
+	return linearForm{konst: v, ok: true}
+}
+
+// combine returns this form plus scale times that.
+func (f linearForm) combine(g linearForm, scale float64) linearForm {
+	if !f.ok || !g.ok {
+		return linearForm{}
+	}
+	out := linearForm{konst: f.konst + g.konst*scale, ok: true}
+	out.atoms = append(out.atoms, f.atoms...)
+	for _, a := range g.atoms {
+		a.coef *= scale
+		out.atoms = addAtom(out.atoms, a)
+	}
+	// A variable whose coefficients cancel, as "x" does in
+	// "x + y - x", drops out of the form.
+	kept := out.atoms[:0]
+	for _, a := range out.atoms {
+		if a.coef != 0 {
+			kept = append(kept, a)
+		}
+	}
+	out.atoms = kept
+	return out
+}
+
+// addAtom merges one atom into a list of them.
+func addAtom(atoms []linAtom, a linAtom) []linAtom {
+	for i := range atoms {
+		if atoms[i].key == a.key {
+			atoms[i].coef += a.coef
+			return atoms
+		}
+	}
+	return append(atoms, a)
+}
+
+// times scales every coefficient and the constant.
+func (f linearForm) times(scale float64) linearForm {
+	if !f.ok {
+		return linearForm{}
+	}
+	if scale == 0 {
+		return constForm(0)
+	}
+	out := linearForm{konst: f.konst * scale, ok: true}
+	for _, a := range f.atoms {
+		a.coef *= scale
+		out.atoms = append(out.atoms, a)
+	}
+	return out
+}
+
+// linearFormOf decomposes an expression into a linear combination
+// of atoms, or a form that is not ok if it is not linear.
+func linearFormOf(e core.Exp) linearForm {
+	// lint: sort until '^\t}' where '^\tcase '
+	switch e := e.(type) {
+	case *core.Apply:
+		if a, b := binaryCall(e, opPlus); a != nil {
+			return linearFormOf(a).combine(linearFormOf(b), 1)
+		}
+		if a, b := binaryCall(e, opMinus); a != nil {
+			return linearFormOf(a).combine(linearFormOf(b), -1)
+		}
+		if a, b := binaryCall(e, opTimes); a != nil {
+			fa, fb := linearFormOf(a), linearFormOf(b)
+			// One side must be constant: a product of two variables
+			// is not linear.
+			if fa.ok && len(fa.atoms) == 0 {
+				return fb.times(fa.konst)
+			}
+			if fb.ok && len(fb.atoms) == 0 {
+				return fa.times(fb.konst)
+			}
+			return linearForm{}
+		}
+		if fn, isID := e.Fn.(*core.ID); isID &&
+			fn.Pat.Name == opNegate {
+			return linearFormOf(e.Arg).times(-1)
+		}
+		if atom, isAtom := absAtom(e); isAtom {
+			return linearForm{atoms: []linAtom{atom}, ok: true}
+		}
+	case *core.ID:
+		return linearForm{ok: true, atoms: []linAtom{{
+			key:  fmt.Sprintf("v%p", e.Pat),
+			exp:  e,
+			pat:  e.Pat,
+			coef: 1,
+		}}}
+	case *core.Literal:
+		if v, isNum := literalNumber(e); isNum {
+			return constForm(v)
+		}
+	}
+	return linearForm{}
+}
+
+// absAtom reads "abs e", whose value lies in [0, inf). Bounding it
+// means bounding what is inside, which is the one thing that is
+// special about it: "abs e <= b" gives "~b <= e <= b". Only an
+// "abs" of a single variable is read, because that is the variable
+// a bound is put on.
+func absAtom(e *core.Apply) (linAtom, bool) {
+	name := builtinName(e.Fn)
+	if name != absName && name != "Int.abs" && name != "Real.abs" {
+		return linAtom{}, false
+	}
+	inner := linearFormOf(e.Arg)
+	if !inner.ok || len(inner.atoms) != 1 ||
+		inner.atoms[0].pat == nil || inner.atoms[0].isAbs {
+		return linAtom{}, false
+	}
+	in := inner.atoms[0]
+	return linAtom{
+		key: fmt.Sprintf("abs(%g*v%p%+g)", in.coef, in.pat,
+			inner.konst),
+		exp:    e,
+		pat:    in.pat,
+		inCoef: in.coef,
+		off:    inner.konst,
+		isAbs:  true,
+		coef:   1,
+	}, true
+}
+
+// propagateSum bounds each atom of a comparison in turn, by
+// substituting the extreme values its siblings' intervals allow.
+// Iterated to a fixed point, as FBBT already does, this propagates
+// bounds around a chain such as "1 <= a andalso a <= b andalso
+// b <= c".
+func (st *fbbtState) propagateSum(c core.Exp) bool {
+	x, y, op := comparisonOf(c)
+	if x == nil {
+		return false
+	}
+	lhs, rhs := linearFormOf(x), linearFormOf(y)
+	if !lhs.ok || !rhs.ok {
+		return false
+	}
+	// Rewrite "lhs OP rhs" as "sum OP 0".
+	sum := lhs.combine(rhs, -1)
+	if len(sum.atoms) == 0 {
+		return false
+	}
+	changed := false
+	for _, a := range sum.atoms {
+		if st.tightenAtom(sum, a, op) {
+			changed = true
+		}
+	}
+	return changed
+}
+
+// tightenAtom bounds one atom of "sum OP 0", given the intervals of
+// the others.
+func (st *fbbtState) tightenAtom(sum linearForm, a linAtom,
+	op string,
+) bool {
+	if !st.knows(a.pat) {
+		return false
+	}
+	// The rest of the sum lies in [restMin, restMax]; either is
+	// absent if a sibling is unbounded on that side.
+	restMin, restMax := sum.konst, sum.konst
+	haveMin, haveMax := true, true
+	for _, b := range sum.atoms {
+		if b.key == a.key {
+			continue
+		}
+		s, known := st.atomSpan(b)
+		if !known {
+			return false
+		}
+		// A positive coefficient takes its minimum at the atom's
+		// lower endpoint, a negative one at its upper endpoint.
+		lo, hi := s.lo, s.hi
+		hasLo, hasHi := s.hasLo, s.hasHi
+		if b.coef < 0 {
+			lo, hi = hi, lo
+			hasLo, hasHi = hasHi, hasLo
+		}
+		if haveMin && hasLo {
+			restMin += b.coef * lo
+		} else {
+			haveMin = false
+		}
+		if haveMax && hasHi {
+			restMax += b.coef * hi
+		} else {
+			haveMax = false
+		}
+	}
+	// "coefficient * atom OP -rest". An upper bound on the atom
+	// needs the largest that "-rest" can be, so the smallest rest;
+	// and the other way about.
+	// lint: sort until '^\t}' where '^\tcase '
+	switch op {
+	case eqOpName:
+		lower := st.boundAtom(a, restMin, haveMin, false, opLe)
+		upper := st.boundAtom(a, restMax, haveMax, true, opGe)
+		return lower || upper
+	case opGt, opGe:
+		return st.boundAtom(a, restMax, haveMax, true, op)
+	case opLt, opLe:
+		return st.boundAtom(a, restMin, haveMin, false, op)
+	default:
+		return false
+	}
+}
+
+// atomSpan is the interval an atom's value lies in: a variable's
+// own, or, for an "abs" term, what its variable's interval implies.
+func (st *fbbtState) atomSpan(a linAtom) (span, bool) {
+	if !st.knows(a.pat) {
+		return span{}, false
+	}
+	s := st.interval(a.pat)
+	if s.empty {
+		// An empty interval has no endpoints to substitute, and
+		// anything deduced from one would be a bound that no value
+		// satisfies.
+		return span{}, false
+	}
+	if !a.isAbs {
+		return *s, true
+	}
+	// "abs e" is at least zero, and at most the larger of what its
+	// variable's endpoints give.
+	out := span{lo: 0, hasLo: true}
+	if s.hasLo && s.hasHi {
+		out.hi = math.Max(math.Abs(a.inCoef*s.lo+a.off),
+			math.Abs(a.inCoef*s.hi+a.off))
+		out.hasHi = true
+	}
+	return out, true
+}
+
+// boundAtom puts a bound on an atom, or on the variable inside an
+// "abs" term.
+func (st *fbbtState) boundAtom(a linAtom, rest float64, have bool,
+	lower bool, op string,
+) bool {
+	if !have {
+		return false
+	}
+	// Dividing by a negative coefficient turns an upper bound into
+	// a lower bound, and the other way about.
+	flip := a.coef < 0
+	resultLower := flip != lower
+	value := -rest / a.coef
+	strict := op == opLt || op == opGt
+	if a.isAbs {
+		// "abs e <= b" gives "~b <= e <= b"; a lower bound on a
+		// non-negative quantity says nothing about e.
+		if resultLower {
+			return false
+		}
+		// "abs (c * x + k) <= b" gives
+		// "(~b - k) / c <= x <= (b - k) / c", the two swapping
+		// when c is negative.
+		lo := (-value - a.off) / a.inCoef
+		hi := (value - a.off) / a.inCoef
+		if a.inCoef < 0 {
+			lo, hi = hi, lo
+		}
+		s := span{
+			lo: lo, hasLo: true, loOpen: strict,
+			hi: hi, hasHi: true, hiOpen: strict,
+		}
+		return st.tighten(a.pat, s)
+	}
+	var s span
+	switch {
+	case resultLower && strict:
+		s = moreThan(value)
+	case resultLower:
+		s = atLeast(value)
+	case strict:
+		s = lessThan(value)
+	default:
+		s = atMost(value)
+	}
+	return st.tighten(a.pat, s)
+}
+
 // comparison decodes a comparison conjunct: operands and the
 // operator, normalized so the operator reads left-to-right.
 func comparisonOf(c core.Exp) (core.Exp, core.Exp, string) {
@@ -372,6 +722,33 @@ func (st *fbbtState) propagateLinearConstant(c core.Exp) bool {
 	return false
 }
 
+// baselineBound tightens from a comparison of a bare variable
+// against a constant, which is the shape the range extractor reads
+// for itself.
+func (st *fbbtState) baselineBound(c core.Exp) bool {
+	a, b, op := comparisonOf(c)
+	if a == nil {
+		return false
+	}
+	ta, tb := linearTermOf(a), linearTermOf(b)
+	if !ta.ok || !tb.ok {
+		return false
+	}
+	if ta.pat != nil && ta.offset == 0 && tb.pat == nil &&
+		st.knows(ta.pat) {
+		if s, ok := spanFromOp(op, tb.offset); ok {
+			return st.tighten(ta.pat, s)
+		}
+	}
+	if tb.pat != nil && tb.offset == 0 && ta.pat == nil &&
+		st.knows(tb.pat) {
+		if s, ok := spanFromOp(reverseOp(op), ta.offset); ok {
+			return st.tighten(tb.pat, s)
+		}
+	}
+	return false
+}
+
 // propagateLinear handles constant and two-variable comparisons.
 func (st *fbbtState) propagateLinear(c core.Exp) bool {
 	if st.propagateLinearConstant(c) {
@@ -389,12 +766,12 @@ func (st *fbbtState) propagateLinear(c core.Exp) bool {
 	}
 	delta := tb.offset - ta.offset
 	changed := false
-	if s, ok := spanFromOther(op, *st.intervals[tb.pat],
+	if s, ok := spanFromOther(op, *st.interval(tb.pat),
 		delta); ok {
 		changed = st.tighten(ta.pat, s) || changed
 	}
 	if s, ok := spanFromOther(reverseOp(op),
-		*st.intervals[ta.pat], -delta); ok {
+		*st.interval(ta.pat), -delta); ok {
 		changed = st.tighten(tb.pat, s) || changed
 	}
 	return changed
@@ -567,7 +944,10 @@ func timesFactors(e core.Exp) (linTerm, linTerm) {
 func (st *fbbtState) divideThrough(op string, self,
 	other linTerm, cv float64,
 ) bool {
-	o := *st.intervals[other.pat]
+	o := *st.interval(other.pat)
+	if o.empty {
+		return false
+	}
 	switch op {
 	case opLe, opLt:
 		lo := o.lo + other.offset

@@ -19,6 +19,7 @@ package compile
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 
@@ -48,6 +49,9 @@ type expander struct {
 	// used are the variables any step references; an unused
 	// extent variable's scan is simply dropped.
 	used map[*core.IDPat]bool
+	// ungrounded are the variables still waiting for a generator;
+	// see ungroundedPats.
+	ungrounded map[*core.IDPat]bool
 }
 
 // expandFrom grounds a query, returning it unchanged (the same
@@ -65,6 +69,7 @@ func expandFrom(sys *types.System, recFns map[string]*core.Fn,
 	}
 	from = applyFbbt(sys, from)
 	from = rangePushdown(sys, from)
+	x.ungrounded = ungroundedPats(from)
 	x.deduce(from)
 	x.markUsed(from)
 	// A used variable whose best generator is still infinite is
@@ -85,6 +90,38 @@ func expandFrom(sys *types.System, recFns map[string]*core.Fn,
 		}
 	}
 	return x.rebuild(from)
+}
+
+// ungroundedPats is the variables that are not yet bound when we
+// look for a generator: the patterns of the query's extent scans,
+// plus the patterns of any scan correlated with them, directly or
+// transitively.
+//
+// A correlated scan such as "y in [x * 2]" cannot run until "x"
+// has a generator, so "y" is no better than "x" as a bound for
+// "x"; treating it as bound would let the two generators wait on
+// each other.
+func ungroundedPats(from *core.From) map[*core.IDPat]bool {
+	pats := map[*core.IDPat]bool{}
+	for _, step := range from.Steps {
+		scan, ok := step.(*core.Scan)
+		if !ok {
+			continue
+		}
+		correlated := false
+		for _, free := range freePatsOf(scan.Exp) {
+			if pats[free] {
+				correlated = true
+				break
+			}
+		}
+		if extentOf(scan.Exp) != nil || correlated {
+			for _, pat := range core.PatIDs(scan.Pat) {
+				pats[pat] = true
+			}
+		}
+	}
+	return pats
 }
 
 // notGrounded is the error for a variable no generator grounds.
@@ -144,12 +181,17 @@ func (x *expander) deduce(from *core.From) {
 	}
 }
 
-// improveGenerators retries the variables whose best generator is
-// still infinite against the constraints accumulated so far.
+// improveGenerators retries the variables that started with an
+// infinite generator against the constraints accumulated so far.
+//
+// A variable is retried even once it has a finite generator: a
+// later conjunct may give a better one, and the cache takes the
+// last. That is what lets a bound that mentions an already-bound
+// variable beat a constant bound deduced earlier, in
+// "from x, y in [0, 2, 9] where x > y andalso x < y + 5".
 func (x *expander) improveGenerators() {
 	for pat := range x.extentPats {
-		g := x.cache.best(pat)
-		if g == nil || g.card != infinite {
+		if !x.cache.everInfinite(pat) {
 			continue
 		}
 		extentSet := map[*core.IDPat]bool{}
@@ -157,9 +199,10 @@ func (x *expander) improveGenerators() {
 			extentSet[p] = true
 		}
 		ctx := &genContext{
-			sys:     x.sys,
-			extents: extentSet,
-			recFns:  x.recFns,
+			sys:        x.sys,
+			extents:    extentSet,
+			recFns:     x.recFns,
+			ungrounded: x.ungrounded,
 		}
 		if g2 := maybeGenerator(ctx, pat,
 			x.constraints); g2 != nil {
@@ -244,7 +287,14 @@ func applyFbbt(sys *types.System, from *core.From) *core.From {
 		if pat, b := impliedRangeBound(sys, scan); pat != nil {
 			unbounded = append(unbounded, pat)
 			implied = append(implied, b)
+			continue
 		}
+		// A scan over a list of numbers, such as "z in [1, 2, 3]",
+		// bounds "z". FBBT needs to see those bounds, because they
+		// may bound another variable: "z" bounds "x" in
+		// "from z in [1, 2, 3], x, y where x + y = z". "z" itself
+		// needs no generator, so it does not join "unbounded".
+		implied = append(implied, listBounds(sys, scan)...)
 	}
 	if len(unbounded) == 0 {
 		return from
@@ -274,6 +324,37 @@ func applyFbbt(sys *types.System, from *core.From) *core.From {
 		return from
 	}
 	return &core.From{T: from.T, Steps: steps, Kind: from.Kind}
+}
+
+// listBounds is the pair of comparisons a scan over a list of
+// numeric literals implies for its variable: it is at least the
+// least of them and at most the greatest. An element that is not
+// a literal tells us nothing, so the whole list is dropped.
+func listBounds(sys *types.System, scan *core.Scan) []core.Exp {
+	pat, ok := scan.Pat.(*core.IDPat)
+	if !ok || (pat.T != sys.Int && pat.T != sys.Real) {
+		return nil
+	}
+	list, ok := scan.Exp.(*core.List)
+	if !ok || len(list.Args) == 0 {
+		return nil
+	}
+	lo, hi := math.Inf(1), math.Inf(-1)
+	for _, arg := range list.Args {
+		lit, isLit := arg.(*core.Literal)
+		if !isLit {
+			return nil
+		}
+		v, isNum := literalNumber(lit)
+		if !isNum {
+			return nil
+		}
+		lo, hi = math.Min(lo, v), math.Max(hi, v)
+	}
+	return []core.Exp{
+		boundConjunct(sys, pat, lo, false, true),
+		boundConjunct(sys, pat, hi, false, false),
+	}
 }
 
 // impliedRangeBound is the comparison a one-sided range-list
