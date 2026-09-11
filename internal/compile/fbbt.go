@@ -19,7 +19,7 @@ package compile
 
 import (
 	"fmt"
-	"math"
+	"math/big"
 	"slices"
 	"strings"
 
@@ -40,7 +40,7 @@ const fbbtRounds = 8
 // span is a contiguous interval with optionally open or absent
 // endpoints; empty is the infeasible interval.
 type span struct {
-	lo, hi         float64
+	lo, hi         *big.Rat
 	hasLo, hasHi   bool
 	loOpen, hiOpen bool
 	empty          bool
@@ -56,19 +56,20 @@ func (s *span) tighten(o span) bool {
 		return true
 	}
 	changed := false
-	if o.hasLo && (!s.hasLo || o.lo > s.lo ||
-		(o.lo == s.lo && o.loOpen && !s.loOpen)) {
+	if o.hasLo && (!s.hasLo || ratCmp(o.lo, s.lo) > 0 ||
+		(ratCmp(o.lo, s.lo) == 0 && o.loOpen && !s.loOpen)) {
 		s.lo, s.hasLo, s.loOpen = o.lo, true, o.loOpen
 		changed = true
 	}
-	if o.hasHi && (!s.hasHi || o.hi < s.hi ||
-		(o.hi == s.hi && o.hiOpen && !s.hiOpen)) {
+	if o.hasHi && (!s.hasHi || ratCmp(o.hi, s.hi) < 0 ||
+		(ratCmp(o.hi, s.hi) == 0 && o.hiOpen && !s.hiOpen)) {
 		s.hi, s.hasHi, s.hiOpen = o.hi, true, o.hiOpen
 		changed = true
 	}
 	if s.hasLo && s.hasHi &&
-		(s.lo > s.hi ||
-			(s.lo == s.hi && (s.loOpen || s.hiOpen))) {
+		(ratCmp(s.lo, s.hi) > 0 ||
+			(ratCmp(s.lo, s.hi) == 0 &&
+				(s.loOpen || s.hiOpen))) {
 		s.empty = true
 	}
 	return changed
@@ -76,17 +77,17 @@ func (s *span) tighten(o span) bool {
 
 // atLeast, greaterThan, atMost, lessThan, exactly build the
 // half-bounded and singleton spans.
-func atLeast(v float64) span { return span{lo: v, hasLo: true} }
+func atLeast(v *big.Rat) span { return span{lo: v, hasLo: true} }
 
-func moreThan(v float64) span {
+func moreThan(v *big.Rat) span {
 	return span{lo: v, hasLo: true, loOpen: true}
 }
-func atMost(v float64) span { return span{hi: v, hasHi: true} }
-func lessThan(v float64) span {
+func atMost(v *big.Rat) span { return span{hi: v, hasHi: true} }
+func lessThan(v *big.Rat) span {
 	return span{hi: v, hasHi: true, hiOpen: true}
 }
 
-func exactly(v float64) span {
+func exactly(v *big.Rat) span {
 	return span{lo: v, hi: v, hasLo: true, hasHi: true}
 }
 
@@ -213,37 +214,45 @@ func (st *fbbtState) deducedBounds() []core.Exp {
 			continue
 		}
 		in := st.inputs[pat]
-		if s.hasLo && (!in.hasLo || s.lo > in.lo ||
-			(s.lo == in.lo && s.loOpen && !in.loOpen)) {
-			out = append(out,
-				boundConjunct(st.sys, pat, s.lo, s.loOpen, true))
+		if s.hasLo && (!in.hasLo || ratCmp(s.lo, in.lo) > 0 ||
+			(ratCmp(s.lo, in.lo) == 0 && s.loOpen && !in.loOpen)) {
+			if c := boundConjunct(st.sys, pat, s.lo, s.loOpen,
+				true); c != nil {
+				out = append(out, c)
+			}
 		}
-		if s.hasHi && (!in.hasHi || s.hi < in.hi ||
-			(s.hi == in.hi && s.hiOpen && !in.hiOpen)) {
-			out = append(out,
-				boundConjunct(st.sys, pat, s.hi, s.hiOpen, false))
+		if s.hasHi && (!in.hasHi || ratCmp(s.hi, in.hi) < 0 ||
+			(ratCmp(s.hi, in.hi) == 0 && s.hiOpen && !in.hiOpen)) {
+			if c := boundConjunct(st.sys, pat, s.hi, s.hiOpen,
+				false); c != nil {
+				out = append(out, c)
+			}
 		}
 	}
 	return out
 }
 
-// boundConjunct builds "x >= v" and friends, snapping a
-// fractional bound on an integer variable inward.
-func boundConjunct(sys *types.System, pat *core.IDPat, v float64,
+// boundConjunct builds "x >= v" and friends. The arithmetic that
+// deduced the bound was exact, so this is the only place it is
+// rounded. It returns nil where the bound cannot be written: an
+// integer endpoint outside the range of an int.
+func boundConjunct(sys *types.System, pat *core.IDPat, v *big.Rat,
 	strict, lower bool,
 ) core.Exp {
 	var lit *core.Literal
 	if pat.T == sys.Int {
-		var snapped float64
-		snapped, strict = snapInward(v, strict, lower)
+		n, snapped, fits := intBound(v, lower)
+		if !fits {
+			return nil
+		}
+		strict = strict && !snapped
 		lit = &core.Literal{
-			T: sys.Int, Kind: ast.IntLiteralOp,
-			Value: int32(snapped),
+			T: sys.Int, Kind: ast.IntLiteralOp, Value: n,
 		}
 	} else {
 		lit = &core.Literal{
 			T: sys.Real, Kind: ast.RealLiteralOp,
-			Value: float32(v),
+			Value: ratFloat32(v, lower),
 		}
 	}
 	op := opGe
@@ -268,22 +277,32 @@ func boundConjunct(sys *types.System, pat *core.IDPat, v float64,
 	}
 }
 
-// snapInward rounds a fractional bound to the integer inside it,
-// which is then inclusive.
-func snapInward(v float64, strict, lower bool) (float64, bool) {
-	if v == math.Trunc(v) {
-		return v, strict
+// intBound snaps a bound on an int variable to the tightest
+// integer endpoint, since a propagator can produce a fractional
+// one (30/4 = 15/2, say): x > 15/2 becomes x >= 8, and x < 15/2
+// becomes x <= 7. It reports whether it snapped -- a snapped
+// endpoint is inclusive -- and whether the result is an int at
+// all.
+func intBound(v *big.Rat, lower bool) (int32, bool, bool) {
+	if n, fits := ratInt32(v); fits {
+		return n, false, true
 	}
+	if zeroRat(v).IsInt() {
+		// Whole, but too large for an int.
+		return 0, false, false
+	}
+	i := ratFloor(v)
 	if lower {
-		return math.Ceil(v), false
+		i = ratCeil(v)
 	}
-	return math.Floor(v), false
+	n, fits := bigInt32(i)
+	return n, true, fits
 }
 
 // linTerm is a variable plus a constant offset, or a constant.
 type linTerm struct {
 	pat    *core.IDPat
-	offset float64
+	offset *big.Rat
 	ok     bool
 }
 
@@ -310,7 +329,7 @@ func linearTermOf(e core.Exp) linTerm {
 			}
 			offset := tb.offset
 			if op == opMinus {
-				offset = -offset
+				offset = ratNeg(offset)
 			}
 			pat := ta.pat
 			if pat == nil {
@@ -318,14 +337,14 @@ func linearTermOf(e core.Exp) linTerm {
 			}
 			return linTerm{
 				pat:    pat,
-				offset: ta.offset + offset,
+				offset: ratAdd(ta.offset, offset),
 				ok:     true,
 			}
 		}
 	case *core.ID:
-		return linTerm{pat: e.Pat, ok: true}
+		return linTerm{pat: e.Pat, offset: new(big.Rat), ok: true}
 	case *core.Literal:
-		if v, isNum := literalNumber(e); isNum {
+		if v, isNum := literalRat(e); isNum {
 			return linTerm{offset: v, ok: true}
 		}
 	}
@@ -346,39 +365,44 @@ type linAtom struct {
 	pat *core.IDPat // the variable, or the one inside an "abs"
 	// inCoef and off are the coefficient and the constant inside
 	// an "abs": 2 and ~1 in "abs (2 * x - 1)".
-	inCoef float64
-	off    float64
+	inCoef *big.Rat
+	off    *big.Rat
 	isAbs  bool
-	coef   float64
+	coef   *big.Rat
 }
 
 type linearForm struct {
 	atoms []linAtom
-	konst float64
+	konst *big.Rat
 	ok    bool
 }
 
 // constForm is a form with no atoms.
-func constForm(v float64) linearForm {
+func constForm(v *big.Rat) linearForm {
 	return linearForm{konst: v, ok: true}
 }
 
 // combine returns this form plus scale times that.
-func (f linearForm) combine(g linearForm, scale float64) linearForm {
+func (f linearForm) combine(g linearForm,
+	scale *big.Rat,
+) linearForm {
 	if !f.ok || !g.ok {
 		return linearForm{}
 	}
-	out := linearForm{konst: f.konst + g.konst*scale, ok: true}
+	out := linearForm{
+		konst: ratAdd(f.konst, ratMul(g.konst, scale)),
+		ok:    true,
+	}
 	out.atoms = append(out.atoms, f.atoms...)
 	for _, a := range g.atoms {
-		a.coef *= scale
+		a.coef = ratMul(a.coef, scale)
 		out.atoms = addAtom(out.atoms, a)
 	}
 	// A variable whose coefficients cancel, as "x" does in
 	// "x + y - x", drops out of the form.
 	kept := out.atoms[:0]
 	for _, a := range out.atoms {
-		if a.coef != 0 {
+		if ratSign(a.coef) != 0 {
 			kept = append(kept, a)
 		}
 	}
@@ -390,7 +414,7 @@ func (f linearForm) combine(g linearForm, scale float64) linearForm {
 func addAtom(atoms []linAtom, a linAtom) []linAtom {
 	for i := range atoms {
 		if atoms[i].key == a.key {
-			atoms[i].coef += a.coef
+			atoms[i].coef = ratAdd(atoms[i].coef, a.coef)
 			return atoms
 		}
 	}
@@ -398,16 +422,16 @@ func addAtom(atoms []linAtom, a linAtom) []linAtom {
 }
 
 // times scales every coefficient and the constant.
-func (f linearForm) times(scale float64) linearForm {
+func (f linearForm) times(scale *big.Rat) linearForm {
 	if !f.ok {
 		return linearForm{}
 	}
-	if scale == 0 {
-		return constForm(0)
+	if ratSign(scale) == 0 {
+		return constForm(new(big.Rat))
 	}
-	out := linearForm{konst: f.konst * scale, ok: true}
+	out := linearForm{konst: ratMul(f.konst, scale), ok: true}
 	for _, a := range f.atoms {
-		a.coef *= scale
+		a.coef = ratMul(a.coef, scale)
 		out.atoms = append(out.atoms, a)
 	}
 	return out
@@ -420,10 +444,10 @@ func linearFormOf(e core.Exp) linearForm {
 	switch e := e.(type) {
 	case *core.Apply:
 		if a, b := binaryCall(e, opPlus); a != nil {
-			return linearFormOf(a).combine(linearFormOf(b), 1)
+			return linearFormOf(a).combine(linearFormOf(b), ratOf(1))
 		}
 		if a, b := binaryCall(e, opMinus); a != nil {
-			return linearFormOf(a).combine(linearFormOf(b), -1)
+			return linearFormOf(a).combine(linearFormOf(b), ratOf(-1))
 		}
 		if a, b := binaryCall(e, opTimes); a != nil {
 			fa, fb := linearFormOf(a), linearFormOf(b)
@@ -439,7 +463,7 @@ func linearFormOf(e core.Exp) linearForm {
 		}
 		if fn, isID := e.Fn.(*core.ID); isID &&
 			fn.Pat.Name == opNegate {
-			return linearFormOf(e.Arg).times(-1)
+			return linearFormOf(e.Arg).times(ratOf(-1))
 		}
 		if atom, isAtom := absAtom(e); isAtom {
 			return linearForm{atoms: []linAtom{atom}, ok: true}
@@ -449,10 +473,10 @@ func linearFormOf(e core.Exp) linearForm {
 			key:  fmt.Sprintf("v%p", e.Pat),
 			exp:  e,
 			pat:  e.Pat,
-			coef: 1,
+			coef: ratOf(1),
 		}}}
 	case *core.Literal:
-		if v, isNum := literalNumber(e); isNum {
+		if v, isNum := literalRat(e); isNum {
 			return constForm(v)
 		}
 	}
@@ -476,14 +500,14 @@ func absAtom(e *core.Apply) (linAtom, bool) {
 	}
 	in := inner.atoms[0]
 	return linAtom{
-		key: fmt.Sprintf("abs(%g*v%p%+g)", in.coef, in.pat,
-			inner.konst),
+		key: fmt.Sprintf("abs(%s*v%p+%s)", in.coef.RatString(),
+			in.pat, zeroRat(inner.konst).RatString()),
 		exp:    e,
 		pat:    in.pat,
 		inCoef: in.coef,
 		off:    inner.konst,
 		isAbs:  true,
-		coef:   1,
+		coef:   ratOf(1),
 	}, true
 }
 
@@ -502,7 +526,7 @@ func (st *fbbtState) propagateSum(c core.Exp) bool {
 		return false
 	}
 	// Rewrite "lhs OP rhs" as "sum OP 0".
-	sum := lhs.combine(rhs, -1)
+	sum := lhs.combine(rhs, ratOf(-1))
 	if len(sum.atoms) == 0 {
 		return false
 	}
@@ -525,7 +549,7 @@ func (st *fbbtState) tightenAtom(sum linearForm, a linAtom,
 	}
 	// The rest of the sum lies in [restMin, restMax]; either is
 	// absent if a sibling is unbounded on that side.
-	restMin, restMax := sum.konst, sum.konst
+	restMin, restMax := zeroRat(sum.konst), zeroRat(sum.konst)
 	haveMin, haveMax := true, true
 	for _, b := range sum.atoms {
 		if b.key == a.key {
@@ -539,17 +563,17 @@ func (st *fbbtState) tightenAtom(sum linearForm, a linAtom,
 		// lower endpoint, a negative one at its upper endpoint.
 		lo, hi := s.lo, s.hi
 		hasLo, hasHi := s.hasLo, s.hasHi
-		if b.coef < 0 {
+		if ratSign(b.coef) < 0 {
 			lo, hi = hi, lo
 			hasLo, hasHi = hasHi, hasLo
 		}
 		if haveMin && hasLo {
-			restMin += b.coef * lo
+			restMin = ratAdd(restMin, ratMul(b.coef, lo))
 		} else {
 			haveMin = false
 		}
 		if haveMax && hasHi {
-			restMax += b.coef * hi
+			restMax = ratAdd(restMax, ratMul(b.coef, hi))
 		} else {
 			haveMax = false
 		}
@@ -590,10 +614,11 @@ func (st *fbbtState) atomSpan(a linAtom) (span, bool) {
 	}
 	// "abs e" is at least zero, and at most the larger of what its
 	// variable's endpoints give.
-	out := span{lo: 0, hasLo: true}
+	out := span{lo: new(big.Rat), hasLo: true}
 	if s.hasLo && s.hasHi {
-		out.hi = math.Max(math.Abs(a.inCoef*s.lo+a.off),
-			math.Abs(a.inCoef*s.hi+a.off))
+		out.hi = ratMax(
+			ratAbs(ratAdd(ratMul(a.inCoef, s.lo), a.off)),
+			ratAbs(ratAdd(ratMul(a.inCoef, s.hi), a.off)))
 		out.hasHi = true
 	}
 	return out, true
@@ -601,17 +626,17 @@ func (st *fbbtState) atomSpan(a linAtom) (span, bool) {
 
 // boundAtom puts a bound on an atom, or on the variable inside an
 // "abs" term.
-func (st *fbbtState) boundAtom(a linAtom, rest float64, have bool,
-	lower bool, op string,
+func (st *fbbtState) boundAtom(a linAtom, rest *big.Rat,
+	have bool, lower bool, op string,
 ) bool {
-	if !have {
+	if !have || ratSign(a.coef) == 0 {
 		return false
 	}
 	// Dividing by a negative coefficient turns an upper bound into
 	// a lower bound, and the other way about.
-	flip := a.coef < 0
+	flip := ratSign(a.coef) < 0
 	resultLower := flip != lower
-	value := -rest / a.coef
+	value := ratDiv(ratNeg(rest), a.coef)
 	strict := op == opLt || op == opGt
 	if a.isAbs {
 		// "abs e <= b" gives "~b <= e <= b"; a lower bound on a
@@ -622,9 +647,12 @@ func (st *fbbtState) boundAtom(a linAtom, rest float64, have bool,
 		// "abs (c * x + k) <= b" gives
 		// "(~b - k) / c <= x <= (b - k) / c", the two swapping
 		// when c is negative.
-		lo := (-value - a.off) / a.inCoef
-		hi := (value - a.off) / a.inCoef
-		if a.inCoef < 0 {
+		if ratSign(a.inCoef) == 0 {
+			return false
+		}
+		lo := ratDiv(ratSub(ratNeg(value), a.off), a.inCoef)
+		hi := ratDiv(ratSub(value, a.off), a.inCoef)
+		if ratSign(a.inCoef) < 0 {
 			lo, hi = hi, lo
 		}
 		s := span{
@@ -679,7 +707,7 @@ func reverseOp(op string) string {
 
 // spanFromOp is the interval a comparison against a constant
 // implies.
-func spanFromOp(op string, v float64) (span, bool) {
+func spanFromOp(op string, v *big.Rat) (span, bool) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch op {
 	case eqOpName:
@@ -709,13 +737,14 @@ func (st *fbbtState) propagateLinearConstant(c core.Exp) bool {
 		return false
 	}
 	if ta.pat != nil && tb.pat == nil && st.knows(ta.pat) {
-		if s, ok := spanFromOp(op, tb.offset-ta.offset); ok {
+		if s, ok := spanFromOp(op,
+			ratSub(tb.offset, ta.offset)); ok {
 			return st.tighten(ta.pat, s)
 		}
 	}
 	if tb.pat != nil && ta.pat == nil && st.knows(tb.pat) {
 		if s, ok := spanFromOp(reverseOp(op),
-			ta.offset-tb.offset); ok {
+			ratSub(ta.offset, tb.offset)); ok {
 			return st.tighten(tb.pat, s)
 		}
 	}
@@ -734,13 +763,13 @@ func (st *fbbtState) baselineBound(c core.Exp) bool {
 	if !ta.ok || !tb.ok {
 		return false
 	}
-	if ta.pat != nil && ta.offset == 0 && tb.pat == nil &&
+	if ta.pat != nil && ratSign(ta.offset) == 0 && tb.pat == nil &&
 		st.knows(ta.pat) {
 		if s, ok := spanFromOp(op, tb.offset); ok {
 			return st.tighten(ta.pat, s)
 		}
 	}
-	if tb.pat != nil && tb.offset == 0 && ta.pat == nil &&
+	if tb.pat != nil && ratSign(tb.offset) == 0 && ta.pat == nil &&
 		st.knows(tb.pat) {
 		if s, ok := spanFromOp(reverseOp(op), ta.offset); ok {
 			return st.tighten(tb.pat, s)
@@ -764,14 +793,14 @@ func (st *fbbtState) propagateLinear(c core.Exp) bool {
 		ta.pat == tb.pat {
 		return false
 	}
-	delta := tb.offset - ta.offset
+	delta := ratSub(tb.offset, ta.offset)
 	changed := false
 	if s, ok := spanFromOther(op, *st.interval(tb.pat),
 		delta); ok {
 		changed = st.tighten(ta.pat, s) || changed
 	}
 	if s, ok := spanFromOther(reverseOp(op),
-		*st.interval(ta.pat), -delta); ok {
+		*st.interval(ta.pat), ratNeg(delta)); ok {
 		changed = st.tighten(tb.pat, s) || changed
 	}
 	return changed
@@ -779,7 +808,7 @@ func (st *fbbtState) propagateLinear(c core.Exp) bool {
 
 // spanFromOther bounds a variable by the other side's interval
 // shifted by the offset difference.
-func spanFromOther(op string, other span, delta float64,
+func spanFromOther(op string, other span, delta *big.Rat,
 ) (span, bool) {
 	if other.empty {
 		return span{}, false
@@ -792,10 +821,10 @@ func spanFromOther(op string, other span, delta float64,
 		}
 		s := other
 		if s.hasLo {
-			s.lo += delta
+			s.lo = ratAdd(s.lo, delta)
 		}
 		if s.hasHi {
-			s.hi += delta
+			s.hi = ratAdd(s.hi, delta)
 		}
 		return s, true
 	case opGe:
@@ -803,27 +832,27 @@ func spanFromOther(op string, other span, delta float64,
 			return span{}, false
 		}
 		if other.loOpen {
-			return moreThan(other.lo + delta), true
+			return moreThan(ratAdd(other.lo, delta)), true
 		}
-		return atLeast(other.lo + delta), true
+		return atLeast(ratAdd(other.lo, delta)), true
 	case opGt:
 		if !other.hasLo {
 			return span{}, false
 		}
-		return moreThan(other.lo + delta), true
+		return moreThan(ratAdd(other.lo, delta)), true
 	case opLe:
 		if !other.hasHi {
 			return span{}, false
 		}
 		if other.hiOpen {
-			return lessThan(other.hi + delta), true
+			return lessThan(ratAdd(other.hi, delta)), true
 		}
-		return atMost(other.hi + delta), true
+		return atMost(ratAdd(other.hi, delta)), true
 	case opLt:
 		if !other.hasHi {
 			return span{}, false
 		}
-		return lessThan(other.hi + delta), true
+		return lessThan(ratAdd(other.hi, delta)), true
 	default:
 		return span{}, false
 	}
@@ -847,22 +876,22 @@ func (st *fbbtState) propagateAbs(c core.Exp) bool {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch op {
 	case eqOpName:
-		if v == 0 {
-			return st.tighten(pat, exactly(0))
+		if ratSign(v) == 0 {
+			return st.tighten(pat, exactly(new(big.Rat)))
 		}
 	case opLe:
-		if v < 0 {
+		if ratSign(v) < 0 {
 			return st.tighten(pat, span{empty: true})
 		}
 		return st.tighten(pat, span{
-			lo: -v, hi: v, hasLo: true, hasHi: true,
+			lo: ratNeg(v), hi: v, hasLo: true, hasHi: true,
 		})
 	case opLt:
-		if v <= 0 {
+		if ratSign(v) <= 0 {
 			return st.tighten(pat, span{empty: true})
 		}
 		return st.tighten(pat, span{
-			lo: -v, hi: v, hasLo: true, hasHi: true,
+			lo: ratNeg(v), hi: v, hasLo: true, hasHi: true,
 			loOpen: true, hiOpen: true,
 		})
 	}
@@ -871,25 +900,25 @@ func (st *fbbtState) propagateAbs(c core.Exp) bool {
 
 // absAndLiteral matches "abs x" against a numeric literal.
 func absAndLiteral(absSide, litSide core.Exp,
-) (*core.IDPat, float64, bool) {
+) (*core.IDPat, *big.Rat, bool) {
 	apply, ok := absSide.(*core.Apply)
 	if !ok {
-		return nil, 0, false
+		return nil, nil, false
 	}
 	name := builtinName(apply.Fn)
 	if name != absName && name != "Int.abs" &&
 		name != "Real.abs" {
-		return nil, 0, false
+		return nil, nil, false
 	}
 	id, ok := apply.Arg.(*core.ID)
 	if !ok {
-		return nil, 0, false
+		return nil, nil, false
 	}
 	lit, ok := litSide.(*core.Literal)
 	if !ok {
-		return nil, 0, false
+		return nil, nil, false
 	}
-	v, ok := literalNumber(lit)
+	v, ok := literalRat(lit)
 	return id.Pat, v, ok
 }
 
@@ -916,7 +945,7 @@ func (st *fbbtState) propagateMultiply(c core.Exp) bool {
 	if !ok {
 		return false
 	}
-	cv, ok := literalNumber(litExp)
+	cv, ok := literalRat(litExp)
 	if !ok {
 		return false
 	}
@@ -942,7 +971,7 @@ func timesFactors(e core.Exp) (linTerm, linTerm) {
 // divideThrough tightens one factor by dividing the constant by
 // the other factor's positive bound.
 func (st *fbbtState) divideThrough(op string, self,
-	other linTerm, cv float64,
+	other linTerm, cv *big.Rat,
 ) bool {
 	o := *st.interval(other.pat)
 	if o.empty {
@@ -950,19 +979,25 @@ func (st *fbbtState) divideThrough(op string, self,
 	}
 	switch op {
 	case opLe, opLt:
-		lo := o.lo + other.offset
-		if !o.hasLo || lo <= 0 {
+		if !o.hasLo {
+			return false
+		}
+		lo := ratAdd(o.lo, other.offset)
+		if ratSign(lo) <= 0 {
 			return false
 		}
 		return st.tighten(self.pat,
-			lessThan(cv/lo-self.offset))
+			lessThan(ratSub(ratDiv(cv, lo), self.offset)))
 	case opGe, opGt:
-		hi := o.hi + other.offset
-		if !o.hasHi || hi <= 0 {
+		if !o.hasHi {
+			return false
+		}
+		hi := ratAdd(o.hi, other.offset)
+		if ratSign(hi) <= 0 {
 			return false
 		}
 		return st.tighten(self.pat,
-			moreThan(cv/hi-self.offset))
+			moreThan(ratSub(ratDiv(cv, hi), self.offset)))
 	default:
 		return false
 	}

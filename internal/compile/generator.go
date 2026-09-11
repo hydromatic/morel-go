@@ -18,6 +18,7 @@
 package compile
 
 import (
+	"math/big"
 	"slices"
 	"strings"
 
@@ -1063,7 +1064,7 @@ func pointCtor(sys *types.System, t types.Type,
 // endpoints describes one range constructor for the disjointness
 // test: literal bounds and their openness.
 type endpoints struct {
-	lo, hi         float64
+	lo, hi         *big.Rat
 	loOpen, hiOpen bool
 }
 
@@ -1082,9 +1083,9 @@ func rangesDisjoint(ctors []core.Exp) bool {
 	}
 	slices.SortFunc(eps, func(a, b endpoints) int {
 		switch {
-		case a.lo < b.lo:
+		case ratCmp(a.lo, b.lo) < 0:
 			return -1
-		case a.lo > b.lo:
+		case ratCmp(a.lo, b.lo) > 0:
 			return 1
 		case a.loOpen != b.loOpen:
 			if b.loOpen {
@@ -1097,10 +1098,10 @@ func rangesDisjoint(ctors []core.Exp) bool {
 	})
 	for i := 0; i+1 < len(eps); i++ {
 		a, b := eps[i], eps[i+1]
-		if a.hi > b.lo {
+		if ratCmp(a.hi, b.lo) > 0 {
 			return false
 		}
-		if a.hi == b.lo && !a.hiOpen && !b.loOpen {
+		if ratCmp(a.hi, b.lo) == 0 && !a.hiOpen && !b.loOpen {
 			return false
 		}
 	}
@@ -1118,7 +1119,7 @@ func ctorEndpoints(c core.Exp) (endpoints, bool) {
 		return endpoints{}, false
 	}
 	if con.Name == "POINT" {
-		v, isNum := literalNumber(apply.Arg)
+		v, isNum := literalRat(apply.Arg)
 		if !isNum {
 			return endpoints{}, false
 		}
@@ -1128,11 +1129,11 @@ func ctorEndpoints(c core.Exp) (endpoints, bool) {
 	if !ok || len(tuple.Args) != 2 {
 		return endpoints{}, false
 	}
-	lo, ok := literalNumber(tuple.Args[0])
+	lo, ok := literalRat(tuple.Args[0])
 	if !ok {
 		return endpoints{}, false
 	}
-	hi, ok := literalNumber(tuple.Args[1])
+	hi, ok := literalRat(tuple.Args[1])
 	if !ok {
 		return endpoints{}, false
 	}
@@ -1152,19 +1153,23 @@ func ctorEndpoints(c core.Exp) (endpoints, bool) {
 	return ep, true
 }
 
-// literalNumber extracts an int or real literal's value.
-func literalNumber(e core.Exp) (float64, bool) {
+// literalRat is an int or real literal's value, exactly. A
+// float32 widens to a float64 without loss, and a float64 that is
+// not infinite or NaN is itself a rational, so no literal loses
+// anything on the way in.
+func literalRat(e core.Exp) (*big.Rat, bool) {
 	lit, ok := e.(*core.Literal)
 	if !ok {
-		return 0, false
+		return nil, false
 	}
 	switch v := lit.Value.(type) {
 	case int32:
-		return float64(v), true
+		return ratOf(int64(v)), true
 	case float32:
-		return float64(v), true
+		r := new(big.Rat).SetFloat64(float64(v))
+		return r, r != nil
 	default:
-		return 0, false
+		return nil, false
 	}
 }
 

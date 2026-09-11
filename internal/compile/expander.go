@@ -19,7 +19,7 @@ package compile
 
 import (
 	"fmt"
-	"math"
+	"math/big"
 	"slices"
 	"strings"
 
@@ -339,17 +339,18 @@ func listBounds(sys *types.System, scan *core.Scan) []core.Exp {
 	if !ok || len(list.Args) == 0 {
 		return nil
 	}
-	lo, hi := math.Inf(1), math.Inf(-1)
+	var lo, hi *big.Rat
 	for _, arg := range list.Args {
-		lit, isLit := arg.(*core.Literal)
-		if !isLit {
-			return nil
-		}
-		v, isNum := literalNumber(lit)
+		v, isNum := literalRat(arg)
 		if !isNum {
 			return nil
 		}
-		lo, hi = math.Min(lo, v), math.Max(hi, v)
+		if lo == nil || ratCmp(v, lo) < 0 {
+			lo = v
+		}
+		if hi == nil || ratCmp(v, hi) > 0 {
+			hi = v
+		}
 	}
 	return []core.Exp{
 		boundConjunct(sys, pat, lo, false, true),

@@ -19,6 +19,7 @@
 package compile
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/hydromatic/morel-go/internal/ast"
@@ -34,8 +35,8 @@ import (
 // fbbtFixture is a type system and a few variables to write
 // constraints over.
 type fbbtFixture struct {
-	sys     *types.System
-	x, y, z *core.IDPat
+	sys        *types.System
+	x, y, z, r *core.IDPat
 }
 
 func newFbbtFixture() *fbbtFixture {
@@ -45,6 +46,7 @@ func newFbbtFixture() *fbbtFixture {
 		x:   &core.IDPat{T: sys.Int, Name: "x"},
 		y:   &core.IDPat{T: sys.Int, Name: "y"},
 		z:   &core.IDPat{T: sys.Int, Name: "z"},
+		r:   &core.IDPat{T: sys.Real, Name: "r"},
 	}
 }
 
@@ -56,6 +58,13 @@ func (f *fbbtFixture) id(pat *core.IDPat) core.Exp {
 func (f *fbbtFixture) i(n int32) core.Exp {
 	return &core.Literal{
 		T: f.sys.Int, Kind: ast.IntLiteralOp, Value: n,
+	}
+}
+
+// re is a real literal.
+func (f *fbbtFixture) re(v float32) core.Exp {
+	return &core.Literal{
+		T: f.sys.Real, Kind: ast.RealLiteralOp, Value: v,
 	}
 }
 
@@ -115,7 +124,7 @@ func (f *fbbtFixture) text(e core.Exp) string {
 
 func TestFbbt(t *testing.T) {
 	f := newFbbtFixture()
-	x, y, z := f.id(f.x), f.id(f.y), f.id(f.z)
+	x, y, z, r := f.id(f.x), f.id(f.y), f.id(f.z), f.id(f.r)
 	// times returns "n * e".
 	times := func(n int32, e core.Exp) core.Exp {
 		return f.arith(opTimes, f.i(n), e)
@@ -232,6 +241,27 @@ func TestFbbt(t *testing.T) {
 		want: "x >= ~3 andalso (x <= 3 andalso " +
 			"#abs Int (~3 * x) < 10)",
 	}, {
+		// The bound is exactly a ten-trillionth, which dividing at
+		// twelve decimal places could only round to 1e-12, an
+		// interval ten times too wide. Rationals divide exactly,
+		// so the deduction is the true one; and the ends still
+		// swap, the coefficient being negative.
+		//
+		// The literal that states it is a float32, which holds no
+		// exact ten-trillionth, so each end rounds outwards to the
+		// float32 beyond it. morel-java writes "1E-13" here
+		// because its literal is a decimal; writing the nearest
+		// float32 instead would put the endpoint just inside the
+		// deduced interval and exclude a value that satisfies the
+		// query.
+		name: "large negative coefficient inside abs",
+		where: f.cmp(opLt,
+			f.abs(f.arith(opTimes, f.re(-1e13), r)), f.re(1.0)),
+		pats: []*core.IDPat{f.r},
+		want: "r > ~1.00000005e-13 andalso " +
+			"(r < 1.00000005e-13 andalso " +
+			"#abs Real (~1e+13 * r) < 1)",
+	}, {
 		// The argument of an absolute value must be linear in one
 		// variable. This is not, so FBBT declines rather than
 		// deducing something wrong.
@@ -258,5 +288,60 @@ func TestFbbt(t *testing.T) {
 					got, test.want)
 			}
 		})
+	}
+}
+
+// TestRat covers the rational arithmetic that bound deduction
+// rests on: what it divides exactly, and how it rounds when a
+// bound is finally written.
+func TestRat(t *testing.T) {
+	third := big.NewRat(1, 3)
+	if got := ratMul(third, ratOf(3)); ratCmp(got, ratOf(1)) != 0 {
+		t.Errorf("1/3 * 3 = %s, want 1", got.RatString())
+	}
+	if got := ratDiv(ratOf(10), ratOf(3)); got.RatString() != "10/3" {
+		t.Errorf("10 / 3 = %s, want 10/3", got.RatString())
+	}
+	// A nil rational reads as zero, so a partly-built term is
+	// harmless rather than a panic.
+	if ratSign(nil) != 0 || ratCmp(nil, ratOf(0)) != 0 {
+		t.Error("nil should read as zero")
+	}
+	floors := []struct {
+		r           *big.Rat
+		floor, ceil int64
+	}{
+		{big.NewRat(15, 2), 7, 8},
+		{big.NewRat(-15, 2), -8, -7},
+		{ratOf(4), 4, 4},
+	}
+	for _, c := range floors {
+		if got := ratFloor(c.r).Int64(); got != c.floor {
+			t.Errorf("floor %s = %d, want %d", c.r.RatString(),
+				got, c.floor)
+		}
+		if got := ratCeil(c.r).Int64(); got != c.ceil {
+			t.Errorf("ceil %s = %d, want %d", c.r.RatString(),
+				got, c.ceil)
+		}
+	}
+	// A third has no exact float32, so it rounds outwards: down
+	// for a lower bound, up for an upper one, and the two differ.
+	lo := ratFloat32(third, true)
+	hi := ratFloat32(third, false)
+	if !(ratCmp(new(big.Rat).SetFloat64(float64(lo)), third) < 0) {
+		t.Errorf("lower %v should be below 1/3", lo)
+	}
+	if !(ratCmp(new(big.Rat).SetFloat64(float64(hi)), third) > 0) {
+		t.Errorf("upper %v should be above 1/3", hi)
+	}
+	// A value a float32 holds exactly rounds to itself either way.
+	half := big.NewRat(1, 2)
+	if ratFloat32(half, true) != 0.5 || ratFloat32(half, false) != 0.5 {
+		t.Error("1/2 should be exact")
+	}
+	// A bound too large for an int cannot be written.
+	if _, ok := ratInt32(ratOf(1 << 40)); ok {
+		t.Error("2^40 should not fit in an int")
 	}
 }
