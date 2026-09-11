@@ -20,6 +20,7 @@ package shell
 import (
 	"strings"
 
+	"github.com/hydromatic/morel-go/internal/eval"
 	"github.com/hydromatic/morel-go/internal/types"
 )
 
@@ -32,7 +33,7 @@ import (
 // divergence.
 func equivalentOutput(sys *types.System, actual, expected string) bool {
 	a := splitOutput(actual)
-	e := splitOutput(expected)
+	e := splitOutput(unraw(expected))
 	if a.val == "" || e.val == "" {
 		return false
 	}
@@ -50,6 +51,86 @@ func equivalentOutput(sys *types.System, actual, expected string) bool {
 		return false
 	}
 	return valuesEquivalent(sys, t, a.val, e.val)
+}
+
+// unraw rewrites every raw string literal as the escaped literal
+// with the same content, so that the rest of the comparison sees
+// only literals it knows.
+//
+// A raw literal is "{tag|content|tag}", where the tag is lower-case
+// letters and underscores. It starts with "_" exactly when the
+// content starts on the line after the opening fence, and that
+// newline is then not content. Raw literals are a feature of the
+// script format and not of the language -- morel never prints one
+// -- so only an expected output holds one.
+func unraw(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if s[i] == '"' {
+			// A quoted literal is copied whole: what is inside it is
+			// its content, not syntax, and a fence written there --
+			// "{a|x|a}" -- is three characters of a string.
+			end := quotedEnd(s, i)
+			b.WriteString(s[i:end])
+			i = end
+			continue
+		}
+		content, tag, end, isRaw := rawLiteralAt(s, i)
+		if !isRaw {
+			b.WriteByte(s[i])
+			i++
+			continue
+		}
+		if strings.HasPrefix(tag, "_") {
+			content = strings.TrimPrefix(content, "\n")
+		}
+		b.WriteByte('"')
+		for _, r := range content {
+			b.WriteString(eval.CharToString(r))
+		}
+		b.WriteByte('"')
+		i = end
+	}
+	return b.String()
+}
+
+// quotedEnd is where the quoted literal that starts at s[i] ends,
+// or the end of s if it is unterminated. A backslash escapes the
+// byte after it, so an escaped quote does not close the literal.
+func quotedEnd(s string, i int) int {
+	for j := i + 1; j < len(s); j++ {
+		switch s[j] {
+		case '\\':
+			j++
+		case '"':
+			return j + 1
+		}
+	}
+	return len(s)
+}
+
+// rawLiteralAt reads the raw literal that starts at s[i], giving
+// its content, its tag, and where it ends. It reports false if
+// there is none: "{" that no fence follows is an ordinary brace,
+// and an unclosed fence is not a literal.
+func rawLiteralAt(s string, i int) (string, string, int, bool) {
+	if s[i] != '{' {
+		return "", "", 0, false
+	}
+	j := i + 1
+	for j < len(s) && (s[j] == '_' || (s[j] >= 'a' && s[j] <= 'z')) {
+		j++
+	}
+	if j >= len(s) || s[j] != '|' {
+		return "", "", 0, false
+	}
+	tag := s[i+1 : j]
+	fence := "|" + tag + "}"
+	k := strings.Index(s[j+1:], fence)
+	if k < 0 {
+		return "", "", 0, false
+	}
+	return s[j+1 : j+1+k], tag, j + 1 + k + len(fence), true
 }
 
 // valuesEquivalent parses two value strings guided by their type

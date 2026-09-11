@@ -105,3 +105,7 @@ func UnimplementedStructLibMembersForTest() []string {
 func SchemeForBackgroundForTest(background string) string {
 	return schemeForBackground(background)
 }
+
+// UnrawForTest exposes unraw, which rewrites a raw string literal
+// as the escaped literal with the same content.
+func UnrawForTest(s string) string { return unraw(s) }
