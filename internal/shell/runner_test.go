@@ -146,8 +146,8 @@ func TestKernelParseTree(t *testing.T) {
 		"env:unit -> (string * string) list, file:{...}, " +
 		"parseTree:string -> string, plan:unit -> string, " +
 		"planEx:string -> string, set:string * 'a -> unit, " +
-		"show:string -> string option, showAll:unit -> " +
-		"(string * string option) list, unset:string -> unit}'\n" +
+		"show:string -> string, showAll:unit -> " +
+		"(string * string) list, unset:string -> unit}'\n" +
 		"  raised at: stdIn:1.5-1.9"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)

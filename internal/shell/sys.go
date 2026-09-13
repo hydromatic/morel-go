@@ -76,11 +76,64 @@ const (
 	dynamicProp
 )
 
-// sysProp describes a session property: its kind and its
-// default rendering (nil means NONE).
+// propType is a property's Morel type: how the type is written,
+// whether it admits NONE, and what it checks of a value.
+//
+// The type is written as Morel writes it, conditions included --
+// "(int check i => i >= 0) option" -- so that a condition is
+// stated once, in the type, however many properties share it.
+type propType struct {
+	// name is the type as Morel writes it, conditions included.
+	name string
+	// option is whether the type admits NONE.
+	option bool
+	// checkInt is the condition an int value must satisfy, or nil
+	// if the type checks nothing. NONE is never offered to it.
+	checkInt func(int) bool
+	// checkBig is the same for an "IntInf.int" value.
+	checkBig func(*big.Int) bool
+}
+
+// The property types. A type that checks a condition names it in
+// the type, so a rejected value is answered with the condition it
+// failed.
+var (
+	tBool      = propType{name: "bool"}
+	tEnum      = propType{name: "enum"}
+	tFile      = propType{name: "file"}
+	tInt       = propType{name: "int"}
+	tString    = propType{name: "string"}
+	tStringOpt = propType{name: "string option", option: true}
+	// tNonNegIntOpt is the type of the printing properties
+	// that count characters or elements: NONE is "no limit", and
+	// a count, if given, must not be negative.
+	tNonNegIntOpt = propType{
+		name:     "(int check i => i >= 0) option",
+		option:   true,
+		checkInt: func(i int) bool { return i >= 0 },
+	}
+	// tPosIntOpt is the type of a printing property for which
+	// zero would mean nothing: NONE turns it off instead.
+	tPosIntOpt = propType{
+		name:     "(int check i => i > 0) option",
+		option:   true,
+		checkInt: func(i int) bool { return i > 0 },
+	}
+	// tPosIntInf is a count that may exceed an "int", and must
+	// be positive.
+	tPosIntInf = propType{
+		name:     "IntInf.int check i => i > 0",
+		checkBig: func(n *big.Int) bool { return n.Sign() > 0 },
+	}
+)
+
+// sysProp describes a session property: its kind, its Morel type,
+// and its default rendering (nil means the property has no value
+// of its own and showProp computes one).
 type sysProp struct {
 	dflt *string
 	kind propKind
+	typ  propType
 }
 
 func text(s string) *string { return &s }
@@ -108,29 +161,30 @@ const (
 // later "output") change behavior.
 var sysProps = map[string]sysProp{
 	// lint: sort until '^}' where '^\t"'
-	"banner":               {nil, dynamicProp},
-	"colorScheme":          {nil, stringProp},
-	"directory":            {nil, fileProp},
-	"excludeStructures":    {text("^Test$"), stringProp},
-	"hybrid":               {text("false"), boolProp},
-	"inlinePassCount":      {text("5"), intProp},
-	lineWidthProp:          {nil, intProp},
-	"matchCoverageEnabled": {text("true"), boolProp},
-	"matchStrict":          {text("false"), boolProp},
-	"now":                  {nil, stringProp},
-	"optionalInt":          {nil, intProp},
-	"output":               {text("CLASSIC"), outputProp},
-	printDepthProp:         {nil, intProp},
-	printLengthProp:        {nil, intProp},
-	"productName":          {nil, dynamicProp},
-	"productVersion":       {nil, dynamicProp},
-	rangeMaxLengthProp:     {text(rangeMaxLengthDefault), bigIntProp},
-	"relationalize":        {text("false"), boolProp},
-	"scriptDirectory":      {nil, fileProp},
-	stringDepthProp:        {nil, intProp},
-	stringFoldProp:         {nil, intProp},
-	"terminalBackground":   {nil, stringProp},
-	"timeZone":             {nil, stringProp},
+	"banner":               {nil, dynamicProp, tString},
+	"colorScheme":          {nil, stringProp, tStringOpt},
+	"directory":            {nil, fileProp, tFile},
+	"excludeStructures":    {text("^Test$"), stringProp, tString},
+	"hybrid":               {text("false"), boolProp, tBool},
+	"inlinePassCount":      {text("5"), intProp, tInt},
+	lineWidthProp:          {nil, intProp, tNonNegIntOpt},
+	"matchCoverageEnabled": {text("true"), boolProp, tBool},
+	"matchStrict":          {text("false"), boolProp, tBool},
+	"now":                  {nil, stringProp, tStringOpt},
+	"output":               {text("CLASSIC"), outputProp, tEnum},
+	printDepthProp:         {nil, intProp, tNonNegIntOpt},
+	printLengthProp:        {nil, intProp, tNonNegIntOpt},
+	"productName":          {nil, dynamicProp, tString},
+	"productVersion":       {nil, dynamicProp, tString},
+	rangeMaxLengthProp: {
+		text(rangeMaxLengthDefault), bigIntProp, tPosIntInf,
+	},
+	"relationalize":      {text("false"), boolProp, tBool},
+	"scriptDirectory":    {nil, fileProp, tFile},
+	stringDepthProp:      {nil, intProp, tNonNegIntOpt},
+	stringFoldProp:       {nil, intProp, tPosIntOpt},
+	"terminalBackground": {nil, stringProp, tStringOpt},
+	"timeZone":           {nil, stringProp, tStringOpt},
 }
 
 // upperNames maps each property's UPPER_CASE name to its
@@ -583,6 +637,28 @@ func lookupProp(name string) (string, sysProp, bool) {
 	return "", sysProp{}, false
 }
 
+// unwrapOption reads the argument of "Sys.set" against a
+// property's type.
+//
+// A property of option type takes "SOME v" or "NONE", and takes a
+// bare "v" as "SOME v", so that a call written before the property
+// became an option still says what it said. A property that is not
+// an option takes the value alone, and refuses NONE: there is
+// nothing for it to mean.
+//
+// The second result is false for NONE.
+func unwrapOption(t propType, value eval.Val) (eval.Val, bool, bool) {
+	con, isCon := value.(eval.Con)
+	switch {
+	case isCon && con.Name == noneCon:
+		return nil, false, t.option
+	case isCon && con.Name == someCon:
+		return con.Arg, true, t.option
+	default:
+		return value, true, true
+	}
+}
+
 // sysSet is "Sys.set (name, value)". An unknown property, or a
 // value the property will not take, raises "Fail".
 func (k *Kernel) sysSet(arg eval.Val) (eval.Val, error) {
@@ -592,7 +668,13 @@ func (k *Kernel) sysSet(arg eval.Val) (eval.Val, error) {
 	if !ok {
 		return nil, unknownProp("set", rawName)
 	}
-	value := vals[1]
+	value, some, okOption := unwrapOption(prop.typ, vals[1])
+	if !okOption {
+		return nil, wrongType(name, prop.typ.name)
+	}
+	if !some {
+		return k.unsetToNone(name)
+	}
 	// lint: sort until '^	}' where '^	case '
 	switch prop.kind {
 	case bigIntProp:
@@ -600,8 +682,9 @@ func (k *Kernel) sysSet(arg eval.Val) (eval.Val, error) {
 		// an "int" can hold; such a value is written as a
 		// numeral in a string.
 		n, isBig := bigIntValue(value)
-		if !isBig {
-			return nil, wrongType(name, "IntInf.int")
+		if !isBig ||
+			prop.typ.checkBig != nil && !prop.typ.checkBig(n) {
+			return nil, wrongType(name, prop.typ.name)
 		}
 		k.config.props[name] = n.String()
 		if name == rangeMaxLengthProp {
@@ -610,7 +693,7 @@ func (k *Kernel) sysSet(arg eval.Val) (eval.Val, error) {
 	case boolProp:
 		b, isBool := value.(bool)
 		if !isBool {
-			return nil, wrongType(name, "bool")
+			return nil, wrongType(name, prop.typ.name)
 		}
 		k.config.props[name] = strconv.FormatBool(b)
 	case dynamicProp:
@@ -620,13 +703,14 @@ func (k *Kernel) sysSet(arg eval.Val) (eval.Val, error) {
 		// type is "file".
 		s, isString := value.(string)
 		if !isString {
-			return nil, wrongType(name, "file")
+			return nil, wrongType(name, prop.typ.name)
 		}
 		k.config.props[name] = s
 	case intProp:
 		i, isInt := value.(int32)
-		if !isInt {
-			return nil, wrongType(name, "int")
+		if !isInt ||
+			prop.typ.checkInt != nil && !prop.typ.checkInt(int(i)) {
+			return nil, wrongType(name, prop.typ.name)
 		}
 		if field := k.config.intPropField(name); field != nil {
 			*field = int(i)
@@ -646,31 +730,74 @@ func (k *Kernel) sysSet(arg eval.Val) (eval.Val, error) {
 	case stringProp:
 		s, isString := value.(string)
 		if !isString {
-			return nil, wrongType(name, "string")
+			return nil, wrongType(name, prop.typ.name)
 		}
 		k.config.props[name] = s
 	}
 	return unitResult()
 }
 
-// sysShow is "Sys.show name": SOME of the property's current
-// value rendered as a string, or NONE if it has no value.
+// unsetToNone gives a property of option type the value NONE.
+//
+// A printing property is held as an int, and a value that its type
+// refuses -- a negative width, a zero fold -- is how "no limit" is
+// written there, so NONE is stored as one of those. Every other
+// property holds its value in the map, where absent is NONE.
+func (k *Kernel) unsetToNone(name string) (eval.Val, error) {
+	if field := k.config.intPropField(name); field != nil {
+		*field = noLimit
+	} else {
+		delete(k.config.props, name)
+	}
+	return unitResult()
+}
+
+// The names of the "option" constructors, as a value written in
+// Morel spells them.
+const (
+	someCon = "SOME"
+	noneCon = "NONE"
+)
+
+// noLimit is what a printing property holds for NONE. It is
+// refused by both "i >= 0" and "i > 0", so showProp reads it back
+// as NONE whichever of the two the property checks.
+const noLimit = -1
+
+// sysShow is "Sys.show name": the property's current value as a
+// string. A property of option type gives "SOME v" or "NONE", so
+// that what is shown is a value that "Sys.set" would accept.
 func (k *Kernel) sysShow(arg eval.Val) (eval.Val, error) {
 	rawName, _ := arg.(string)
 	name, _, ok := lookupProp(rawName)
 	if !ok {
 		return nil, unknownProp("show", rawName)
 	}
-	if s, ok := k.showProp(name); ok {
-		return eval.SomeVal(s), nil
+	return k.showValue(name), nil
+}
+
+// showValue renders a property's value the way "Sys.show" gives
+// it: "SOME v" or "NONE" where the property is an option, and the
+// value alone where it is not.
+func (k *Kernel) showValue(name string) string {
+	s, ok := k.showProp(name)
+	if !sysProps[name].typ.option {
+		return s
 	}
-	return eval.NoneVal, nil
+	if !ok {
+		return noneCon
+	}
+	return someCon + " " + s
 }
 
 // showProp gives a property's current rendering, or false for
 // NONE.
 func (k *Kernel) showProp(name string) (string, bool) {
 	if field := k.config.intPropField(name); field != nil {
+		if check := sysProps[name].typ.checkInt; check != nil &&
+			!check(*field) {
+			return "", false
+		}
 		return strconv.Itoa(*field), true
 	}
 	if s, ok := k.config.props[name]; ok {
@@ -729,11 +856,7 @@ func (k *Kernel) sysShowAll(eval.Val) (eval.Val, error) {
 	slices.Sort(names)
 	out := make([]eval.Val, len(names))
 	for i, name := range names {
-		var v eval.Val = eval.NoneVal
-		if s, ok := k.showProp(name); ok {
-			v = eval.SomeVal(s)
-		}
-		out[i] = []eval.Val{name, v}
+		out[i] = []eval.Val{name, k.showValue(name)}
 	}
 	return out, nil
 }

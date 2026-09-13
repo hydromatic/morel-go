@@ -467,7 +467,7 @@ func (c *Config) buildCell(s *section, value eval.Val) cell {
 		if s.optional {
 			con, _ := value.(eval.Con)
 			switch {
-			case con.Name != "SOME":
+			case con.Name != someCon:
 				str = ""
 			case s.prim.String() == stringType:
 				sv, _ := con.Arg.(string)
@@ -511,7 +511,7 @@ func (c *Config) buildRecordListCell(s *section, value eval.Val) cell {
 	case tabSingle:
 		recordList = []eval.Val{value}
 	case tabOption:
-		if con, _ := value.(eval.Con); con.Name == "SOME" {
+		if con, _ := value.(eval.Con); con.Name == someCon {
 			recordList = []eval.Val{con.Arg}
 		}
 	default:
