@@ -55,7 +55,7 @@ func DefaultConfig() Config {
 		PrintLength: defaultPrintLength,
 		PrintDepth:  defaultPrintDepth,
 		StringDepth: defaultStringDepth,
-		MaxUseDepth: -1,
+		MaxUseDepth: maxUseDepthDefault,
 		props:       map[string]string{},
 	}
 }
@@ -83,7 +83,8 @@ type Config struct {
 	ScriptDirectory string
 
 	// MaxUseDepth caps nested "use" calls; negative means no
-	// limit.
+	// limit, which is what the "maxUseDepth" property's NONE
+	// stores here.
 	MaxUseDepth int
 
 	// props holds the explicitly set values of the properties

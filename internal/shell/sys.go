@@ -147,6 +147,15 @@ const (
 	stringFoldProp  = "stringFold"
 )
 
+// maxUseDepthProp is how deeply "use" may nest, and its default. A
+// script that nests more deeply than that is almost certainly
+// recursing, directly or indirectly, into a file it is already
+// reading. NONE means no limit.
+const (
+	maxUseDepthProp    = "maxUseDepth"
+	maxUseDepthDefault = 50
+)
+
 // rangeMaxLengthProp is the largest number of values that
 // expanding a range may produce, and its default, 2^24 - 1, the
 // same as "Vector.maxLen". It is larger than a Morel "int" can
@@ -170,6 +179,7 @@ var sysProps = map[string]sysProp{
 	lineWidthProp:          {nil, intProp, tNonNegIntOpt},
 	"matchCoverageEnabled": {text("true"), boolProp, tBool},
 	"matchStrict":          {text("false"), boolProp, tBool},
+	maxUseDepthProp:        {nil, intProp, tNonNegIntOpt},
 	"now":                  {nil, stringProp, tStringOpt},
 	"output":               {text("CLASSIC"), outputProp, tEnum},
 	printDepthProp:         {nil, intProp, tNonNegIntOpt},
@@ -233,6 +243,8 @@ func (c *Config) intPropField(name string) *int {
 	switch name {
 	case lineWidthProp:
 		return &c.LineWidth
+	case maxUseDepthProp:
+		return &c.MaxUseDepth
 	case printDepthProp:
 		return &c.PrintDepth
 	case printLengthProp:
@@ -253,6 +265,8 @@ func intPropDefault(name string) int {
 	switch name {
 	case lineWidthProp:
 		return defaultLineWidth
+	case maxUseDepthProp:
+		return maxUseDepthDefault
 	case printDepthProp:
 		return defaultPrintDepth
 	case printLengthProp:

@@ -41,7 +41,8 @@ type Args struct {
 	ScriptDirectory string
 
 	// MaxUseDepth caps nested "use" calls ("--maxUseDepth=");
-	// negative (the default) means no limit.
+	// negative means no limit, which "--maxUseDepth=NONE" asks
+	// for. The default is 50.
 	MaxUseDepth int
 
 	// Files are the scripts to run, in order; "-" means standard
@@ -87,7 +88,7 @@ type Args struct {
 // accepted; "--build" and "--no-build" are accepted no-ops (there
 // is nothing to build).
 func ParseArgs(argv []string) *Args {
-	a := &Args{Banner: true, MaxUseDepth: -1}
+	a := &Args{Banner: true, MaxUseDepth: maxUseDepthDefault}
 	for i := 0; i < len(argv); i++ {
 		arg := argv[i]
 		switch {
@@ -111,8 +112,13 @@ func ParseArgs(argv []string) *Args {
 		case strings.HasPrefix(arg, "--scriptDirectory="):
 			a.ScriptDirectory = arg[len("--scriptDirectory="):]
 		case strings.HasPrefix(arg, "--maxUseDepth="):
-			n, err := strconv.Atoi(arg[len("--maxUseDepth="):])
-			if err == nil {
+			// "NONE" is no limit, as it is for the property.
+			v := arg[len("--maxUseDepth="):]
+			n, err := strconv.Atoi(v)
+			switch {
+			case v == noneCon:
+				a.MaxUseDepth = -1
+			case err == nil:
 				a.MaxUseDepth = n
 			}
 		case arg == "--banner=false":
