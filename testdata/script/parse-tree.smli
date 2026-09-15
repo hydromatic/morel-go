@@ -18,6 +18,12 @@
  *
  * Temporary morel-go parser scaffolding (see plan.md task 11);
  * deleted once pulled corpus hunks cover the parser.
+ *
+ * Named for what it exercises, "Sys.parseTree", and not "parse.smli",
+ * which is morel-java's: a 2026-09-15 script about how Core is
+ * unparsed. The two have nothing in common but a name, and a go-only
+ * file that shadows a morel-java one reads as converged when it is
+ * not.
  *)
 
 (*) Literals
@@ -316,4 +322,4 @@ Sys.parseTree "{e replace lenient all f rename b = a}";
 Sys.parseTree "x : typeof y";
 > val it = "(annotatedExp (id x) (expression_type typeof y))" : string
 
-(*) End parse.smli
+(*) End parse-tree.smli

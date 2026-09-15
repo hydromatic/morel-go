@@ -250,7 +250,7 @@ def gate(go_repo, args):
         if after > before:
             if not file_at(args.java_repo, java, JAVA_PREFIX,
                            rel):
-                # A go-only file (backswing.smli, parse.smli) may
+                # A go-only file (backswing.smli, parse-tree.smli) may
                 # grow by design; it is scaffolding, not
                 # divergence from java.
                 rows.append((rel, before, after))
