@@ -15,11 +15,11 @@
 # either express or implied.  See the License for the specific
 # language governing permissions and limitations under the
 # License.
-"""Gate and dashboard for convergence of morel-go's `.smli` test
+"""Gate and dashboard for convergence of morel-go's script test
 files toward morel-java's.
 
 Gate mode (the default) checks one commit: for every shared
-`.smli` file it compares the number of lines differing from
+script file it compares the number of lines differing from
 morel-java BEFORE the commit (at the parents) and AFTER. It fails
 if any file became MORE divergent — a section that java changed
 but go did not follow, even if other files converged enough to
@@ -67,15 +67,23 @@ def git(repo, *args):
     return r.stdout if r.returncode == 0 else None
 
 
-def smli_files(repo, commit, prefix):
-    """Relative `.smli` paths (below `prefix`) present at
-    `commit`, or in the working tree if `commit` is None."""
+# The script corpus, by extension. A `.smli` script carries its own
+# expected output and reproduces itself; a `.sml` script's transcript
+# is the companion `.sml.out`, and both halves count, since a
+# divergence may live in either. `.smli` does not end in `.sml`, so
+# the suffixes do not overlap.
+SCRIPT_SUFFIXES = (".smli", ".sml", ".sml.out")
+
+
+def script_files(repo, commit, prefix):
+    """Relative script paths (below `prefix`) present at `commit`,
+    or in the working tree if `commit` is None."""
     if commit is None:
         files = set()
         top = os.path.join(repo, prefix)
         for dirpath, _dirs, names in os.walk(top):
             for name in names:
-                if name.endswith(".smli"):
+                if name.endswith(SCRIPT_SUFFIXES):
                     path = os.path.join(dirpath, name)
                     files.add(os.path.relpath(path, top))
         return files
@@ -84,7 +92,7 @@ def smli_files(repo, commit, prefix):
         sys.exit(f"error: cannot list files at {commit} in {repo}")
     files = set()
     for line in out.splitlines():
-        if line.startswith(prefix) and line.endswith(".smli"):
+        if line.startswith(prefix) and line.endswith(SCRIPT_SUFFIXES):
             files.add(line[len(prefix):])
     return files
 
@@ -127,8 +135,8 @@ def java_sha_from_message(repo, commit):
 
 def report(go_repo, java_repo):
     """Prints the dashboard: working tree vs working tree."""
-    go_files = smli_files(go_repo, None, GO_PREFIX)
-    java_files = smli_files(java_repo, None, JAVA_PREFIX)
+    go_files = script_files(go_repo, None, GO_PREFIX)
+    java_files = script_files(java_repo, None, JAVA_PREFIX)
 
     shared = sorted(go_files & java_files)
     missing = sorted(java_files - go_files)
@@ -217,10 +225,10 @@ def gate(go_repo, args):
     print()
 
     rels = (
-        smli_files(go_repo, go, GO_PREFIX)
-        | smli_files(go_repo, go_parent, GO_PREFIX)
-        | smli_files(args.java_repo, java, JAVA_PREFIX)
-        | smli_files(args.java_repo, java_parent, JAVA_PREFIX)
+        script_files(go_repo, go, GO_PREFIX)
+        | script_files(go_repo, go_parent, GO_PREFIX)
+        | script_files(args.java_repo, java, JAVA_PREFIX)
+        | script_files(args.java_repo, java_parent, JAVA_PREFIX)
     )
 
     regressions = []
@@ -279,7 +287,7 @@ def gate(go_repo, args):
                   f"go did not follow")
         return 1
 
-    print("OK: no .smli file diverged further from morel-java.")
+    print("OK: no script file diverged further from morel-java.")
     return 0
 
 

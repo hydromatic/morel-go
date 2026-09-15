@@ -104,6 +104,9 @@ func (k *Kernel) runUsedFile(src string, silent bool,
 		if isOutputLine(line) && !Unclosed(k.name, buf) {
 			continue
 		}
+		if !silent {
+			lines = append(lines, strings.TrimSuffix(line, "\n"))
+		}
 		buf += line
 		stmts, rest, err := Split(k.name, buf)
 		if err != nil {
@@ -115,10 +118,12 @@ func (k *Kernel) runUsedFile(src string, silent bool,
 		}
 		for _, stmt := range stmts {
 			out := k.Execute(stmt)
-			if !silent {
-				lines = appendLines(lines,
-					strings.TrimSuffix(stmt, "\n"))
+			if !silent && out != "" {
 				lines = appendLines(lines, out)
+				// A blank line separates a statement's output
+				// from the input that follows, as it does in a
+				// ".sml" transcript.
+				lines = append(lines, "")
 			}
 		}
 		buf = rest

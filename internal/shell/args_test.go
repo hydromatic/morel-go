@@ -43,25 +43,74 @@ func TestParseArgs(t *testing.T) {
 		t.Errorf("flags: got %+v", a)
 	}
 
-	// A ".smli" first file makes idempotent implicit; a bare "-"
+	// A ".smli" first file engages the script harness; a bare "-"
 	// is standard input; unknown flags and "execute"/"--build"
 	// are ignored.
 	a = shell.ParseArgs([]string{
 		"execute", "--build",
 		"--foreign=X", "a.smli", "-",
 	})
-	if !a.Idempotent {
-		t.Errorf(".smli should imply idempotent")
+	if a.FormOf("a.smli") != shell.FormIdempotent {
+		t.Errorf(".smli should engage the script harness")
 	}
 	if len(a.Files) != 2 || a.Files[0] != "a.smli" ||
 		a.Files[1] != "-" {
 		t.Errorf("files: got %v", a.Files)
 	}
 
-	// A ".sml" first file does not imply idempotent.
+	// A ".sml" first file does not engage it: ".sml" is the
+	// ordinary extension for a program, so it runs as one.
 	a = shell.ParseArgs([]string{"a.sml"})
 	if a.Idempotent {
 		t.Errorf(".sml should not imply idempotent")
+	}
+	if a.FormOf("a.sml") != shell.FormBatch {
+		t.Errorf(".sml alone should run as a batch")
+	}
+}
+
+// TestFormOf checks how a source is read.
+//
+// Two things decide, as in morel-java. The script harness is engaged
+// by "--idempotent" or by a first file ending ".smli", and without it
+// every source is an ordinary program. Within the harness the
+// extension picks the form: ".smli" carries its own expected output,
+// anything else has a transcript in a companion file, and standard
+// input is read as ".smli" would be.
+func TestFormOf(t *testing.T) {
+	plain := shell.ParseArgs([]string{})
+	sml := shell.ParseArgs([]string{"a.sml"})
+	idem := shell.ParseArgs([]string{"--idempotent"})
+	smli := shell.ParseArgs([]string{"a.smli", "b.sml"})
+	cases := []struct {
+		args *shell.Args
+		name string
+		want shell.Form
+	}{
+		// The harness is not engaged: everything is a program.
+		{plain, "a.smli", shell.FormBatch},
+		{plain, "a.sml", shell.FormBatch},
+		{plain, "-", shell.FormBatch},
+		{sml, "a.sml", shell.FormBatch},
+
+		// "--idempotent" engages it, and reads standard input as
+		// SMLI.
+		{idem, "-", shell.FormIdempotent},
+		{idem, "stdIn", shell.FormIdempotent},
+		{idem, "a.smli", shell.FormIdempotent},
+		{idem, "a.sml", shell.FormTranscript},
+		{idem, "a.txt", shell.FormTranscript},
+
+		// So does a first file ending ".smli" -- for every file in
+		// the run, not only that one.
+		{smli, "a.smli", shell.FormIdempotent},
+		{smli, "b.sml", shell.FormTranscript},
+	}
+	for _, c := range cases {
+		if got := c.args.FormOf(c.name); got != c.want {
+			t.Errorf("FormOf(%q) (idempotent=%v): got %v, want %v",
+				c.name, c.args.Idempotent, got, c.want)
+		}
 	}
 }
 

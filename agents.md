@@ -53,6 +53,37 @@ into morel-go.
 > script harness, `etc/check-convergence.py`) is described by
 > `plan.md` and will appear as the port matures.
 
+## Two forms of script
+
+A script in `testdata/script/` comes in one of two forms, and the
+difference is where its expected output lives.
+
+A **`.smli` script is idempotent**: it carries its own expected
+output, on `> `-prefixed lines after each statement, and running it
+reproduces the file. This is the form almost everything uses.
+
+A **`.sml` script carries no expected output**; its transcript is
+the companion `.sml.out` file — every input line echoed, and after
+each statement the output it produced, unprefixed and followed by a
+blank line. The form earns its keep for a script whose output you
+would not want interleaved with it: one that `use`s another file,
+where the whole of the inner file's transcript lands in the middle
+of the outer one.
+
+**Two things pick the form**, as they do in morel-java. First the
+script harness is engaged, by `--idempotent` or by a first file
+ending `.smli`; without it every source is an ordinary program,
+streamed, so `morel prog.sml` runs a program, which is what `.sml`
+ordinarily means. Then, within the harness, the extension picks:
+`.smli` is rewritten, anything else has its transcript written, and
+standard input is read as `.smli` would be. `Args.FormOf` is the one
+place that decides, and `TestScripts` — one walker over both
+extensions — reaches the same two forms directly.
+
+Both forms count towards convergence. `etc/check-convergence.py`
+measures `.smli`, `.sml` and `.sml.out` alike, so a divergence in a
+transcript is as visible as one in a script.
+
 ## Growing the test corpus
 
 The `.smli` corpus (in `testdata/script/`) is grown

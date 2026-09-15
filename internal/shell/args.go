@@ -55,9 +55,16 @@ type Args struct {
 	// echoed script ("--echo").
 	Echo bool
 
-	// Idempotent treats input as SMLI format ("--idempotent");
-	// implicit when the first file ends in ".smli".
+	// Idempotent engages the script harness ("--idempotent"), and
+	// reads standard input as SMLI format. A first file ending
+	// ".smli" engages it too. Within the harness the extension
+	// picks the form; see Args.FormOf.
 	Idempotent bool
+
+	// script is whether the script harness is engaged: morel-java's
+	// "smli" sub-command. Without it every source runs as an
+	// ordinary program.
+	script bool
 
 	// Banner controls the startup banner; false suppresses it
 	// ("--banner=false"). Default true.
@@ -122,10 +129,11 @@ func ParseArgs(argv []string) *Args {
 			a.Files = append(a.Files, arg)
 		}
 	}
-	if len(a.Files) > 0 &&
-		strings.HasSuffix(a.Files[0], ".smli") {
-		a.Idempotent = true
-	}
+	// The script harness is engaged by the flag, or by a first file
+	// that is plainly a script. Java's "morel" wrapper chooses its
+	// "smli" sub-command the same way.
+	a.script = a.Idempotent ||
+		len(a.Files) > 0 && strings.HasSuffix(a.Files[0], ".smli")
 	return a
 }
 
@@ -138,8 +146,11 @@ input if no file is given.
 Options:
   -e, --eval <expr>   Evaluate expression and exit.
   --echo              Echo script output to standard output.
-  --idempotent        Treat input as SMLI (idempotent) format;
+  --idempotent        Run through the script harness, reading
+                      standard input as SMLI (idempotent) format;
                       implicit when the first file ends in '.smli'.
+                      Within the harness a '.smli' file is rewritten
+                      and any other file's transcript is written.
   --directory=DIR     Set the working directory.
   --scriptDirectory=DIR
                       Set the directory 'use' resolves against

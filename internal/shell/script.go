@@ -152,3 +152,70 @@ func writeOutput(out *strings.Builder, s string) {
 		}
 	}
 }
+
+// RunSmlScript runs a plain script and returns a transcript of the
+// session: every input line echoed verbatim, and after each statement
+// the output it produced, written without a prefix and followed by a
+// blank line.
+//
+// This is the ".sml" form, and it differs from the idempotent ".smli"
+// form in where the expected output lives. A ".smli" script carries its
+// own, on "> "-prefixed lines, and running it reproduces the file. A
+// ".sml" script carries none: the transcript is a separate file,
+// "<name>.sml.out", and running the script reproduces that instead.
+//
+// The form earns its keep for a script whose output is not something
+// you would want interleaved with it -- a script that `use`s another,
+// where the whole of the inner file's transcript lands in the middle of
+// the outer one.
+func RunSmlScript(exec Executor, name, src string) (string, error) {
+	var out strings.Builder
+	buf := ""
+	var actuals []string
+	flush := func() {
+		for _, a := range actuals {
+			writeTranscript(&out, a)
+		}
+		actuals = actuals[:0]
+	}
+	for _, line := range strings.SplitAfter(src, "\n") {
+		if line == "" {
+			continue
+		}
+		flush()
+		out.WriteString(line)
+		buf += line
+		stmts, rest, err := Split(name, buf)
+		if err != nil {
+			actuals = append(actuals, err.Error())
+			flush()
+			buf = ""
+			continue
+		}
+		for _, stmt := range stmts {
+			actuals = append(actuals, exec.Execute(stmt))
+		}
+		buf = rest
+	}
+	flush()
+	if !Blank(name, buf) {
+		return out.String(),
+			fmt.Errorf("%s: unexpected end of input", name)
+	}
+	return out.String(), nil
+}
+
+// writeTranscript writes one statement's output into a ".sml"
+// transcript: the text as it stands, then a blank line separating it
+// from the input that follows. A statement that produced nothing
+// contributes nothing, not even the blank line.
+func writeTranscript(out *strings.Builder, s string) {
+	if s == "" {
+		return
+	}
+	out.WriteString(s)
+	if !strings.HasSuffix(s, "\n") {
+		out.WriteString("\n")
+	}
+	out.WriteString("\n")
+}

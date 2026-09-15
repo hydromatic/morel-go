@@ -28,8 +28,14 @@ import (
 	"github.com/hydromatic/morel-go/internal/shell"
 )
 
-// TestScripts runs every script under testdata/script and checks
-// that it reproduces itself exactly.
+// TestScripts runs every script under testdata/script and checks it
+// against its expected output.
+//
+// Which file holds that output, and what form it takes, follows from
+// the extension, as it does in morel-java: a ".smli" script carries
+// its own on "> "-prefixed lines and must reproduce itself, while a
+// ".sml" script's is the separate transcript in "<name>.sml.out".
+// One walker covers both.
 func TestScripts(t *testing.T) {
 	root := "testdata/script"
 	var files []string
@@ -38,7 +44,11 @@ func TestScripts(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			if !d.IsDir() && strings.HasSuffix(path, ".smli") {
+			if d.IsDir() {
+				return nil
+			}
+			if strings.HasSuffix(path, ".smli") ||
+				strings.HasSuffix(path, ".sml") {
 				files = append(files, path)
 			}
 			return nil
@@ -48,34 +58,71 @@ func TestScripts(t *testing.T) {
 	}
 	for _, f := range files {
 		rel, _ := filepath.Rel(root, f)
-		t.Run(rel, func(t *testing.T) {
-			data, err := os.ReadFile(f)
-			if err != nil {
-				t.Fatal(err)
-			}
-			kernel := shell.NewKernel(rel)
-			// Scripts resolve data files (Datalog .input) against
-			// the "directory" property; testdata is the analog of
-			// java's src/test/resources. "use" resolves against the
-			// script's own directory, as java's harness sets
-			// scriptDirectory.
-			kernel.Config().Directory = "testdata"
-			if rel == "file.smli" {
-				// "file.smli" browses the file system, so it starts
-				// in the data directory, where what it finds is
-				// predictable; java's harness does the same.
-				kernel.Config().Directory = "testdata/data"
-			}
-			kernel.Config().ScriptDirectory = filepath.Dir(f)
-			got, err := shell.RunScript(kernel, rel, string(data))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got != string(data) {
-				t.Errorf("not idempotent:%s",
-					firstDiff(string(data), got))
-			}
-		})
+		t.Run(rel, func(t *testing.T) { checkScript(t, f, rel) })
+	}
+}
+
+// checkScript runs the script at path `f` and compares what it
+// produced with what is expected of it, in whichever form its
+// extension calls for.
+func checkScript(t *testing.T, f, rel string) {
+	t.Helper()
+	src, err := os.ReadFile(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kernel := shell.NewKernel(rel)
+	// Scripts resolve data files (Datalog .input) against the
+	// "directory" property; testdata is the analog of java's
+	// src/test/resources. "use" resolves against the script's own
+	// directory, as java's harness sets scriptDirectory.
+	kernel.Config().Directory = "testdata"
+	if rel == "file.smli" {
+		// "file.smli" browses the file system, so it starts in the
+		// data directory, where what it finds is predictable;
+		// java's harness does the same.
+		kernel.Config().Directory = "testdata/data"
+	}
+	kernel.Config().ScriptDirectory = filepath.Dir(f)
+	if strings.HasSuffix(f, ".smli") {
+		checkIdempotent(t, kernel, rel, string(src))
+	} else {
+		checkTranscript(t, kernel, f, rel, string(src))
+	}
+}
+
+// checkIdempotent checks that a ".smli" script reproduces itself:
+// its expected output is the file it is written in.
+func checkIdempotent(t *testing.T, kernel *shell.Kernel,
+	rel, src string,
+) {
+	t.Helper()
+	got, err := shell.RunScript(kernel, rel, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != src {
+		t.Errorf("not idempotent:%s", firstDiff(src, got))
+	}
+}
+
+// checkTranscript checks that a ".sml" script reproduces the
+// transcript in its companion ".sml.out" file.
+func checkTranscript(t *testing.T, kernel *shell.Kernel,
+	f, rel, src string,
+) {
+	t.Helper()
+	want, err := os.ReadFile(f + ".out")
+	if err != nil {
+		t.Fatalf("no transcript: %v", err)
+	}
+	got, err := shell.RunSmlScript(kernel, rel, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != string(want) {
+		t.Errorf("transcript differs:%s",
+			firstDiff(string(want), got))
 	}
 }
 

@@ -21,6 +21,10 @@
 *.test
 *.out
 
+# ... but a ".sml" script's expected transcript is part of the test
+# corpus, not build output, and "*.out" above would swallow it.
+!/testdata/script/*.sml.out
+
 # Emacs
 *~
 

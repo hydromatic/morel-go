@@ -100,19 +100,61 @@ func (a *Args) runFile(kernel *Kernel, file string,
 	return a.runReader(kernel, name, reader, out)
 }
 
-// runReader runs the statements read from reader. In SMLI
-// (idempotent) mode — a ".smli" file, or "--idempotent" — the
-// whole source goes through RunScript, the same code path the
-// test harness uses, and its idempotent-format output (the
-// script with each "> " line refreshed) is written to out. A
-// non-idempotent source runs as a batch, streaming each
-// statement's result as it completes.
+// Form is how a source is read and its output written.
+type Form int
+
+const (
+	// FormBatch streams each statement's result as it completes.
+	// This is how an ordinary program runs.
+	FormBatch Form = iota
+	// FormIdempotent reads a ".smli" script, which carries its own
+	// expected output on "> "-prefixed lines, and writes the script
+	// back with that output refreshed.
+	FormIdempotent
+	// FormTranscript reads a ".sml" script and writes the transcript
+	// that its companion ".sml.out" file holds: every input line
+	// echoed, and after each statement the output it produced.
+	FormTranscript
+)
+
+// FormOf returns how to read the source named `name`.
+//
+// Two things decide, as they do in morel-java. First, whether the
+// script harness is engaged at all: "--idempotent", or a first file
+// ending ".smli", asks for it, and without it every source is an
+// ordinary program, streamed. `morel prog.sml` therefore runs a
+// program, which is what ".sml" ordinarily means.
+//
+// Then, within the harness, the extension picks the form: a ".smli"
+// script carries its own expected output, and anything else has its
+// transcript in a companion ".sml.out" file. Standard input has no
+// name to go by and is read as ".smli" would be, which is what
+// "--idempotent" means for it.
+func (a *Args) FormOf(name string) Form {
+	switch {
+	case !a.script:
+		return FormBatch
+	case name == "-" || name == "stdIn":
+		return FormIdempotent
+	case strings.HasSuffix(name, ".smli"):
+		return FormIdempotent
+	default:
+		return FormTranscript
+	}
+}
+
+// runReader runs the statements read from reader, in whichever form
+// the source's name calls for. A script form reads the whole source
+// and writes the file the test harness would compare against; a batch
+// streams each statement's result as it completes.
 func (a *Args) runReader(kernel *Kernel, name string,
 	reader io.Reader, out io.Writer,
 ) error {
-	if !a.Idempotent {
+	form := a.FormOf(name)
+	if form == FormBatch {
 		// Interactive and batch modes surface not-implemented
-		// errors; only idempotent (script) mode keeps them silent.
+		// errors; only the script forms keep them silent, so that
+		// an unpulled corpus statement replays quietly.
 		kernel.Config().ShowUnsupported = true
 		return NewRunner(kernel, reader, out, name).Run()
 	}
@@ -120,7 +162,12 @@ func (a *Args) runReader(kernel *Kernel, name string,
 	if err != nil {
 		return fmt.Errorf("read %s: %w", name, err)
 	}
-	result, err := RunScript(kernel, name, string(src))
+	var result string
+	if form == FormTranscript {
+		result, err = RunSmlScript(kernel, name, string(src))
+	} else {
+		result, err = RunScript(kernel, name, string(src))
+	}
 	if err != nil {
 		return err
 	}
