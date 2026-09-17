@@ -278,7 +278,7 @@ type Field struct {
 // written is not a question for the grammar: the modifiers apply
 // to the single unlabeled field, if that is what there is, and
 // are an error otherwise. NewRecordModify settles it, moving that
-// field to Base, which does not appear in the parse-tree dump.
+// field to Base.
 type Record struct {
 	exprBase
 

@@ -131,9 +131,9 @@ which must pass before committing:
   commit should show it decreasing.
 
 New tests originate in morel-java: add them there first, then
-propagate back — do not grow a go-only test fork. Two go-local
-scripts are exceptions. The corpus regeneration tooling
-(`pull-passing --apply`, `era_trim`, whole-file regens) leaves them
+propagate back — do not grow a go-only test fork. One go-local
+script is an exception. The corpus regeneration tooling
+(`pull-passing --apply`, `era_trim`, whole-file regens) leaves it
 alone, but only because of how it picks its files: it works on the
 *shared* ones, `go_files & java_files`, so a go-local script is safe
 exactly as long as morel-java has no file of that name.
@@ -145,14 +145,12 @@ starts from morel-java's copy and only ever deletes from it, so the
 go-only content is not merged — it is dropped, quietly, in a run
 that looks like an ordinary pull. Give a go-local script a name
 morel-java will not want. That is what happened on 2026-09-15, when
-morel-java added a `parse.smli` of its own.
+morel-java added a `parse.smli` of its own; the scaffolding that
+collided with it has since been upstreamed, which is the better end
+for a go-local script than a rename.
 
-The two:
+The one:
 
-- `parse-tree.smli`, temporary parser scaffolding (see `plan.md`
-  task 11) -- named for the `Sys.parseTree` it exercises, so as not
-  to shadow morel-java's own `parse.smli`, which is about unparsing
-  Core; and
 - `backswing.smli`, regression tests for bugs fixed in morel-go
   that morel-java's corpus does not yet pin. Each entry names the
   bug and the upstream `.smli` file its statements belong in; a

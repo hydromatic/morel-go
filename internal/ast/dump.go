@@ -230,6 +230,12 @@ func dumpNamedType(b *strings.Builder, n *NamedType) {
 
 func dumpRecord(b *strings.Builder, n *Record) {
 	b.WriteString("(record")
+	if n.Base != nil {
+		// The record a modification applies to. Without it the dump
+		// does not say what is being extended or replaced.
+		b.WriteString(" ")
+		dump(b, n.Base)
+	}
 	for _, f := range n.Fields {
 		b.WriteString(" (" + f.Label + " ")
 		dump(b, f.Exp)
@@ -241,8 +247,8 @@ func dumpRecord(b *strings.Builder, n *Record) {
 	b.WriteString(")")
 }
 
-// dumpModifier renders "(verbs arg ...)"; like the base it
-// applies to, the labels a modifier names are text, not nodes.
+// dumpModifier renders "(verbs arg ...)". The labels a modifier
+// names are text, not nodes.
 func dumpModifier(b *strings.Builder, m Modifier) {
 	b.WriteString(" (" + m.Verbs())
 	// lint: sort until '^	}' where '^	case '

@@ -16,15 +16,17 @@
  * language governing permissions and limitations under the
  * License.
  *
- * Temporary morel-go parser scaffolding (see plan.md task 11);
- * deleted once pulled corpus hunks cover the parser.
- *
- * Named for what it exercises, "Sys.parseTree", and not "parse.smli",
- * which is morel-java's: a 2026-09-15 script about how Core is
- * unparsed. The two have nothing in common but a name, and a go-only
- * file that shadows a morel-java one reads as converged when it is
- * not.
+ * Tests how Core nodes are unparsed. Each expression is parsed and
+ * resolved, and the Core is printed back through Sys.planEx with a
+ * phase that is not a number, which returns the Core as the resolver
+ * made it.
  *)
+Sys.set ("lineWidth", 78);
+> val it = () : unit
+Sys.set ("printLength", NONE);
+> val it = () : unit
+Sys.set ("stringDepth", NONE);
+> val it = () : unit
 
 (*) Literals
 Sys.parseTree "1";
@@ -330,12 +332,15 @@ Sys.parseTree "(from)";
 Sys.parseTree "not exists";
 > val it = "(apply (id not) (exists exists))" : string
 Sys.parseTree "{e replace deptno = 10}";
-> val it = "(record (replace (deptno (int_literal 10))))" : string
+> val it = "(record (id e) (replace (deptno (int_literal 10))))" : string
 Sys.parseTree "{e extend or skip a = 1, b = 2 remove or skip c}";
-> val it = "(record (extend or skip (a (int_literal 1)) (b (int_literal 2))) (remove or skip c))" : string
+> val it =
+>   "(record (id e) (extend or skip (a (int_literal 1)) (b (int_literal 2))) (remove or skip c))"
+>   : string
 Sys.parseTree "{e replace lenient all f rename b = a}";
-> val it = "(record (replace lenient all (id f)) (rename (b a)))" : string
+> val it = "(record (id e) (replace lenient all (id f)) (rename (b a)))"
+>   : string
 Sys.parseTree "x : typeof y";
 > val it = "(annotatedExp (id x) (expression_type typeof y))" : string
 
-(*) End parse-tree.smli
+(*) End parse.smli

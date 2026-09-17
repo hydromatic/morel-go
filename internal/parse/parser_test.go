@@ -104,40 +104,39 @@ func TestParseRecords(t *testing.T) {
 	checkExpr(t, "{}", "(record)")
 }
 
-// TestParseRecordModifiers covers the modifier grammar. The base
-// the modifiers apply to is not dumped, so each dump shows only
-// the modifiers.
+// TestParseRecordModifiers covers the modifier grammar. Each dump
+// shows the base the modifiers apply to, then the modifiers.
 func TestParseRecordModifiers(t *testing.T) {
 	checkExpr(t, "{r replace a = 1}",
-		"(record (replace (a (int_literal 1))))")
+		"(record (id r) (replace (a (int_literal 1))))")
 	// Modifiers chain, and each takes a list.
 	checkExpr(t, "{r extend a = 1, b = 2 remove c, d}",
-		"(record (extend (a (int_literal 1)) (b (int_literal 2)))"+
+		"(record (id r) (extend (a (int_literal 1)) (b (int_literal 2)))"+
 			" (remove c d))")
 	// "or" pairs the verb with the case it does not name.
 	checkExpr(t, "{r extend or replace a = 1}",
-		"(record (extend or replace (a (int_literal 1))))")
+		"(record (id r) (extend or replace (a (int_literal 1))))")
 	checkExpr(t, "{r extend or skip a = 1}",
-		"(record (extend or skip (a (int_literal 1))))")
+		"(record (id r) (extend or skip (a (int_literal 1))))")
 	checkExpr(t, "{r replace or skip a = 1}",
-		"(record (replace or skip (a (int_literal 1))))")
-	checkExpr(t, "{r remove or skip a}", "(record (remove or skip a))")
+		"(record (id r) (replace or skip (a (int_literal 1))))")
+	checkExpr(t, "{r remove or skip a}", "(record (id r) (remove or skip a))")
 	// "lenient" goes between the verb and "or skip".
 	checkExpr(t, "{r replace lenient or skip a = 1}",
-		"(record (replace lenient or skip (a (int_literal 1))))")
+		"(record (id r) (replace lenient or skip (a (int_literal 1))))")
 	checkExpr(t, "{r extend or replace lenient a = 1}",
-		"(record (extend or replace lenient (a (int_literal 1))))")
+		"(record (id r) (extend or replace lenient (a (int_literal 1))))")
 	// "all" takes an expression, not a list of assignments.
 	checkExpr(t, "{r replace all s}",
-		"(record (replace all (id s)))")
+		"(record (id r) (replace all (id s)))")
 	// "all" followed by "=" is a label, not the keyword.
 	checkExpr(t, "{r replace all = 1}",
-		"(record (replace (all (int_literal 1))))")
+		"(record (id r) (replace (all (int_literal 1))))")
 	// "rename" pairs the new label with the old one.
 	checkExpr(t, "{r rename b = a, 2 = 1}",
-		"(record (rename (b a) (2 1)))")
+		"(record (id r) (rename (b a) (2 1)))")
 	// A quoted label may be a reserved word.
-	checkExpr(t, "{r remove `val`}", "(record (remove val))")
+	checkExpr(t, "{r remove `val`}", "(record (id r) (remove val))")
 	// Whether the modifiers have a base to apply to is not a
 	// question for the grammar; the type resolver reports it.
 	checkExpr(t, "{a = 1 remove b}",
@@ -729,9 +728,8 @@ func TestParseHardening(t *testing.T) {
 	checkExpr(t, "(from)", "(from from)")
 	checkExpr(t, "not exists",
 		"(apply (id not) (exists exists))")
-	// The base a modifier applies to is not dumped.
 	checkExpr(t, "{e replace deptno = 10}",
-		"(record (replace (deptno (int_literal 10))))")
+		"(record (id e) (replace (deptno (int_literal 10))))")
 	checkExpr(t, "x : typeof y",
 		"(annotatedExp (id x) (expression_type typeof y))")
 	// A fn is a valid application argument.
