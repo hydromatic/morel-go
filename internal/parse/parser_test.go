@@ -59,12 +59,9 @@ func TestParseExprErrors(t *testing.T) {
 			"1 +",
 			"stdIn:1.4: expected expression, found EOF",
 		},
-		// "~" applies only to a literal or a parenthesized
-		// expression, not to a bare identifier.
-		{
-			"~a * ~b",
-			"stdIn:1.6: expected expression, found ~",
-		},
+		// An application's argument must be atomic, and "~x" is
+		// not: "f ~x" needs "f (~x)". ("f ~1" is fine -- a negative
+		// literal is one token.)
 		{
 			"f ~x",
 			"stdIn:1.3: expected EOF, found ~",
@@ -396,12 +393,21 @@ func TestParseRightAssociative(t *testing.T) {
 
 func TestParseNegate(t *testing.T) {
 	checkExpr(t, "~x", "(negate (id x))")
-	// The operand of "~" is a whole multiplicative chain.
+	// Negation binds tighter than any infix operator, so it takes
+	// the operand and not the chain. Multiplication cannot tell the
+	// two apart, so "div" is the case that pins it.
 	checkExpr(t, "~x * 2",
-		"(negate (times (id x) (int_literal 2)))")
+		"(times (negate (id x)) (int_literal 2))")
+	checkExpr(t, "~x div 2",
+		"(div (negate (id x)) (int_literal 2))")
+	checkExpr(t, "~a * ~b",
+		"(times (negate (id a)) (negate (id b)))")
+	checkExpr(t, "~~x", "(negate (negate (id x)))")
 	checkExpr(t, "~a + b", "(plus (negate (id a)) (id b))")
 	checkExpr(t, "1 + ~a", "(plus (int_literal 1) (negate (id a)))")
-	checkExpr(t, "~f x", "(negate (apply (id f) (id x)))")
+	// "~" is not prefix syntax: in Standard ML it is an ordinary
+	// function and "~e" applies it, so "~f x" is "(~ f) x".
+	checkExpr(t, "~f x", "(apply (negate (id f)) (id x))")
 	checkExpr(t, "~(1 + 2)",
 		"(negate (plus (int_literal 1) (int_literal 2)))")
 	checkExpr(t, "~ 1", "(negate (int_literal 1))")

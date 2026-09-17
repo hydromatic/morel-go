@@ -122,17 +122,33 @@ Sys.parseTree "1 :: 2 :: xs";
 Sys.parseTree "[1] @ [2] @ [3]";
 > val it = "(at (list (int_literal 1)) (at (list (int_literal 2)) (list (int_literal 3))))" : string
 
-(*) Negation scopes over a multiplicative chain
+(* Negation binds tighter than any infix operator, so it takes the
+ * operand and not the chain: "~x div 2" is "(~x) div 2". Multiplication
+ * cannot tell the two apart -- "~(x * 2)" and "(~x) * 2" are the same
+ * number -- so "div" is the case that pins it, and 5 div 2 is the value
+ * that differs.
+ *
+ * It is not prefix syntax, though: in Standard ML "~" is an ordinary
+ * function and "~e" applies it, so "~f x" is "(~ f) x" -- application
+ * is left-associative -- rather than a negation of the call. *)
 Sys.parseTree "~x";
 > val it = "(negate (id x))" : string
 Sys.parseTree "~x * 2";
-> val it = "(negate (times (id x) (int_literal 2)))" : string
+> val it = "(times (negate (id x)) (int_literal 2))" : string
+Sys.parseTree "~x div 2";
+> val it = "(div (negate (id x)) (int_literal 2))" : string
+let val x = 5 in ~x div 2 end;
+> val it = ~3 : int
+Sys.parseTree "~~x";
+> val it = "(negate (negate (id x)))" : string
+Sys.parseTree "~f x";
+> val it = "(apply (negate (id f)) (id x))" : string
 Sys.parseTree "~a + b";
 > val it = "(plus (negate (id a)) (id b))" : string
 Sys.parseTree "1 + ~a";
 > val it = "(plus (int_literal 1) (negate (id a)))" : string
 Sys.parseTree "~f x";
-> val it = "(negate (apply (id f) (id x)))" : string
+> val it = "(apply (negate (id f)) (id x))" : string
 
 (*) Conditionals
 Sys.parseTree "if a then b else c";

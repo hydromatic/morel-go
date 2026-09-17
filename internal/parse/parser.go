@@ -372,22 +372,28 @@ func (p *Parser) expr5() (ast.Expr, error) {
 }
 
 func (p *Parser) expr6() (ast.Expr, error) {
-	return p.leftChain(level6Ops, p.negate7)
+	return p.leftChain(level6Ops, p.expr7)
 }
 
-// negate7 parses an optional prefix "~" whose operand is a whole
-// multiplicative chain: "~x * 2" is the negation of "x * 2", but
-// "~a + b" negates only "a".
-func (p *Parser) negate7() (ast.Expr, error) {
+// negate9 parses an optional prefix "~" over an atom.
+//
+// In Standard ML "~" is not prefix syntax; it is an ordinary
+// function, and "~e" is an application of it. So it sits at the head
+// of an application chain and takes only the atom that follows, the
+// same way "type_string" does above: "~f 2" is "(~ f) 2", which does
+// not typecheck, and "~x div 2" is "(~x) div 2", because application
+// binds tighter than any infix operator. It recurses into itself, so
+// "~~x" is a negated negation.
+func (p *Parser) negate9() (ast.Expr, error) {
 	if p.tok.Kind != token.Tilde {
-		return p.expr7()
+		return p.atomSuffixed()
 	}
 	start := p.tok.Span.Start
 	err := p.next()
 	if err != nil {
 		return nil, err
 	}
-	e, err := p.expr7()
+	e, err := p.negate9()
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +477,7 @@ func (p *Parser) applyChain() (ast.Expr, error) {
 		e = ast.NewTypeStringExp(span, operand)
 	} else {
 		var err error
-		e, err = p.atomSuffixed()
+		e, err = p.negate9()
 		if err != nil {
 			return nil, err
 		}
