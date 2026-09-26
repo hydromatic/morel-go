@@ -92,9 +92,9 @@ ACCEPTED = {
         "the `foodmart` dataset, as in blog.smli.",
     ),
     "hybrid.smli": (
-        171,
+        187,
         "the Calcite plans that `Sys.plan` prints. morel-go has no "
-        "Calcite, so it omits all 21 of this file's plan "
+        "Calcite, so it omits every one of this file's plan "
         "assertions.",
     ),
 }

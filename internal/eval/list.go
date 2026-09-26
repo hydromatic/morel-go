@@ -223,27 +223,45 @@ func valsEqual(a, b Val) bool {
 }
 
 // compareFn adapts an ordering test to the comparison operators
-// "<", "<=", ">", and ">=", which are overloaded over int, real,
-// char, and string.
+// "<", "<=", ">", and ">=". They apply to any type that has an
+// order, which is every type but a function.
 func compareFn(test func(c int) bool) Fn {
 	return func(arg Val) (Val, error) {
 		a, b := asPair(arg)
-		// An ordering comparison with a NaN real is false, as IEEE
-		// requires; cmpOrdered would otherwise report NaN as equal.
-		if isNaNReal(a) || isNaNReal(b) {
+		// A comparison that reaches a NaN is unordered, as IEEE 754
+		// requires, and then the operator is false whichever way it
+		// points -- even inside a tuple, record, list or option.
+		c, ordered := partialCompareVals(a, b)
+		if !ordered {
 			return false, nil
 		}
-		return test(compareVals(a, b)), nil
+		return test(c), nil
 	}
 }
 
-// isNaNReal reports whether v is a NaN real.
-func isNaNReal(v Val) bool {
-	f, ok := v.(float32)
-	return ok && math.IsNaN(float64(f))
+// compareVals is the total order: every value has a place in it, so
+// it can sort. "order", "min" and "max" use it, as does the range
+// machinery. Reals are ordered with ~0.0 before 0.0 and NaN after
+// every other value.
+func compareVals(a, b Val) int {
+	c, _ := compareVals1(a, b, false)
+	return c
 }
 
-func compareVals(a, b Val) int {
+// partialCompareVals is the order the comparison operators use: the
+// total order, except that reals follow IEEE 754, where ~0.0 equals
+// 0.0 and any comparison involving NaN is unordered. The second
+// result is false when a NaN decided the outcome; a NaN that an
+// earlier part has already settled does not count, so
+// "(1.0, 0.0 / 0.0) < (2.0, 3.0)" is ordered, and true.
+func partialCompareVals(a, b Val) (int, bool) {
+	return compareVals1(a, b, true)
+}
+
+// compareVals1 compares two values, following IEEE 754 for reals if
+// `partial`. The second result is false if the comparison is
+// unordered, which only IEEE 754 real comparison can make it.
+func compareVals1(a, b Val, partial bool) (int, bool) {
 	// lint: sort until '^	}' where '^	case '
 	switch a := a.(type) {
 	case Con:
@@ -251,68 +269,129 @@ func compareVals(a, b Val) int {
 		if !ok {
 			panic(fmt.Sprintf("expected datatype, got %T", b))
 		}
-		// A "descending" value (DESC x) reverses the order of what
-		// it wraps, so "order (DESC e)" sorts by e descending.
-		if a.Datatype == descendingDatatype {
-			return -compareVals(a.Arg, bc.Arg)
-		}
-		// Other datatypes compare by constructor, then by argument;
-		// a constant constructor has no argument.
-		if a.Ordinal != bc.Ordinal {
-			if a.Ordinal < bc.Ordinal {
-				return -1
-			}
-			return 1
-		}
-		if a.Arg == nil {
-			return 0
-		}
-		return compareVals(a.Arg, bc.Arg)
+		return compareCons(a, bc, partial)
 	case []Val:
-		// Tuples and records (in canonical field order) compare
-		// lexicographically.
 		bs, _ := b.([]Val)
-		for i := range a {
-			if i >= len(bs) {
-				return 1
-			}
-			if c := compareVals(a[i], bs[i]); c != 0 {
-				return c
-			}
-		}
-		if len(bs) > len(a) {
-			return -1
-		}
-		return 0
+		return compareSlices(a, bs, partial)
 	case bool:
 		bb, _ := b.(bool)
-		return cmpBool(a, bb)
+		return cmpBool(a, bb), true
 	case core.Unit:
 		// All units are equal.
-		return 0
+		return 0, true
 	case float32:
 		f, ok := b.(float32)
 		if !ok {
 			panic(fmt.Sprintf("expected real, got %T", b))
 		}
-		return cmpOrdered(a, f)
+		if partial {
+			return cmpRealPartial(a, f)
+		}
+		return cmpReal(a, f), true
 	case int32:
-		return cmpOrdered(a, asInt(b))
+		return cmpOrdered(a, asInt(b)), true
 	case nil:
 		// A cleared slot outside the current row; any consistent
 		// order will do.
 		if b == nil {
-			return 0
+			return 0, true
 		}
-		return -1
+		return -1, true
 	case string:
-		return cmpOrdered(a, asString(b))
+		return cmpOrdered(a, asString(b)), true
 	case uint64:
-		return cmpOrdered(a, asWord(b))
+		return cmpOrdered(a, asWord(b)), true
 	default:
 		panic(fmt.Sprintf("cannot compare %T", a))
 	}
 }
+
+// compareCons compares two values of a datatype. A "descending"
+// value (DESC x) reverses the order of what it wraps, so
+// "order (DESC e)" sorts by e descending. Any other datatype
+// compares by constructor, then by argument; a constant constructor
+// has no argument.
+func compareCons(a, b Con, partial bool) (int, bool) {
+	if a.Datatype == descendingDatatype {
+		c, ordered := compareVals1(a.Arg, b.Arg, partial)
+		return -c, ordered
+	}
+	if a.Ordinal != b.Ordinal {
+		if a.Ordinal < b.Ordinal {
+			return -1, true
+		}
+		return 1, true
+	}
+	if a.Arg == nil {
+		return 0, true
+	}
+	return compareVals1(a.Arg, b.Arg, partial)
+}
+
+// compareSlices compares two tuples, or two records whose fields
+// are in canonical order, lexicographically. A sequence that is a
+// prefix of the other comes first.
+func compareSlices(a, b []Val, partial bool) (int, bool) {
+	for i := range a {
+		if i >= len(b) {
+			return 1, true
+		}
+		c, ordered := compareVals1(a[i], b[i], partial)
+		if !ordered {
+			return 0, false
+		}
+		if c != 0 {
+			return c, true
+		}
+	}
+	if len(b) > len(a) {
+		return -1, true
+	}
+	return 0, true
+}
+
+// cmpReal is the total order on reals: NaN comes after every other
+// value and equals itself, and ~0.0 comes before 0.0. IEEE 754
+// leaves the first pair unordered and calls the second equal, which
+// would leave "order" to the accident of input order.
+func cmpReal(a, b float32) int {
+	aNaN, bNaN := isNaN(a), isNaN(b)
+	switch {
+	case aNaN && bNaN:
+		return 0
+	case aNaN:
+		return 1
+	case bNaN:
+		return -1
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	}
+	// Equal under IEEE 754, so only the sign of a zero is left to
+	// separate them.
+	aNeg, bNeg := math.Signbit(float64(a)), math.Signbit(float64(b))
+	switch {
+	case aNeg == bNeg:
+		return 0
+	case aNeg:
+		return -1
+	default:
+		return 1
+	}
+}
+
+// cmpRealPartial compares two reals as IEEE 754 does: ~0.0 equals
+// 0.0, and a comparison involving NaN is unordered.
+func cmpRealPartial(a, b float32) (int, bool) {
+	if isNaN(a) || isNaN(b) {
+		return 0, false
+	}
+	return cmpOrdered(a, b), true
+}
+
+// isNaN reports whether a real is NaN.
+func isNaN(f float32) bool { return math.IsNaN(float64(f)) }
 
 func cmpOrdered[T int32 | float32 | string | uint64](a, b T) int {
 	switch {

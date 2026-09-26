@@ -253,6 +253,10 @@ from e in scott.emps where e.comm = NONE andalso e.deptno = 30 yield e.ename;
 > val it = ["BLAKE","JAMES"] : string bag
 from e in scott.emps where e.mgr = SOME 7698 yield e.ename;
 > val it = ["ALLEN","WARD","MARTIN","TURNER","JAMES"] : string bag
+(* 'NONE' is less than any 'SOME', so KING (who has no manager) is included. *)
+from e in scott.emps where e.mgr < SOME 7700 yield e.ename;
+> val it = ["ALLEN","WARD","MARTIN","SCOTT","KING","TURNER","JAMES","FORD"]
+>   : string bag
 from e in scott.emps
   where Option.isSome e.comm
   yield (e.ename, valOf e.comm);

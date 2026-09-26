@@ -423,6 +423,30 @@ func sumEmptyZero(fn *types.Fn, span token.Span) (eval.Val, error) {
 	}
 }
 
+// comparisonOperandType returns what one of the comparison
+// operators "<", "<=", ">" and ">=" is being applied to, and false
+// for any other expression. The operators apply to any type, and
+// compare a value part by part at run time, so every part must have
+// an order.
+func comparisonOperandType(exp core.Exp) (types.Type, bool) {
+	switch builtinRefName(exp) {
+	case "op <", "op <=", "op >", "op >=":
+	default:
+		return nil, false
+	}
+	fn, ok := exp.Type().(*types.Fn)
+	if !ok {
+		return nil, false
+	}
+	// The parameter is a pair of values of the same type; either
+	// half answers the question.
+	pair, ok := fn.Param.(*types.Tuple)
+	if !ok || len(pair.Args) != 2 {
+		return nil, false
+	}
+	return pair.Args[0], true
+}
+
 // builtinRefName is the qualified name of a built-in referenced
 // directly (an ID) or as a structure member (Structure.member),
 // or "" for anything else.
@@ -1096,6 +1120,12 @@ func (c *compiler) compileApply(e *core.Apply, tail bool) (eval.Code,
 			return nil, err
 		}
 		fn = eval.Constant(eval.SumFn(zero))
+	}
+	if t, ok := comparisonOperandType(e.Fn); ok {
+		err = c.checkComparable(t, e.Span)
+		if err != nil {
+			return nil, err
+		}
 	}
 	arg, err := c.compileExp(e.Arg)
 	if err != nil {
