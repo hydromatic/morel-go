@@ -442,18 +442,18 @@ func realFmt(spec Val, r float32) string {
 		return infText
 	}
 	neg := math.Signbit(f)
-	abs := float32(math.Abs(f))
+	digits, exp := canonicalDigits(float32(math.Abs(f)))
 	var body string
 	// lint: sort until '^\t}' where '^\tcase '
 	switch kind {
 	case exactKind:
-		body = formatExact(abs)
+		body = formatExact(digits, exp)
 	case fixKind:
-		body = formatFix(abs, n)
+		body = formatFix(digits, exp, n, false)
 	case genKind:
-		body = formatGen(abs, n)
+		body = formatGen(digits, exp, n, false)
 	case sciKind:
-		body = formatSci(abs, n)
+		body = formatSci(digits, exp, n, false)
 	}
 	if neg {
 		return "~" + body
@@ -461,17 +461,17 @@ func realFmt(spec Val, r float32) string {
 	return body
 }
 
-// formatSci renders abs in scientific notation "D.dddE<exp>" with n
-// digits after the decimal point.
-func formatSci(abs float32, n int) string {
-	if abs == 0 {
+// formatSci renders a value in scientific notation "D.dddE<exp>"
+// with n digits after the decimal point. The value is
+// digits[0].digits[1..] * 10^exp; digits is "0" for zero.
+func formatSci(digits string, exp, n int, halfEven bool) string {
+	if digits == zeroDigits {
 		if n == 0 {
 			return "0E0"
 		}
 		return "0." + strings.Repeat("0", n) + "E0"
 	}
-	digits, exp := canonicalDigits(abs)
-	rounded, expAdj := roundHalfDown(digits, n+1)
+	rounded, expAdj := roundSig(digits, n+1, halfEven)
 	exp += expAdj
 	if n == 0 {
 		return rounded[:1] + "E" + smlExp(exp)
@@ -481,14 +481,13 @@ func formatSci(abs float32, n int) string {
 
 // formatFix renders abs in fixed-point notation with n digits after
 // the decimal point.
-func formatFix(abs float32, n int) string {
-	if abs == 0 {
+func formatFix(digits string, exp, n int, halfEven bool) string {
+	if digits == zeroDigits {
 		if n == 0 {
 			return "0"
 		}
 		return "0." + strings.Repeat("0", n)
 	}
-	digits, exp := canonicalDigits(abs)
 	// Keep digits down to the 10^-n place: the first exp+n+1 of
 	// them. A non-positive count means the number is below that
 	// place, so it rounds to zero unless a digit exactly at
@@ -508,7 +507,7 @@ func formatFix(abs float32, n int) string {
 		}
 		return "0." + strings.Repeat("0", n)
 	}
-	rounded, expAdj := roundHalfDown(digits, totalSig)
+	rounded, expAdj := roundSig(digits, totalSig, halfEven)
 	exp += expAdj
 	return placeDecimal(rounded, exp, n, false)
 }
@@ -516,12 +515,11 @@ func formatFix(abs float32, n int) string {
 // formatGen renders abs with at most n significant digits, using
 // fixed notation when the exponent is in [-3, n) and scientific
 // otherwise, with trailing zeros stripped.
-func formatGen(abs float32, n int) string {
-	if abs == 0 {
+func formatGen(digits string, exp, n int, halfEven bool) string {
+	if digits == zeroDigits {
 		return "0"
 	}
-	digits, exp := canonicalDigits(abs)
-	rounded, expAdj := roundHalfDown(digits, n)
+	rounded, expAdj := roundSig(digits, n, halfEven)
 	exp += expAdj
 	stripped := strings.TrimRight(rounded, "0")
 	if stripped == "" {
@@ -538,11 +536,10 @@ func formatGen(abs float32, n int) string {
 
 // formatExact renders abs as "0.<digits>E<exp>", the exact decimal
 // value with trailing zeros stripped.
-func formatExact(abs float32) string {
-	if abs == 0 {
+func formatExact(digits string, exp int) string {
+	if digits == zeroDigits {
 		return "0.0"
 	}
-	digits, exp := canonicalDigits(abs)
 	stripped := strings.TrimRight(digits, "0")
 	if stripped == "" {
 		stripped = "0"
@@ -586,21 +583,33 @@ func canonicalDigits(abs float32) (string, int) {
 	return digits, expBase + len(intPart) - 1
 }
 
-// roundHalfDown rounds a digit string to target significant digits,
-// ties toward zero. It returns the rounded digits and an exponent
-// adjustment of 1 when the rounding carried past the leading digit
-// ("999" -> "1000").
-func roundHalfDown(digits string, target int) (string, int) {
+// zeroDigits is the digit string of zero. No other value has it,
+// because a digit string carries no leading zero.
+const zeroDigits = "0"
+
+// roundSig rounds a digit string to target significant digits. A tie
+// -- the dropped digits being exactly half -- goes toward zero if
+// halfEven is false, which is what "Real.fmt" does, and to the
+// nearest even digit if it is true, which is what decimal128
+// arithmetic and "Decimal.fmt" do. It returns the rounded digits and
+// an exponent adjustment of 1 when the rounding carried past the
+// leading digit ("999" -> "1000").
+func roundSig(digits string, target int, halfEven bool) (string, int) {
 	if target <= 0 {
-		return "0", 0
+		return zeroDigits, 0
 	}
 	if len(digits) <= target {
 		return digits + strings.Repeat("0", target-len(digits)), 0
 	}
 	kept := digits[:target]
 	dropped := digits[target:]
+	tie := dropped[0] == '5' && strings.Trim(dropped[1:], "0") == ""
 	roundUp := dropped[0] > '5' ||
-		(dropped[0] == '5' && strings.Trim(dropped[1:], "0") != "")
+		(dropped[0] == '5' && !tie)
+	if tie && halfEven {
+		// Round to even: up only if the last kept digit is odd.
+		roundUp = (kept[target-1]-'0')&1 == 1
+	}
 	if !roundUp {
 		return kept, 0
 	}
