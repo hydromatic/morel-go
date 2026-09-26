@@ -73,6 +73,32 @@ JAVA_PREFIX = "src/test/resources/script/"
 # the commit being measured against gives the same answer, because the
 # commits, not the path, are what the comparison is pinned to.
 
+# Divergences that are settled, and why. A file listed here may differ
+# by up to the given number of lines without failing the gate; beyond
+# that it fails again, so the cap has to be raised deliberately. Use
+# this only where morel-go cannot follow morel-java rather than has
+# not: a dataset morel-go does not have, output morel-go deliberately
+# omits, or a difference that is not a difference in meaning.
+ACCEPTED = {
+    "blog.smli": (
+        288,
+        "the `foodmart` dataset, which morel-go does not have. Its "
+        "schema is dumped in full, so every morel-java change to a "
+        "foodmart column type grows a block morel-go has no way to "
+        "follow.",
+    ),
+    "foreign.smli": (
+        186,
+        "the `foodmart` dataset, as in blog.smli.",
+    ),
+    "hybrid.smli": (
+        171,
+        "the Calcite plans that `Sys.plan` prints. morel-go has no "
+        "Calcite, so it omits all 21 of this file's plan "
+        "assertions.",
+    ),
+}
+
 
 def git(repo, *args):
     """Runs git in `repo`, returning stdout (None on failure)."""
@@ -263,6 +289,7 @@ def gate(go_repo, args):
 
     regressions = []
     improvements = []
+    accepted = []
     net_before = net_after = 0
     rows = []
     for rel in sorted(rels):
@@ -285,7 +312,10 @@ def gate(go_repo, args):
                 # divergence from java.
                 rows.append((rel, before, after))
                 continue
-            regressions.append((rel, before, after))
+            if rel in ACCEPTED and after <= ACCEPTED[rel][0]:
+                accepted.append((rel, after))
+            else:
+                regressions.append((rel, before, after))
         elif after < before:
             improvements.append((rel, before, after))
         rows.append((rel, before, after))
@@ -307,6 +337,13 @@ def gate(go_repo, args):
     print(f"net divergence: {net_before} -> {net_after} "
           f"({net_after - net_before:+d} lines)")
     print()
+
+    for rel, after in accepted:
+        limit, why = ACCEPTED[rel]
+        print(f"accepted divergence: {rel} ({after} of {limit} lines)")
+        print(f"  {why}")
+    if accepted:
+        print()
 
     if regressions:
         print(f"FAIL: {len(regressions)} file(s) diverged further "
