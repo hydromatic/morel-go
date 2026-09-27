@@ -127,8 +127,16 @@ Relational.iterate
 
 Relational.sum (bag [1, 2, 3]);
 > val it = 6 : int
+Sys.plan ();
+> val it =
+>   "apply(fnValue Relational.sum$int, argCode apply(fnValue Bag.fromList, argCode tuple(constant(1), constant(2), constant(3))))"
+>   : string
 Relational.sum (bag [1.0, 2.5, 3.5]);
 > val it = 7 : real
+Sys.plan ();
+> val it =
+>   "apply(fnValue Relational.sum$real, argCode apply(fnValue Bag.fromList, argCode tuple(constant(1.0), constant(2.5), constant(3.5))))"
+>   : string
 
 Relational.max (bag [1, 2, 3]);
 > val it = 3 : int

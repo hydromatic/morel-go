@@ -496,6 +496,15 @@ func curriedArity(t types.Type) int {
 // List.map, ignore -> General.ignore). Polymorphic operators (=,
 // <, div, elem) and already-qualified names are shown as-is.
 func planFnName(name string, t types.Type) string {
+	if name == "Relational."+sumName {
+		// morel-java's plan names the instance it chose, so that a
+		// plan says which of "sum"'s types was meant. It specializes
+		// only where the element type is settled, and never for word.
+		if suffix := sumInstance(t); suffix != "" {
+			return name + "$" + suffix
+		}
+		return name
+	}
 	if strings.Contains(name, ".") {
 		return name
 	}
@@ -551,6 +560,26 @@ func arithStruct(t types.Type) string {
 		return "Word"
 	default:
 		return "Int"
+	}
+}
+
+// sumInstance is the element type that "sum" was specialized to, as
+// morel-java's plan spells it, or "" if nothing settled it -- a
+// "compute sum over" whose type is still a variable, say. Word is
+// absent because morel-java does not specialize it.
+func sumInstance(t types.Type) string {
+	fn, ok := t.(*types.Fn)
+	if !ok {
+		return ""
+	}
+	// lint: sort until '^\t}' where '^\tcase '
+	switch s := fn.Result.String(); s {
+	case "decimal", intName, realName:
+		// "decimal" is named as a literal because the type exists
+		// only once the Decimal structure does.
+		return s
+	default:
+		return ""
 	}
 }
 
