@@ -980,6 +980,14 @@ func (k *Kernel) runStatement(n ast.Node) string {
 	if nv, ok := coreDecl.(*core.NonRecValDecl); ok {
 		instName = nv.Overload
 	}
+	// "decimal" applied to a string literal is converted at compile
+	// time, so an invalid literal is an error. Check before
+	// inlining, which would put literals where the program wrote
+	// variables.
+	derr := compile.CheckDecimalLiterals(coreDecl)
+	if derr != nil {
+		return k.formatCompileError(derr)
+	}
 	coreDecl = compile.Inline(
 		coreDecl, k.inlineEnv(), k.inlinePassCount(),
 	)

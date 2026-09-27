@@ -29,15 +29,16 @@ import (
 
 // The primitive type names, as types.Primitive.String returns them.
 const (
-	bagType    = "bag"
-	boolType   = "bool"
-	charType   = "char"
-	dateType   = "date"
-	intType    = "int"
-	realType   = "real"
-	stringType = "string"
-	timeType   = "time"
-	wordType   = "word"
+	bagType     = "bag"
+	boolType    = "bool"
+	charType    = "char"
+	dateType    = "date"
+	decimalType = "decimal"
+	intType     = "int"
+	realType    = "real"
+	stringType  = "string"
+	timeType    = "time"
+	wordType    = "word"
 )
 
 // prettyBinding renders "val name = value : type", choosing line
@@ -125,6 +126,9 @@ func (c *Config) valueDoc(t types.Type, v eval.Val,
 		if t.Name == "bag" && len(t.Args) == 1 {
 			return c.seqDoc("[", "]",
 				c.elementDocs(t.Args[0], v, depth))
+		}
+		if t.Name == decimalType {
+			return pp.Text(eval.FormatDecimal(v))
 		}
 		if t.Name == timeType {
 			return pp.Text(eval.FormatTime(v))

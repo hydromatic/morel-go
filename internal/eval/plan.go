@@ -41,6 +41,8 @@ func PlanString(v Val) string {
 			return "[" + v.Name + ", " + PlanString(v.Arg) + "]"
 		}
 		return "[" + v.Name + "]"
+	case Decimal:
+		return v.String()
 	case []Val:
 		parts := make([]string, len(v))
 		for i, e := range v {

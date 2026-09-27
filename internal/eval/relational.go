@@ -123,7 +123,14 @@ func sum(arg, zero Val) (Val, error) {
 	if len(list) == 0 {
 		return zero, nil
 	}
+	// lint: sort until '^\t}' where '^\tcase '
 	switch list[0].(type) {
+	case Decimal:
+		// Sum exactly, then round once, as morel-java does: aligning
+		// every term to the smallest exponent and adding as integers
+		// leaves no intermediate rounding, so 0.1 + 0.2 + 12.30 is
+		// 12.6 rather than a value a digit off.
+		return decSum(list)
 	case float32:
 		// Accumulate in float32, rounding at each step, as
 		// morel-java's Z_SUM_REAL does. Summing in float64 and

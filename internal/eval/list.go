@@ -270,6 +270,10 @@ func compareVals1(a, b Val, partial bool) (int, bool) {
 			panic(fmt.Sprintf("expected datatype, got %T", b))
 		}
 		return compareCons(a, bc, partial)
+	case Decimal:
+		// Canonical form makes the comparison exact, and a decimal
+		// has no NaN, so it is never unordered.
+		return decCmp(a, asDecimal(b)), true
 	case []Val:
 		bs, _ := b.([]Val)
 		return compareSlices(a, bs, partial)

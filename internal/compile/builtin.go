@@ -34,39 +34,41 @@ type topBuiltin struct {
 
 // Types shared by several built-ins.
 const (
-	numPair    = "'a * 'a -> 'a"
-	opTimes    = "op *"
-	opPlus     = "op +"
-	opMinus    = "op -"
-	opDiv      = "op div"
-	opMod      = "op mod"
-	opNegate   = "op ~"
-	absName    = "abs"
-	lengthName = "length"
-	opAt       = "op @"
-	opCaret    = "op ^"
-	opCons     = "op ::"
-	opElem     = "op elem"
-	opGe       = "op >="
-	opGt       = "op >"
-	opLe       = "op <="
-	opLt       = "op <"
-	opNe       = "op <>"
-	opNotElem  = "op notelem"
-	notName    = "not"
-	comparison = "'a * 'a -> bool"
-	realToInt  = "real -> int"
-	strToUnit  = "string -> unit"
-	boolName   = "bool"
-	intName    = "int"
-	sumName    = "sum"
-	onlyName   = "only"
-	maxByName  = "maxBy"
-	minByName  = "minBy"
-	realName   = "real"
-	wordName   = "word"
-	stringName = "string"
-	unitName   = "unit"
+	numPair     = "'a * 'a -> 'a"
+	opTimes     = "op *"
+	opPlus      = "op +"
+	opMinus     = "op -"
+	opDiv       = "op div"
+	opMod       = "op mod"
+	opNegate    = "op ~"
+	absName     = "abs"
+	decimalName = "decimal"
+	opDivide    = "op /"
+	lengthName  = "length"
+	opAt        = "op @"
+	opCaret     = "op ^"
+	opCons      = "op ::"
+	opElem      = "op elem"
+	opGe        = "op >="
+	opGt        = "op >"
+	opLe        = "op <="
+	opLt        = "op <"
+	opNe        = "op <>"
+	opNotElem   = "op notelem"
+	notName     = "not"
+	comparison  = "'a * 'a -> bool"
+	realToInt   = "real -> int"
+	strToUnit   = "string -> unit"
+	boolName    = "bool"
+	intName     = "int"
+	sumName     = "sum"
+	onlyName    = "only"
+	maxByName   = "maxBy"
+	minByName   = "minBy"
+	realName    = "real"
+	wordName    = "word"
+	stringName  = "string"
+	unitName    = "unit"
 )
 
 // topBuiltins are the built-in values that no structure's
@@ -80,6 +82,7 @@ var topBuiltins = map[string]topBuiltin{
 	"chr":        {"int -> char", ""},
 	"compare":    {"'a * 'a -> `order`", ""},
 	"concat":     {"string list -> string", ""},
+	decimalName:  {"string -> decimal", ""},
 	"env":        {"unit -> (string * string) list", ""},
 	"exnMessage": {"exn -> string", ""},
 	"exnName":    {"exn -> string", ""},
@@ -99,7 +102,7 @@ var topBuiltins = map[string]topBuiltin{
 	opTimes:      {numPair, intName},
 	opPlus:       {numPair, intName},
 	opMinus:      {numPair, intName},
-	"op /":       {"real * real -> real", ""},
+	opDivide:     {numPair, realName},
 	opCons:       {"'a * 'a list -> 'a list", ""},
 	opLt:         {comparison, ""},
 	opLe:         {comparison, ""},
@@ -152,7 +155,7 @@ var infixOpNames = map[ast.Op]string{
 	ast.ElemOp:    opElem,
 	ast.NotElemOp: opNotElem,
 	ast.DivOp:     opDiv,
-	ast.DivideOp:  "op /",
+	ast.DivideOp:  opDivide,
 	ast.EqOp:      eqOpName,
 	ast.GeOp:      opGe,
 	ast.GtOp:      opGt,
@@ -183,6 +186,7 @@ var weakeningOps = map[string]bool{
 	// lint: sort until '^}' where '^\t'
 	absName:  true,
 	opDiv:    true,
+	opDivide: true,
 	opMinus:  true,
 	opMod:    true,
 	opNegate: true,

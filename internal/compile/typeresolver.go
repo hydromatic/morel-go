@@ -431,17 +431,24 @@ func fieldNames(t types.Type) []string {
 
 // numericOpDomain gives the types for which each overloaded
 // numeric operator is defined (its SML overload class). 'div' and
-// 'mod' are integer-and-word; '/' is absent because it is real-only,
-// so a bad operand is a unification conflict, not an excluded class
-// member. 'abs' is int and real only, as a word is unsigned.
+// 'mod' are integer-and-word; '/' is real-and-decimal, the two types
+// closed under division. 'abs' excludes word, which is unsigned.
+// 'decimal' is a Morel extension to the classes Standard ML defines.
 var numericOpDomain = map[string]map[string]bool{
-	absName:  {intName: true, realName: true},
-	opTimes:  {intName: true, realName: true, wordName: true},
-	opPlus:   {intName: true, realName: true, wordName: true},
-	opMinus:  {intName: true, realName: true, wordName: true},
+	absName:  {intName: true, realName: true, decimalName: true},
 	opDiv:    {intName: true, wordName: true},
+	opDivide: {realName: true, decimalName: true},
+	opMinus:  allNumTypes,
 	opMod:    {intName: true, wordName: true},
-	opNegate: {intName: true, realName: true, wordName: true},
+	opNegate: allNumTypes,
+	opPlus:   allNumTypes,
+	opTimes:  allNumTypes,
+}
+
+// allNumTypes is the overload class of the operators that apply to
+// every number.
+var allNumTypes = map[string]bool{
+	intName: true, realName: true, wordName: true, decimalName: true,
 }
 
 // checkNumericOperators checks that every application of an

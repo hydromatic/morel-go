@@ -169,6 +169,40 @@ var Builtins = map[string]Val{
 	"Date.weekDay":       Fn(dateWeekDayFn),
 	"Date.year":          dateField(time.Time.Year),
 	"Date.yearDay":       dateField(dateYearDay),
+	"Decimal.*":          Fn(decMulFn),
+	"Decimal.+":          Fn(decAddFn),
+	"Decimal.-":          Fn(decSubFn),
+	"Decimal./":          Fn(decDivFn),
+	"Decimal.<":          decCompareOp(func(c int) bool { return c < 0 }),
+	"Decimal.<=":         decCompareOp(func(c int) bool { return c <= 0 }),
+	"Decimal.>":          decCompareOp(func(c int) bool { return c > 0 }),
+	"Decimal.>=":         decCompareOp(func(c int) bool { return c >= 0 }),
+	"Decimal.abs":        Fn(decAbsFn),
+	"Decimal.ceil":       decRoundIntFn(decCeil),
+	"Decimal.compare":    Fn(decCompareFn),
+	"Decimal.decimal":    Fn(decimalFn),
+	"Decimal.floor":      decRoundIntFn(decFloor),
+	"Decimal.fmt":        Fn(decFmtFn),
+	"Decimal.fromInt":    Fn(decFromIntFn),
+	"Decimal.fromReal":   Fn(decFromRealFn),
+	"Decimal.fromString": Fn(decFromStringFn),
+	"Decimal.max":        Fn(decMaxFn),
+	"Decimal.maxFinite":  decMaxFinite,
+	"Decimal.min":        Fn(decMinFn),
+	"Decimal.minPos":     decMinPos,
+	"Decimal.precision":  int32(DecPrecision),
+	"Decimal.radix":      int32(decBase),
+	"Decimal.realCeil":   decRoundFn(decCeil),
+	"Decimal.realFloor":  decRoundFn(decFloor),
+	"Decimal.realRound":  decRoundFn(decHalfEven),
+	"Decimal.realTrunc":  decRoundFn(decTrunc),
+	"Decimal.rem":        Fn(decRemFn),
+	"Decimal.round":      decRoundIntFn(decHalfEven),
+	"Decimal.sign":       Fn(decSignFn),
+	"Decimal.toReal":     Fn(decToRealFn),
+	"Decimal.toString":   Fn(decToStringFn),
+	"Decimal.trunc":      decRoundIntFn(decTrunc),
+	"Decimal.~":          Fn(decNegateFn),
 	"Fn.id":              Fn(identityFn),
 	"Fn.o":               composeFn,
 	"Fn.repeat":          Fn(fnRepeatFn),
@@ -484,6 +518,7 @@ var Builtins = map[string]Val{
 	"ceil":              realToIntFn(math.Ceil),
 	"chr":               chrFn,
 	"concat":            concatFn,
+	"decimal":           Fn(decimalFn),
 	"exnMessage":        Fn(exnMessageFn),
 	"exnName":           Fn(exnNameFn),
 	"explode":           explodeFn,
@@ -500,10 +535,10 @@ var Builtins = map[string]Val{
 	"map":               mapFn,
 	"not":               notFn,
 	"null":              nullFn,
-	"op *":              arithW(mulInt, mulReal, mulWord),
-	"op +":              arithW(addInt, addReal, addWord),
-	"op -":              arithW(subInt, subReal, subWord),
-	"op /":              arith(nil, divReal),
+	"op *":              arithD(arithW(mulInt, mulReal, mulWord), decMulD),
+	"op +":              arithD(arithW(addInt, addReal, addWord), decAddD),
+	"op -":              arithD(arithW(subInt, subReal, subWord), decSubD),
+	"op /":              arithD(arith(nil, divReal), decDivD),
 	"op ::":             consFn,
 	"op <":              compareFn(func(c int) bool { return c < 0 }),
 	"op <=":             compareFn(func(c int) bool { return c <= 0 }),
@@ -611,20 +646,24 @@ func asString(v Val) string {
 	return s
 }
 
-// absFn is "abs x". It is overloaded on int and real, so it
+// absFn is "abs x". It is overloaded on int, real and decimal, so it
 // switches on the runtime type.
 func absFn(arg Val) (Val, error) {
+	// lint: sort until '^\t}' where '^\tcase '
 	switch v := arg.(type) {
+	case Decimal:
+		return v.abs(), nil
+	case float32:
+		return float32(math.Abs(float64(v))), nil
 	case int32:
 		if v < 0 {
 			// -minInt does not fit in int, so raise Overflow.
 			return checkIntRange(-int64(v))
 		}
 		return v, nil
-	case float32:
-		return float32(math.Abs(float64(v))), nil
 	default:
-		panic(fmt.Sprintf("expected int or real, got %T", arg))
+		panic(fmt.Sprintf("expected int, real or decimal, got %T",
+			arg))
 	}
 }
 
@@ -678,6 +717,22 @@ func arith(intFn func(a, b int32) (Val, error),
 			panic(fmt.Sprintf("expected int or real, got %T",
 				vals[0]))
 		}
+	}
+}
+
+// arithD is arith extended to decimals, for the operators that also
+// apply to a decimal: "+", "-", "*" and "/". A decimal result can
+// overflow, so the function returns an error.
+func arithD(base Fn, decFn func(a, b Decimal) (Val, error)) Fn {
+	return func(arg Val) (Val, error) {
+		vals, ok := arg.([]Val)
+		if !ok || len(vals) != 2 {
+			panic(fmt.Sprintf("expected pair, got %T", arg))
+		}
+		if a, isDec := vals[0].(Decimal); isDec {
+			return decFn(a, asDecimal(vals[1]))
+		}
+		return base(arg)
 	}
 }
 
@@ -771,6 +826,8 @@ func divReal(a, b float32) (Val, error) {
 func negFn(arg Val) (Val, error) {
 	// lint: sort until '^\t}' where '^\tcase '
 	switch v := arg.(type) {
+	case Decimal:
+		return v.negate(), nil
 	case float32:
 		return -v, nil
 	case int32:
@@ -781,8 +838,8 @@ func negFn(arg Val) (Val, error) {
 	case uint64:
 		return -v, nil
 	default:
-		panic(fmt.Sprintf("expected int, real, or word, got %T",
-			arg))
+		panic(fmt.Sprintf("expected int, real, word or decimal, "+
+			"got %T", arg))
 	}
 }
 

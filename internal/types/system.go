@@ -108,6 +108,12 @@ func NewSystem() *System {
 	s.String = prim("string")
 	s.Unit = prim("unit")
 	s.Word = prim("word")
+	// "decimal" is a datatype with no constructors, as "lib/decimal.sig"
+	// declares it, but it is registered here rather than left to the
+	// signature loader because the type of the top-level "decimal"
+	// function names it, and that is read from a system that has not
+	// necessarily loaded any signature.
+	s.DeclareDatatype("decimal", 0)
 	return s
 }
 

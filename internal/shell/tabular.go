@@ -142,6 +142,11 @@ func (c *Config) isScalar(t types.Type) bool {
 	if _, ok := t.(*types.Primitive); ok {
 		return true
 	}
+	// "decimal" is a number, and occupies a scalar column, though it
+	// is a datatype with no constructors rather than a primitive.
+	if named, ok := t.(*types.Named); ok && named.Name == decimalType {
+		return true
+	}
 	return c.isEnum(t)
 }
 
@@ -748,6 +753,9 @@ func (c *Config) scalarString(prim types.Type, v eval.Val) string {
 	case charType:
 		r, _ := v.(rune)
 		return `#"` + eval.CharToString(r) + `"`
+	case decimalType:
+		// Minus signs, as for a real; see the comment there.
+		return eval.DecimalToString(v, '-')
 	case intType:
 		i, _ := v.(int32)
 		return strconv.FormatInt(int64(i), 10)
