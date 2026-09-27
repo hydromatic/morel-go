@@ -176,6 +176,35 @@ def java_sha_from_message(repo, commit):
     return m.group(1) if m else None
 
 
+def java_sha_for(repo, commit):
+    """The morel-java commit to measure `commit` against, and whether it
+    came from an ancestor.
+
+    A propagation names its morel-java commit, and is measured against
+    that commit and its parent: morel-java changed something, and the
+    question is whether this commit followed.
+
+    A commit of the port's own -- a refactor, a bug fix, anything with
+    no `Propagates` line -- is measured against a single morel-java
+    commit, the one the nearest ancestor propagated. That SHA is fixed
+    in this repository's history, so the answer does not depend on when
+    the gate is run; and because morel-java does not move across the
+    comparison, any script that grows more divergent grew that way
+    here.
+    """
+    sha = java_sha_from_message(repo, commit)
+    if sha:
+        return sha, False
+    log = git(repo, "log", "--format=%H", f"{commit}~1") or ""
+    for line in log.split("\n"):
+        if not line.strip():
+            continue
+        sha = java_sha_from_message(repo, line.strip())
+        if sha:
+            return sha, True
+    return None, False
+
+
 def report(go_repo, java_repo, go_rev, java_rev):
     """Prints the dashboard: `go_rev` against `java_rev`.
 
@@ -254,30 +283,37 @@ def gate(go_repo, args):
     go = go.strip()
     go_parent = git(go_repo, "rev-parse", f"{go}^").strip()
 
-    java = args.java or java_sha_from_message(go_repo, go)
-    if java:
-        java_full = git(args.java_repo, "rev-parse", java)
-        if java_full is None:
-            sys.exit(f"error: bad java commit {java} in "
-                     f"{args.java_repo}")
-        java = java_full.strip()
+    local = False
+    if args.java:
+        java = args.java
+    else:
+        java, local = java_sha_for(go_repo, go)
+    if not java:
+        sys.exit(
+            f"error: {go[:9]} has no 'Propagates ... commit <sha>' line "
+            f"and no ancestor has one either, so there is no java commit "
+            f"to measure against.\n"
+            f"       Pass --java <sha> to name one explicitly.")
+    java_full = git(args.java_repo, "rev-parse", java)
+    if java_full is None:
+        sys.exit(f"error: bad java commit {java} in "
+                 f"{args.java_repo}")
+    java = java_full.strip()
+    if local:
+        # morel-java is held still, so the only thing that can move the
+        # numbers is this commit.
+        java_parent = java
+    else:
         java_parent = git(args.java_repo, "rev-parse",
                           f"{java}^").strip()
-    else:
-        # Not a propagation. There is no java commit to compare
-        # against, and taking the java checkout's current HEAD would
-        # make the answer depend on when the gate was run rather than
-        # on what the commit did -- a run that passed at commit time
-        # would start failing as soon as morel-java moved. Say so.
-        sys.exit(
-            f"error: {go[:9]} has no 'Propagates ... commit <sha>' line, "
-            f"so there is no java commit to measure against.\n"
-            f"       Pass --java <sha> to name one explicitly. A port-local "
-            f"commit that propagates nothing has nothing to converge "
-            f"towards, and is not this gate's business.")
 
     print(f"go    {go[:9]}  (parent {go_parent[:9]})")
-    print(f"java  {java[:9]}  (parent {java_parent[:9]})")
+    if local:
+        print(f"java  {java[:9]}  (held still: this commit propagates "
+              f"nothing, so it is measured against what its nearest "
+              f"ancestor did)")
+    else:
+        print(f"java  {java[:9]}  (parent {java_parent[:9]})")
     print()
 
     rels = (
@@ -349,9 +385,10 @@ def gate(go_repo, args):
         print(f"FAIL: {len(regressions)} file(s) diverged further "
               f"from morel-java:")
         for rel, before, after in regressions:
+            why = ("this commit diverged it" if local
+                   else "java changed this; go did not follow")
             print(f"  {rel:40} {before:7} -> {after:7} "
-                  f"({after - before:+d})  -- java changed this; "
-                  f"go did not follow")
+                  f"({after - before:+d})  -- {why}")
         return 1
 
     print("OK: no script file diverged further from morel-java.")
